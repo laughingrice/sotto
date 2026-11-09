@@ -50,4 +50,25 @@ describe('performance order and note mapping', () => {
     expect(() => validateScore({ ...score, beatsPerBar: 0 })).toThrow();
     expect(() => validateScore({ format: 'midi' })).toThrow();
   });
+  it('uses explicit bar boundaries across meter changes, silent bars, pickups and repeats', () => {
+    const mixed: Score = { ...score, beatsPerBar: 3, beatUnit: 1,
+      bars: [
+        { index: 0, label: '0', start: 0, duration: 1, meter: [3, 4] },
+        { index: 1, label: '1', start: 1, duration: 3, meter: [3, 4] },
+        { index: 2, label: '2', start: 4, duration: 4, meter: [4, 4] },
+        { index: 3, label: '3', start: 8, duration: 4, meter: [4, 4] },
+      ], sequence: [0, 1, 2, 1, 3],
+      notes: [0, 1, 2].map((measure, index) => ({ ...score.notes[0], id: `note-${index}`, beat: [0, 1, 4][index], duration: 1, measure, tie: false })),
+    };
+    validateScore(mixed);
+    const performance = makePerformance(mixed);
+    expect(performance.measures.map(m => [m.start, m.end])).toEqual([[0, 1], [1, 4], [4, 8], [8, 11], [11, 15]]);
+    expect(performance.notes.map(n => n.start)).toEqual([0, 1, 4, 8]);
+    expect(performance.duration).toBe(15);
+    expect(measureAt(performance, 4).meter).toEqual([4, 4]);
+    expect(measureAt(performance, 8).written).toBe(1);
+    const inferred = { ...mixed, notes: mixed.notes.map(({ measure: _measure, ...note }) => note) };
+    expect(makePerformance(inferred).notes.map(n => n.start)).toEqual([0, 1, 4, 8]);
+    expect(() => validateScore({ ...mixed, bars: mixed.bars.map((bar, index) => index === 2 ? { ...bar, start: 3 } : bar) })).toThrow();
+  });
 });

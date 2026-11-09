@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clickAccent, clickStep, INSTRUMENTS, isInstrument } from './sounds';
+import { clickAccent, clickStep, INSTRUMENTS, isInstrument, metronomePattern } from './sounds';
 
 describe('metronome pulse and accents', () => {
   it('uses two dotted-quarter beats or six eighth-note subdivisions in 6/8', () => {
@@ -19,6 +19,13 @@ describe('metronome pulse and accents', () => {
   it('keeps the accent at bar boundaries despite transport rounding', () => {
     expect(clickAccent(2.9999999, 3, 1.5)).toBe('downbeat');
     expect(clickAccent(4.5000001, 3, 1.5)).toBe('beat');
+  });
+  it('restarts the accent at each actual bar across 3/4 to 4/4, including a pickup', () => {
+    const measures = [{ start: 0, end: 1 }, { start: 1, end: 4 }, { start: 4, end: 8 }, { start: 8, end: 12 }];
+    const pattern = metronomePattern(measures, 1, 'beat');
+    expect(pattern.filter(click => click.accent === 'downbeat').map(click => click.beat)).toEqual([0, 1, 4, 8]);
+    expect(pattern.map(click => click.beat)).toEqual(Array.from({ length: 12 }, (_, i) => i));
+    expect(metronomePattern(measures, 1, 'subdivision').filter(click => click.accent === 'subdivision')).toHaveLength(12);
   });
 });
 describe('synthesized timbres', () => {

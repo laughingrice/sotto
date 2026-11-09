@@ -17,16 +17,39 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SOURCE = ROOT / 'scores' / 'julia-florida.ly'
 
 
+def read_measures(rows):
+    """Use LilyPond's Timing context, never divide time by a fixed meter."""
+    boundaries = {}
+    final = 0
+    cadenza_start = None
+    for line in rows.splitlines():
+        beat, position, length, label, numerator, denominator, timing = line.split('\t')
+        beat, position, length = float(beat), float(position), float(length)
+        final = max(final, beat)
+        start = 0 if position < 0 else max(0, round(beat - position, 8))
+        if timing == '0':
+            if cadenza_start is None:
+                cadenza_start = start
+            start = cadenza_start
+        else:
+            cadenza_start = None
+        # Cadenza timing remains in the current measure; its actual end is
+        # provided by the final score moment instead of the nominal meter.
+        boundaries.setdefault(start, dict(label=label, meter=[int(numerator), int(denominator)]))
+    starts = sorted(start for start in boundaries if start < final - 1e-6)
+    return [dict(index=i, start=start, duration=(starts[i + 1] if i + 1 < len(starts) else final) - start,
+                 **boundaries[start]) for i, start in enumerate(starts)]
+
+
 def compile_score(source: Path, title: str, composer: str, output: Path, julia: bool,
                   beats_per_bar=None, beat_unit=None, bpm=None, transpose=None):
-    beats_per_bar = beats_per_bar if beats_per_bar is not None else (3 if julia else 4)
     beat_unit = beat_unit if beat_unit is not None else (1.5 if julia else 1)
     bpm = bpm if bpm is not None else (44 if julia else 80)
     transpose = transpose if transpose is not None else (-12 if julia else 0)
     text = source.read_text()
     if '\\layout {' not in text:
         raise ValueError('The score needs an explicit \\layout { } block to install the exporter.')
-    text = text.replace('\\layout {', '\\layout {\n  \\context { \\Voice \\consists #practice-engraver }', 1)
+    text = text.replace('\\layout {', '\\layout {\n  \\context { \\Score \\consists #practice-timing-engraver }\n  \\context { \\Voice \\consists #practice-engraver }', 1)
     text = '\\include "' + str(ROOT / 'scripts/practice-map.ily') + '"\n' + text
     with tempfile.TemporaryDirectory(prefix='sotto-export-') as temp:
         folder = Path(temp)
@@ -41,16 +64,19 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
             notes.append(dict(id=identity, voice=voice or 'voice', beat=float(beat),
                               grace=float(grace), midi=round(float(pitch)) + transpose,
                               duration=float(duration), bar=int(bar), tie=tie == '1'))
+        bars = read_measures((folder / 'measures.tsv').read_text())
     if not pages or not notes:
         raise ValueError('No pages or notes were exported.')
-    measure_count = max(int((n['beat'] + 0.00001) // beats_per_bar) for n in notes) + 1
-    bars = []
-    for index in range(measure_count):
-        members = [n for n in notes if int((n['beat'] + 0.00001) // beats_per_bar) == index]
-        label = str(members[0]['bar']) if members else str(index + 1)
-        if julia and index in (30, 31): label += ' · 1st'
-        if julia and index in (32, 33): label += ' · 2nd'
-        bars.append(dict(index=index, label=label))
+    if not bars:
+        raise ValueError('No measure timing was exported.')
+    beats_per_bar = bars[0]['meter'][0] * 4 / bars[0]['meter'][1]
+    for bar in bars:
+        if julia and bar['index'] in (30, 31): bar['label'] += ' · 1st'
+        if julia and bar['index'] in (32, 33): bar['label'] += ' · 2nd'
+    for note in notes:
+        bar = next(bar for bar in reversed(bars) if note['beat'] >= bar['start'] - 1e-6)
+        note['measure'] = bar['index']
+    measure_count = len(bars)
     # Written: A(1–20), B(21–30), ending1(31–32), ending2(31–32), C(33–54), coda(55–59).
     # Return at D.C. to the beginning and jump to the coda BEFORE bar 18.
     sequence = (list(range(32)) + list(range(20, 30)) + list(range(32, 56))
@@ -74,10 +100,10 @@ if __name__ == '__main__':
     parser.add_argument('source', nargs='?', type=Path, default=DEFAULT_SOURCE)
     parser.add_argument('--title')
     parser.add_argument('--composer')
-    parser.add_argument('--beats-per-bar', type=float, help='Bar duration in quarter notes (e.g. 3 for 6/8).')
+    parser.add_argument('--beats-per-bar', type=float, help='Deprecated: measure boundaries are read from LilyPond Timing.')
     parser.add_argument('--beat-unit', type=float, help='Tempo pulse in quarter notes (e.g. 1.5 for dotted quarter).')
     parser.add_argument('--bpm', type=float)
-    parser.add_argument('--transpose', type=int, help='Written-to-sounding MIDI semitones; -12 for conventional guitar notation.')
+    parser.add_argument('--transpose', type=int, help='Additional semitone offset after LilyPond transposition (default 0, built-in Julia -12). Do not lower already transposed guitar pitches twice.')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     julia = args.source.resolve() == DEFAULT_SOURCE.resolve()

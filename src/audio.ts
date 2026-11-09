@@ -1,17 +1,19 @@
 import * as Tone from 'tone';
 import { RecordingLibrary, isRecordedInstrument } from './recordings';
-import type { Performance, Score } from './score';
-import { clickAccent, clickStep, type ClickMode, type InstrumentId } from './sounds';
+import { measureAt, type Performance, type Score } from './score';
+import { clickAccent, clickStep, metronomePattern, type ClickMode, type InstrumentId } from './sounds';
 
 /** Audio and UI share the Web Audio transport clock, not a JavaScript interval. */
 export class Player {
   private instruments = new Map<string, Tone.Sampler | Tone.PolySynth<Tone.Synth>>();
   private muted = new Set<string>();
   private volumes = new Map<string, number>();
-  private clicks?: Record<'downbeat' | 'beat' | 'subdivision', Tone.Player>;
+  private clicks?: Record<'downbeat' | 'beat' | 'subdivision', AudioBuffer>;
+  private clickSources = new Set<AudioBufferSourceNode>();
   private clickGain?: Tone.Gain;
   private standaloneClock?: Tone.Clock;
-  private clickEventId?: number;
+  private clickEventIds: number[] = [];
+  private pitchOffset = 0;
   private clickCounter = 0;
   private instrumentId: InstrumentId = 'guitar';
   private metronomeOn = false;
@@ -46,7 +48,7 @@ export class Player {
         const snap = Math.sin(index * 1.975) * Math.exp(-time * 550) * .15;
         samples[index] = strength * (Math.sin(2 * Math.PI * frequency * time) * Math.exp(-time * 150) + snap) * Math.min(1, time / .0006);
       }
-      return new Tone.Player({ url: buffer, fadeOut: .003 }).connect(this.clickGain!);
+      return buffer;
     };
     this.clicks = { downbeat: createClick(1800, .9), beat: createClick(1100, .7), subdivision: createClick(800, .4) };
     this.standaloneClock = new Tone.Clock(time => {
@@ -123,12 +125,12 @@ export class Player {
       transport.schedule(time => {
         if (!this.muted.has(note.voice)) {
           this.instruments.get(note.voice)?.triggerAttackRelease(
-            Tone.Frequency(note.midi, 'midi').toNote(),
+            Tone.Frequency(note.midi + this.pitchOffset, 'midi').toNote(),
             Math.max(.025, ((this.loopBounds.enabled ? Math.min(note.end, this.loopBounds.end) : note.end) - note.start) * 60 / transport.bpm.value), time, .72);
         }
       }, `${Math.round(note.start * ppq)}i`);
     }
-    this.clickEventId = undefined;
+    this.clickEventIds = [];
     this.scheduleMetronome();
     transport.schedule(time => {
       transport.pause(time);
@@ -147,7 +149,7 @@ export class Player {
     // Resume sustained notes when starting inside a beat or after pausing.
     for (const note of this.performance.sounds) {
       if (note.start < beat - .001 && note.end > beat && !this.muted.has(note.voice)) {
-        this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(note.midi, 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, now, .65);
+        this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(note.midi + this.pitchOffset, 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, now, .65);
       }
     }
     Tone.getTransport().start(now);
@@ -189,6 +191,10 @@ export class Player {
     this.applyVolume(voice);
   }
   volume(voice: string, volume: number) { this.volumes.set(voice, volume); this.applyVolume(voice); }
+  setPitchOffset(semitones: number) {
+    this.pitchOffset = semitones;
+    if (this.initialized) this.release();
+  }
   async setInstrument(instrument: InstrumentId) {
     if (this.instrumentId === instrument) return;
     if (!this.initialized) { this.instrumentId = instrument; return; }
@@ -198,30 +204,47 @@ export class Player {
       const beat = this.beat;
       for (const note of this.performance.sounds) {
         if (note.start < beat && note.end > beat && !this.muted.has(note.voice)) {
-          this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(note.midi, 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, Tone.now(), .65);
+          this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(note.midi + this.pitchOffset, 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, Tone.now(), .65);
         }
       }
     }
   }
   private get metronomeStep() { return clickStep(this.score?.beatUnit ?? 1.5, this.clickMode); }
   private get clickFrequency() { return Tone.getTransport().bpm.value / (60 * this.metronomeStep); }
-  private playClick(time: number, beat: number) {
-    if (!this.metronomeOn || !this.clicks) return;
-    const accent = clickAccent(beat, this.score?.beatsPerBar ?? 3, this.score?.beatUnit ?? 1.5);
-    this.clicks[accent].start(time);
+  private playAccent(time: number, accent: 'downbeat' | 'beat' | 'subdivision') {
+    if (!this.metronomeOn || !this.clicks || !this.clickGain) return;
+    // A separate one-shot source for each click avoids reusing a Player's
+    // future state timeline when seeking or switching clocks rapidly.
+    const source = Tone.getContext().rawContext.createBufferSource();
+    source.buffer = this.clicks[accent];
+    Tone.connect(source, this.clickGain);
+    this.clickSources.add(source);
+    source.onended = () => { source.disconnect(); this.clickSources.delete(source); };
+    source.start(time);
     const count = ++this.clickCounter;
     Tone.getDraw().schedule(() => this.onMetronomeTick(count, accent), time);
   }
+  private playClick(time: number, beat: number) {
+    if (!this.metronomeOn || !this.clicks) return;
+    const measure = this.performance ? measureAt(this.performance, this.beat) : undefined;
+    const accent = clickAccent(beat, measure ? measure.end - measure.start : this.score?.beatsPerBar ?? 3, this.score?.beatUnit ?? 1.5);
+    this.playAccent(time, accent);
+  }
   private scheduleMetronome() {
     const transport = Tone.getTransport();
-    if (this.clickEventId !== undefined) transport.clear(this.clickEventId);
-    this.clickEventId = transport.scheduleRepeat(time => {
-      this.playClick(time, transport.getTicksAtTime(time) / transport.PPQ);
-    }, `${Math.round(this.metronomeStep * transport.PPQ)}i`);
+    this.clickEventIds.forEach(id => transport.clear(id));
+    this.clickEventIds = [];
+    if (!this.performance || !this.score) return;
+    for (const click of metronomePattern(this.performance.measures, this.score.beatUnit, this.clickMode)) {
+      this.clickEventIds.push(transport.schedule(time => {
+        this.playAccent(time, click.accent);
+      }, `${Math.round(click.beat * transport.PPQ)}i`));
+    }
   }
   private stopStandalone() {
     this.standaloneClock?.stop(Tone.immediate());
-    if (this.clicks) Object.values(this.clicks).forEach(click => click.stop(Tone.immediate()));
+    this.clickSources.forEach(source => source.stop(Tone.immediate()));
+    this.clickSources.clear();
   }
   private syncStandalone() {
     if (!this.initialized || !this.standaloneClock) return;
@@ -252,7 +275,6 @@ export class Player {
     this.pause(); Tone.getTransport().cancel();
     this.instruments.forEach(instrument => instrument.dispose()); this.instruments.clear();
     this.standaloneClock?.dispose();
-    if (this.clicks) Object.values(this.clicks).forEach(click => click.dispose());
     this.clickGain?.dispose(); this.master?.dispose();
   }
 }

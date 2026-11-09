@@ -1,4 +1,4 @@
-import type { Score } from './score';
+import { noteMeasure, type Score } from './score';
 
 type Box = { x: number; y: number; width: number; height: number };
 type LocatedMeasure = { index: number; svg: SVGSVGElement; box: Box; staffY: number };
@@ -36,7 +36,7 @@ export function buildBarHighlights(root: HTMLElement, score: Score): Map<number,
   }
   const measures: LocatedMeasure[] = [];
   for (const bar of score.bars) {
-    const notes = score.notes.filter(note => Math.floor((note.beat + 1e-6) / score.beatsPerBar) === bar.index);
+    const notes = score.notes.filter(note => noteMeasure(score, note) === bar.index);
     const geometry = notes.flatMap(note => {
       const element = elements.get(note.id);
       const svg = element?.ownerSVGElement;

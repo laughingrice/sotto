@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, CircleHelp, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, SlidersHorizontal, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, Check, ChevronDown, CircleHelp, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, SlidersHorizontal, Volume2, VolumeX, X } from 'lucide-react';
 import { Player } from './audio';
+import { LibraryPanel, type LibraryControl } from './LibraryPanel';
 import { buildBarHighlights } from './bar-highlight';
 import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, validateScore, type Score } from './score';
 import { INSTRUMENTS, clickStep, isInstrument, type ClickMode, type InstrumentId } from './sounds';
@@ -36,11 +37,13 @@ export default function App() {
   const [loopEnd, setLoopEnd] = useState(3);
   const [zoom, setZoom] = useState(100);
   const [help, setHelp] = useState(false);
+  const [libraryVisible, setLibraryVisible] = useState(false);
+  const [pitchOffset, setPitchOffset] = useState(0);
   const [starting, setStarting] = useState(false);
   const [controlsCollapsed, setControlsCollapsed] = useState(() => {
     try { return localStorage.getItem('sotto.controlsCollapsed') === 'true'; } catch { return false; }
   });
-  const fileInput = useRef<HTMLInputElement>(null);
+  const libraryControl = useRef<LibraryControl>(null);
   const scoreRoot = useRef<HTMLDivElement>(null);
   const scrollRoot = useRef<HTMLDivElement>(null);
   const zoomAnchor = useRef<{ x: number; y: number } | null>(null);
@@ -96,7 +99,7 @@ export default function App() {
     // Sanitize before accepting a bundle; reject malformed SVG immediately.
     value.pages.forEach(cleanSvg);
     player.pause(); setPlaying(false); setLoop(false); setLoopStart(0); setLoopEnd(Math.min(3, value.bars.length - 1));
-    setMuted(new Set()); setSolo(null); setVolumes({}); setBeat(0); setBpm(value.bpm); setScore(value); setError('');
+    setMuted(new Set()); setSolo(null); setVolumes({}); setBeat(0); setBpm(value.bpm); setScore(value); setPitchOffset(0); setError('');
     lastFollowed.current = -1;
   }, [player]);
 
@@ -114,6 +117,7 @@ export default function App() {
     setLoopStart(0); setLoopEnd(Math.min(3, performance.measures.length - 1));
     player.onEnded = () => { setPlaying(false); setBeat(performance.duration - .001); };
   }, [score, performance, player]);
+  useEffect(() => player.setPitchOffset(pitchOffset), [pitchOffset, player]);
   useEffect(() => player.tempo(bpm), [bpm, player, performance]);
   useEffect(() => {
     player.onSoundLoading = setSoundLoading;
@@ -242,7 +246,7 @@ export default function App() {
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (help || soundSettings) { if (event.key === 'Escape') { setHelp(false); setSoundSettings(false); } return; }
+      if (help || soundSettings || libraryVisible) { if (event.key === 'Escape') { setHelp(false); setSoundSettings(false); setLibraryVisible(false); } return; }
       if ((event.target as HTMLElement).closest('input,select,textarea,button')) return;
       if (event.code === 'Space') { event.preventDefault(); void togglePlay(); }
       if (event.code === 'ArrowRight') { event.preventDefault(); stepMeasure(1); }
@@ -252,7 +256,7 @@ export default function App() {
       if (event.key.toLowerCase() === 'c') setControlsCollapsed(value => !value);
     };
     document.addEventListener('keydown', keydown); return () => document.removeEventListener('keydown', keydown);
-  }, [togglePlay, stepMeasure, restart, help, soundSettings, toggleMetronome]);
+  }, [togglePlay, stepMeasure, restart, help, soundSettings, libraryVisible, toggleMetronome]);
 
   const scoreClick = (event: React.MouseEvent) => {
     const element = (event.target as Element).closest('.score-note');
@@ -261,14 +265,6 @@ export default function App() {
     const next = candidates.find(note => note.start >= beat - .05) ?? candidates[0];
     if (next) seek(next.start);
   };
-  async function importFile(file?: File) {
-    if (!file) return;
-    try {
-      if (file.size > 15_000_000) throw new Error('Please use a score bundle smaller than 15 MB.');
-      openScore(JSON.parse(await file.text()));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not open that score.'); }
-    if (fileInput.current) fileInput.current.value = '';
-  }
   function downloadBundle() {
     if (!score) return;
     const href = URL.createObjectURL(new Blob([JSON.stringify(score)], { type: 'application/json' }));
@@ -286,8 +282,8 @@ export default function App() {
     <header className="app-header">
       <a className="brand" href={import.meta.env.BASE_URL} aria-label="Sotto home"><span className="brand-symbol"><Music2 size={24}/></span><span>sotto<span className="brand-dot">.</span></span></a>
       <span className="header-divider"/><span className="header-caption">A little practice, every day.</span>
-      <div className="header-actions"><span className="version">v0.2</span><button className="quiet-button open-button" aria-label="Open score" title="Open score" onClick={() => fileInput.current?.click()}><FolderOpen size={17}/><span>Open score</span></button><button className="quiet-button save-button" aria-label="Save score" title="Save score" onClick={downloadBundle} disabled={!score}><ArrowDownToLine size={17}/><span>Save score</span></button><button className="quiet-button controls-toggle" aria-label={controlsCollapsed ? 'Show controls' : 'Hide controls'} aria-expanded={!controlsCollapsed} aria-controls="practice-settings playback-panel" title={`${controlsCollapsed ? 'Show' : 'Hide'} controls (C)`} onClick={() => setControlsCollapsed(value => !value)}>{controlsCollapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}<span>{controlsCollapsed ? 'Show controls' : 'Hide controls'}</span></button><button className="icon-button" aria-label="Help and keyboard shortcuts" onClick={() => setHelp(true)}><CircleHelp size={20}/></button></div>
-      <input ref={fileInput} type="file" accept=".json,.sotto.json" className="visually-hidden" onChange={event => void importFile(event.target.files?.[0])}/>
+      <div className="header-actions"><span className="version">v0.2</span><button className="quiet-button open-button" aria-label="Open score" title="Open score" onClick={() => libraryControl.current?.chooseFile()}><FolderOpen size={17}/><span>Open score</span></button><button className="quiet-button library-button" aria-label="Score library" title="Score library" onClick={() => setLibraryVisible(true)}><BookOpen size={17}/><span>Library</span></button><button className="quiet-button save-button" aria-label="Save score" title="Save score" onClick={downloadBundle} disabled={!score}><ArrowDownToLine size={17}/><span>Save score</span></button><button className="quiet-button controls-toggle" aria-label={controlsCollapsed ? 'Show controls' : 'Hide controls'} aria-expanded={!controlsCollapsed} aria-controls="practice-settings playback-panel" title={`${controlsCollapsed ? 'Show' : 'Hide'} controls (C)`} onClick={() => setControlsCollapsed(value => !value)}>{controlsCollapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}<span>{controlsCollapsed ? 'Show controls' : 'Hide controls'}</span></button><button className="icon-button" aria-label="Help and keyboard shortcuts" onClick={() => setHelp(true)}><CircleHelp size={20}/></button></div>
+
     </header>
 
     <div className="workspace">
@@ -339,18 +335,22 @@ export default function App() {
       </main>
     </div>
 
+    <LibraryPanel ref={libraryControl} visible={libraryVisible} onClose={() => setLibraryVisible(false)} onOpen={openScore} onError={setError}/>
+
     {soundSettings && <div className="modal-backdrop" onClick={() => setSoundSettings(false)}><section className="help-modal sound-modal" role="dialog" aria-modal="true" aria-labelledby="sound-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close sound settings" onClick={() => setSoundSettings(false)} autoFocus><X size={20}/></button><div className="eyebrow">PLAYBACK</div><h2 id="sound-title">Sound &amp; metronome</h2>
       <label className="settings-field">Instrument<select aria-label="Playback instrument" disabled={soundLoading} aria-busy={soundLoading} value={instrument} onChange={event => setInstrument(event.target.value as InstrumentId)}>{INSTRUMENTS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <p className="settings-note">Nylon guitar, piano and violin use recorded instruments. Marimba, organ and flute are synthesized. All are bundled for offline playback. Changing the instrument changes the sound for all voices, keeping the score’s pitches.</p>
       {soundLoading && <p className="settings-note" role="status">Loading instrument recordings…</p>}
       <p className="settings-note"><a href={`${import.meta.env.BASE_URL}samples/ATTRIBUTION.md`} target="_blank" rel="noopener noreferrer">Recording credits and licenses</a></p>
+      <label className="settings-field">Playback octave<select aria-label="Playback octave" value={pitchOffset} onChange={event => setPitchOffset(Number(event.target.value))}><option value={-12}>One octave lower (−12)</option><option value={0}>As exported</option><option value={12}>One octave higher (+12)</option></select></label>
+      <p className="settings-note">Use “As exported” when LilyPond already transposes the guitar. An additional −12 would lower it twice. This adjustment lasts until another score is opened.</p>
       <div className="metronome-setting-heading"><h3>Metronome</h3><button className={`switch ${metronome ? 'on' : ''}`} role="switch" aria-label="Metronome enabled" aria-checked={metronome} disabled={metronomeStarting} onClick={() => void toggleMetronome()}><span/></button><span className={`settings-beat-light ${clickPulse && metronome ? 'lit' : ''}`} data-accent={clickAccent}/></div>
       <p className="settings-note">Clicks on its own while paused, and follows the score while playing. The first beat of each bar is accented.</p>
-      <label className="settings-field">Pulse<select aria-label="Metronome pulse" value={clickMode} onChange={event => setClickMode(event.target.value as ClickMode)}><option value="beat">Beat · {Math.round((score?.beatsPerBar ?? 3) / (score?.beatUnit ?? 1.5))} clicks per bar</option><option value="subdivision">Subdivision · {Math.round((score?.beatsPerBar ?? 3) / clickStep(score?.beatUnit ?? 1.5, 'subdivision'))} clicks per bar</option></select></label>
+      <label className="settings-field">Pulse<select aria-label="Metronome pulse" value={clickMode} onChange={event => setClickMode(event.target.value as ClickMode)}><option value="beat">Beat · {Math.round((measure ? measure.end - measure.start : score?.beatsPerBar ?? 3) / (score?.beatUnit ?? 1.5))} clicks per bar</option><option value="subdivision">Subdivision · {Math.round((measure ? measure.end - measure.start : score?.beatsPerBar ?? 3) / clickStep(score?.beatUnit ?? 1.5, 'subdivision'))} clicks per bar</option></select></label>
       <label className="settings-field click-volume-label">Click volume <span>{clickVolume}%</span><input aria-label="Metronome volume" type="range" min="0" max="100" value={clickVolume} onChange={event => setClickVolume(Number(event.target.value))}/></label>
       <button className="primary-button" onClick={() => setSoundSettings(false)}>Back to the music <ArrowRight size={16}/></button>
     </section></div>}
 
-    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close help" onClick={() => setHelp(false)} autoFocus><X size={20}/></button><div className="eyebrow">SOTTO · VERSION 0.2</div><h2 id="help-title">Find your own tempo.</h2><p>Play the score, slow down a phrase, or mute your part and play along with the other voices. Click a note to move there.</p><div className="help-shortcuts"><span><kbd>space</kbd> Play / pause</span><span><kbd>←</kbd> <kbd>→</kbd> Previous / next bar</span><span><kbd>R</kbd> Restart</span><span><kbd>M</kbd> Metronome</span></div><h3>Bringing another score</h3><p>Open a <code>.sotto.json</code> bundle created by the included LilyPond exporter. MusicXML can first be converted with <code>musicxml2ly</code>. Direct PDF recognition, raw MIDI import, and microphone feedback are outside v0.2.</p><h3>Playback details</h3><p>The example follows both endings and D.C. al Coda. Guitar pitches sound an octave below the notation. Tempo is measured in dotted-quarter beats; expressive tempo changes and harmonic overtones are not modelled yet.</p><button className="primary-button" onClick={() => setHelp(false)}>Back to the music <ArrowRight size={16}/></button></section></div>}
+    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close help" onClick={() => setHelp(false)} autoFocus><X size={20}/></button><div className="eyebrow">SOTTO · VERSION 0.2</div><h2 id="help-title">Find your own tempo.</h2><p>Play the score, slow down a phrase, or mute your part and play along with the other voices. Click a note to move there.</p><div className="help-shortcuts"><span><kbd>space</kbd> Play / pause</span><span><kbd>←</kbd> <kbd>→</kbd> Previous / next bar</span><span><kbd>R</kbd> Restart</span><span><kbd>M</kbd> Metronome</span></div><h3>Bringing another score</h3><p>Open a <code>.sotto.json</code> bundle created by the included LilyPond exporter. Use Library to bookmark files or folders and mark favorites; export its index to back them up. MusicXML can first be converted with <code>musicxml2ly</code>. Direct PDF recognition, raw MIDI import, and microphone feedback are outside v0.2.</p><h3>Playback details</h3><p>The example follows both endings and D.C. al Coda. Guitar pitches sound an octave below the notation. Tempo is measured in dotted-quarter beats; expressive tempo changes and harmonic overtones are not modelled yet.</p><button className="primary-button" onClick={() => setHelp(false)}>Back to the music <ArrowRight size={16}/></button></section></div>}
   </div>;
 }

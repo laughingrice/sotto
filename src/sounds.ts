@@ -22,3 +22,13 @@ export function clickAccent(beat: number, beatsPerBar: number, beatUnit: number)
   if (nearMultiple(beat, beatsPerBar)) return 'downbeat';
   return nearMultiple(beat, beatUnit) ? 'beat' : 'subdivision';
 }
+
+export function metronomePattern(measures: { start: number; end: number }[], beatUnit: number, mode: ClickMode) {
+  return measures.flatMap(measure => {
+    const clicks: { beat: number; accent: ReturnType<typeof clickAccent> }[] = [];
+    for (let offset = 0; offset < measure.end - measure.start - 1e-6; offset += clickStep(beatUnit, mode)) {
+      clicks.push({ beat: measure.start + offset, accent: clickAccent(offset, measure.end - measure.start, beatUnit) });
+    }
+    return clicks;
+  });
+}

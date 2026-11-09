@@ -1,29 +1,45 @@
 export type Voice = { id: string; name: string; color: string };
-export type ScoreNote = { id: string; voice: string; beat: number; grace: number; midi: number; duration: number; bar: number; tie: boolean };
+export type ScoreNote = { id: string; voice: string; beat: number; grace: number; midi: number; duration: number; bar: number; tie: boolean; measure?: number };
+export type ScoreBar = { index: number; label: string; start?: number; duration?: number; meter?: [number, number] };
 export type Score = {
   format: 'sotto-score'; version: 1; title: string; composer: string; subtitle: string;
   beatsPerBar: number; beatUnit: number; bpm: number; description: string;
   voices: Voice[]; notes: ScoreNote[]; pages: string[];
-  bars: { index: number; label: string }[]; sequence: number[];
+  bars: ScoreBar[]; sequence: number[];
 };
 export type PerformanceNote = ScoreNote & { start: number; end: number };
-export type Measure = { index: number; written: number; label: string; occurrence: number; start: number; end: number };
+export type Measure = { index: number; written: number; label: string; occurrence: number; start: number; end: number; meter?: [number, number] };
 export type Performance = { notes: PerformanceNote[]; sounds: PerformanceNote[]; measures: Measure[]; duration: number };
+
+export function barTiming(score: Score, index: number) {
+  const bar = score.bars[index];
+  return { start: bar.start ?? index * score.beatsPerBar, duration: bar.duration ?? score.beatsPerBar };
+}
+export function noteMeasure(score: Score, note: ScoreNote): number {
+  if (note.measure !== undefined) return note.measure;
+  // Older bundles have a single meter. New bundles can omit the redundant
+  // measure field and still resolve membership from the explicit boundaries.
+  if (score.bars[0].start === undefined) return Math.floor((note.beat + 1e-6) / score.beatsPerBar);
+  return score.bars.findLastIndex((bar, index) => note.beat >= barTiming(score, index).start - 1e-6);
+}
 
 export function makePerformance(score: Score, repeats = true): Performance {
   const sequence = repeats ? score.sequence : score.bars.map(bar => bar.index);
   const occurrences = new Map<number, number>();
+  let position = 0;
   const measures: Measure[] = sequence.map((written, index) => {
     const occurrence = (occurrences.get(written) ?? 0) + 1;
     occurrences.set(written, occurrence);
+    const start = position;
+    position += barTiming(score, written).duration;
     return { index, written, label: score.bars[written].label, occurrence,
-      start: index * score.beatsPerBar, end: (index + 1) * score.beatsPerBar };
+      start, end: position, meter: score.bars[written].meter };
   });
   const notes = measures.flatMap(measure => score.notes
-    .filter(note => Math.floor((note.beat + 1e-6) / score.beatsPerBar) === measure.written)
+    .filter(note => noteMeasure(score, note) === measure.written)
     .map(note => {
-      const start = Math.max(measure.start, measure.start + note.beat - measure.written * score.beatsPerBar + Math.max(-.16, note.grace));
-      return { ...note, start, end: Math.min(measures.length * score.beatsPerBar, start + (note.grace ? .12 : note.duration)) };
+      const start = Math.max(measure.start, measure.start + note.beat - barTiming(score, measure.written).start + Math.max(-.16, note.grace));
+      return { ...note, start, end: Math.min(position, start + (note.grace ? .12 : note.duration)) };
     })).sort((a, b) => a.start - b.start);
   // Keep individual noteheads for highlighting, but sustain tied pitches once.
   const sounds: PerformanceNote[] = [];
@@ -33,7 +49,7 @@ export function makePerformance(score: Score, repeats = true): Performance {
       previous.end = note.end; previous.tie = note.tie;
     } else sounds.push({ ...note });
   }
-  return { notes, sounds, measures, duration: measures.length * score.beatsPerBar };
+  return { notes, sounds, measures, duration: position };
 }
 
 export function measureAt(performance: Performance, beat: number): Measure {
@@ -55,7 +71,14 @@ export function validateScore(value: unknown): asserts value is Score {
       !Array.isArray(score.bars) || !score.bars.length || !Array.isArray(score.sequence) || !score.sequence.length ||
       !Number.isFinite(score.beatsPerBar) || score.beatsPerBar <= 0 || !Number.isFinite(score.beatUnit) || score.beatUnit <= 0 ||
       !Number.isFinite(score.bpm) || score.bpm < 15 || score.bpm > 300 ||
-      score.notes.some(n => !Number.isFinite(n.beat) || !Number.isFinite(n.grace) || !Number.isFinite(n.duration) || n.duration <= 0 || !Number.isFinite(n.midi) || n.midi < 0 || n.midi > 127 || typeof n.id !== 'string' || !score.voices.some(v => v.id === n.voice)) ||
+      score.bars.some((bar, index) => !bar || bar.index !== index || typeof bar.label !== 'string' ||
+        (bar.start !== undefined && (!Number.isFinite(bar.start) || bar.start < 0 || Math.abs(bar.start - (index ? barTiming(score, index - 1).start + barTiming(score, index - 1).duration : 0)) > 1e-5)) ||
+        (bar.duration !== undefined && (!Number.isFinite(bar.duration) || bar.duration <= 0)) ||
+        ((bar.start === undefined) !== (bar.duration === undefined)) ||
+        ((bar.start === undefined) !== (score.bars[0].start === undefined)) ||
+        (bar.meter !== undefined && (!Array.isArray(bar.meter) || bar.meter.length !== 2 || bar.meter.some(n => !Number.isInteger(n) || n <= 0)))) ||
+      score.notes.some(n => !Number.isFinite(n.beat) || !Number.isFinite(n.grace) || !Number.isFinite(n.duration) || n.duration <= 0 || !Number.isFinite(n.midi) || n.midi < 0 || n.midi > 127 || typeof n.id !== 'string' || !score.voices.some(v => v.id === n.voice) ||
+        (n.measure !== undefined && (!Number.isInteger(n.measure) || n.measure < 0 || n.measure >= score.bars.length || n.beat < barTiming(score, n.measure).start - 1e-5 || n.beat >= barTiming(score, n.measure).start + barTiming(score, n.measure).duration - 1e-5))) ||
       score.sequence.some(index => !Number.isInteger(index) || index < 0 || index >= score.bars.length) ||
       score.pages.some(page => typeof page !== 'string' || !page.includes('<svg'))) {
     throw new Error('This is not a valid Sotto score bundle. Open a .sotto.json file created by the score exporter.');

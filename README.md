@@ -61,6 +61,8 @@ The production build includes a service worker that caches the app, built-in sco
 - Guitar playback one octave below the written notation, including low D2.
 - Instrument selection: recorded nylon guitar, piano and violin, plus synthesized marimba, organ and flute. The recordings are bundled with the app, balanced in level, and cached for offline use.
 - Save/open portable `.sotto.json` bundles. Imported SVG is sanitized before rendering.
+- Meter changes use exported bar timing for playback, navigation, highlights, and metronome accents.
+- A persistent library of file/folder bookmarks, favorites, and a portable index; imported score contents are never duplicated into browser storage.
 
 Keyboard: **Space** play/pause, **←/→** previous/next bar, **R** restart, **M** metronome, **C** hide/show controls. Keyboard shortcuts do not interfere with focused controls.
 
@@ -79,16 +81,16 @@ You need **LilyPond 2.26 (including `musicxml2ly`) and Python 3** on the compute
 
 - **PDF:** first transcribe or recognize it into LilyPond/MusicXML and proofread it. The app does not recognize PDF sheet music yet.
 
-The LilyPond file needs a single score, named voices for useful voice controls, and an explicit `\layout { }` block. Start by compiling the `.ly` file normally to catch notation errors.
+The LilyPond file needs a single engraved score (a separate MIDI score is fine), named voices for useful voice controls, and an explicit `\layout { }` block. Start by compiling the `.ly` file normally to catch notation errors.
 
 ### 2. Export the player bundle
 
-From this repository's root, for **4/4 guitar**:
+From this repository's root, for a **quarter-note pulse** (including scores that change meter):
 
 ```sh
 python3 scripts/export_score.py my-score.ly \
   --title "My score" --composer "Composer" \
-  --beats-per-bar 4 --beat-unit 1 --bpm 80 --transpose -12 \
+  --beat-unit 1 --bpm 80 \
   --output my-score.sotto.json
 ```
 
@@ -97,24 +99,26 @@ For **6/8 guitar**, with a dotted-quarter pulse:
 ```sh
 python3 scripts/export_score.py my-score.ly \
   --title "My score" --composer "Composer" \
-  --beats-per-bar 3 --beat-unit 1.5 --bpm 44 --transpose -12 \
+  --beat-unit 1.5 --bpm 44 \
   --output my-score.sotto.json
 ```
 
 | Option | Meaning |
 | --- | --- |
-| `--beats-per-bar` | Bar length in quarter-note units: 4 for 4/4, 3 for 3/4 or 6/8. |
+| `--beats-per-bar` | Deprecated and ignored. Actual bar starts, durations, and time signatures come from LilyPond’s Timing context, including meter changes and pickups. |
 | `--beat-unit` | Tempo pulse in quarter-note units: 1 for a quarter, 1.5 for a dotted quarter. This also sets the metronome beat. |
 | `--bpm` | Number of those pulses per minute. |
-| `--transpose` | Written-to-sounding semitones: -12 for conventional guitar treble notation, 0 for concert-pitch piano. |
+| `--transpose` | Additional semitone offset **after** LilyPond’s `\transpose`. Defaults to 0 for imported pieces. Use -12 only when the exported pitches are still in the written guitar octave. |
 
-The export contains SVG score pages, notehead identities, note timings, voices, ties, bar numbers, and playback metadata in one portable file. No separate PDF, MIDI, or audio file is needed. Playback instrument selection changes the timbre; it does not alter the score's pitch mapping or transposition.
+The export contains SVG score pages, notehead identities, note timings, voices, ties, bar numbers, and playback metadata in one portable file. No separate PDF, MIDI, or audio file is needed. Playback instrument selection changes the timbre. Sound settings also offer a temporary playback-octave adjustment for older bundles.
+
+**Capricho Árabe:** this source already wraps its music in `\transpose c c,`, lowering it once. Export it with **`--transpose 0`** (or omit that option); -12 would lower it twice. A guitar clef alone does not establish whether the source pitches have already been transposed. The exporter reads compiled pitches rather than guessing from the instrument name. Meter changes are automatic: the opening eight bars are 3/4, bar 9 starts 4/4, and the final cadenza retains its actual five-quarter duration. Re-export older bundles to obtain the new timing metadata; changing the player alone cannot recover missing boundaries reliably.
 
 ### 3. Open it on any device
 
 Transfer `my-score.sotto.json` to the tablet using Files, AirDrop, or a file-sharing service, open Sotto, and choose **Open score**. Select the bundle. This reads it locally; it does not upload the file. You can also use **Save score** to download a copy.
 
-Opening a bundle lasts for the current session. Reloading currently returns to Julia Florida. Keep the bundle so you can reopen it; a persistent multi-score library is on the roadmap.
+The open score itself lasts for the current session; reload starts with Julia Florida. **Library** remembers score bookmarks and favorites across reloads so you can reopen them without maintaining another copy. See the library workflow below.
 
 ### Rebuild the included example
 
@@ -133,11 +137,23 @@ The example is committed to this repository in two forms:
 - `scores/julia-florida.ly`: editable notation source.
 - `public/scores/julia-florida.sotto.json`: rendered SVG pages, note timings, voices, metadata, and playback sequence. This is what the deployed app downloads.
 
-The browser caches the built-in bundle for offline use; the cache is not the original or only copy. **Open score** reads a `.sotto.json` file locally for the current session. It does not upload anything to GitHub or to a server, and a page reload returns to the built-in example. Keep your bundle file to reopen it later; **Save score** downloads a copy.
+The browser caches the built-in bundle for offline use; the cache is not the original or only copy. **Open score** reads a `.sotto.json` file locally and remembers a bookmark in Library. It does not upload anything to GitHub or to a server, and a page reload returns to the built-in example. Keep your bundle file as the original; **Save score** downloads a separate copy only when requested.
 
-To publish a different built-in score for everyone, commit its `.ly` source under `scores/` and its bundle under `public/scores/`, then change `DEFAULT_SCORE` in `src/App.tsx` to that bundle's URL, using `import.meta.env.BASE_URL` as the prefix. Push to `main`; GitHub Actions rebuilds and deploys. Simply adding a file to the repo does not list it in the app: a multi-score library is not implemented yet.
+To publish a different built-in score for everyone, commit its `.ly` source under `scores/` and its bundle under `public/scores/`, then change `DEFAULT_SCORE` in `src/App.tsx` to that bundle's URL, using `import.meta.env.BASE_URL` as the prefix. Push to `main`; GitHub Actions rebuilds and deploys. Simply adding a file to the repo does not list it in the app: the personal Library lists files/folders you choose, rather than scanning the deployed repository.
 
-The exporter currently requires a single score, an explicit `\layout { }` block, named voices for meaningful part controls, and a constant meter. Julia Florida's repeat/jump sequence is configured explicitly. Other scores currently play in written order; arbitrary repeat navigation, tempo maps, changing meters, and transposing-instrument metadata need a more general importer. Export only LilyPond files you trust, since the compiler executes Scheme.
+The exporter requires a single engraved score, an explicit `\layout { }` block, and named voices for meaningful part controls. It reads actual measure timing from LilyPond, including changing meters, silent measures, pickups, and a final cadenza. Julia Florida's repeat/jump sequence is configured explicitly. Other scores currently play in written order; arbitrary repeat navigation, tempo maps, and `\transposition` instrument metadata need a more general importer. Export only LilyPond files you trust, since the compiler executes Scheme.
+
+## Library without duplicate score files
+
+1. Keep `.sotto.json` files in your preferred folder, such as a locally synced **OneDrive/Scores** folder.
+2. Open **Library → Connect folder**, choose that folder, and open a score from the list. Subfolders are included. **Open score / Add score** can bookmark individual files instead.
+3. Use the star to mark pieces you are working on; **Favorites** filters the list. Search matches title, composer, and relative path. Recently opened scores appear first within each favorites group.
+4. Use **Refresh / reconnect** to discover newly added files. Opening a linked score reads its current contents from disk, including changes made outside Sotto. If the file moved or permission expired, reconnect the folder/file.
+5. Choose **Export index** and save `sotto-library.json` in OneDrive. This small metadata file preserves folder labels, relative paths, favorites, and recents, **not score contents or browser permissions**. Import it on another device, then reconnect each folder. Index imports merge by bookmark ID; exporting/importing is manual, not live synchronization.
+
+Desktop Chrome/Edge can store read-only file/directory handles in IndexedDB; permissions may need granting again. A OneDrive folder must be available through the local file picker (and the selected files downloaded by OneDrive when needed). No OneDrive account integration is required. Safari/iPad and other browsers without these pickers retain metadata only: reselect the score or reconnect a folder after reopening the app. On iPad, select OneDrive through the Files picker; folder selection depends on the browser/provider. Bookmark metadata is local to this browser and site address; export the index for backup or transfer. Clearing browser storage removes the index/handles but never deletes the original files. Bookmarks and permissions are not a backup of the score files themselves.
+
+No imported score JSON is stored in IndexedDB, localStorage, or the service-worker cache. Only the bundled example and app assets are cached for offline use. Linked scores require the original file to remain accessible. Removing a library entry or folder removes its bookmarks only.
 
 ## Instruments, metronome, and SoundFonts
 
@@ -154,6 +170,7 @@ Nylon guitar, piano and violin now use Tone.js samplers with actual recordings, 
 
 ```sh
 npm test
+python3 scripts/test_export_score.py # also requires LilyPond
 npm run build
 node scripts/browser-test.mjs
 # Against a running production preview, including offline reload/playback:
@@ -162,6 +179,8 @@ node scripts/browser-test.mjs --production
 node scripts/layout-test.mjs
 # Actual click scheduling, accents, subdivisions, instruments and offline audio:
 node scripts/sound-test.mjs
+# File/folder bookmarks, fresh reads, favorites, backup/import, and fallback:
+node scripts/library-test.mjs
 ```
 
 The browser checks use Playwright Chromium (`npx playwright install chromium`); optionally set `CHROME_PATH` to an existing Chromium executable and `BASE_URL` to a preview/deployed URL. `node scripts/browser-test.mjs --pages` tests the `/sotto/` preview including offline playback. They exercise real audio-buffer scheduling, note highlighting, seek/pause, mute/solo, tempo, loop wrapping, repeats, invalid imports, SVG sanitization and responsive layouts. Captures go in `test-results/`.
@@ -170,13 +189,13 @@ The browser checks use Playwright Chromium (`npx playwright install chromium`); 
 
 Next work, in practical order:
 
-1. **Persistent score library:** keep imported pieces across reloads, choose between scores, and manage offline copies.
+1. **Library refinements:** automatic/shared index synchronization and optional direct cloud integration; the initial reference-based library and portable favorites index are available now.
 2. **SoundFonts and per-voice instruments:** load an SF2/SF3 font locally and select its presets; allow violin melody over guitar accompaniment. Retain the bundled recordings and lightweight synths.
-3. **More general import:** derive meter, tempo, transposition and repeat navigation automatically, support tempo/meter changes, and simplify preparation. Julia Florida's repeat/jump sequence is currently configured explicitly; other exports play in written order.
+3. **More general import:** derive tempo, instrument transposition and repeat navigation automatically, support tempo changes, and simplify preparation. Measure timing and meter changes are already derived during export. Julia Florida's repeat/jump sequence is currently configured explicitly; other exports play in written order.
 4. **Microphone rhythm feedback:** calibrate input/output latency, detect note attacks, and compare them to a fixed-tempo reference. Validate on actual iPad/Safari hardware.
 5. **Pitch feedback and following:** start with single-note melody/bass practice, then overlapping guitar notes/chords and following a freely varying tempo.
 
-Current limits: constant meter and fixed tempo for imported scores; grace notes use a short fixed interpretation; harmonic-specific sounding pitches and expressive tempo changes are not modelled; notation zooms/scrolls but does not reflow; direct browser MusicXML/LilyPond compilation, raw MIDI import, PDF recognition, and microphone assessment are not implemented. Export only LilyPond files you trust, since the compiler executes Scheme.
+Current limits: fixed tempo and pulse unit for imported scores; grace notes use a short fixed interpretation; harmonic-specific sounding pitches and expressive tempo changes are not modelled; notation zooms/scrolls but does not reflow; direct browser MusicXML/LilyPond compilation, raw MIDI import, PDF recognition, and microphone assessment are not implemented. Export only LilyPond files you trust, since the compiler executes Scheme.
 
 ## Recording credits and maintenance
 

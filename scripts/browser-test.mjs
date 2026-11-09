@@ -11,7 +11,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 page.setDefaultTimeout(10000);
 const errors = [];
 const resourceErrors = [];
-page.on('pageerror', error => errors.push(error.message));
+page.on('pageerror', error => { errors.push(error.message); console.log(error.stack); });
 page.on('requestfailed', request => resourceErrors.push([request.url(), request.failure()?.errorText]));
 await page.addInitScript(() => {
   window.audioStarts = 0;

@@ -2,9 +2,26 @@
 % The original score does not need individual note annotations.
 #(define practice-port (open-output-file "events.tsv"))
 #(define practice-counter 0)
+#(define practice-measure-port (open-output-file "measures.tsv"))
 #(define (practice-beats moment)
-   (* 4.0 (/ (ly:moment-main-numerator moment)
-             (ly:moment-main-denominator moment))))
+   (if (number? moment) (* 4.0 moment)
+     (* 4.0 (/ (ly:moment-main-numerator moment)
+               (ly:moment-main-denominator moment)))))
+% Read Timing after its translators have advanced, including silent bars,
+% pickups and changes of meter. Keep the final moment to end the last bar.
+#(define practice-timing-engraver
+   (lambda (context)
+     (make-engraver
+       ((stop-translation-timestep engraver)
+         (let* ((moment (ly:context-current-moment context))
+                (position (ly:context-property context 'measurePosition ZERO-MOMENT))
+                (length (ly:context-property context 'measureLength (ly:make-moment 1)))
+                (meter (ly:context-property context 'timeSignatureFraction '(4 . 4))))
+           (format practice-measure-port "~a\t~a\t~a\t~a\t~a\t~a\t~a\n"
+             (practice-beats moment) (practice-beats position)
+             (practice-beats length) (ly:context-property context 'currentBarNumber 1)
+             (car meter) (cdr meter) (if (ly:context-property context 'timing #t) 1 0))
+           (force-output practice-measure-port))))))
 #(define practice-engraver
    (lambda (context)
      (let ((pending '()) (tied #f))
