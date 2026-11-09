@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, CircleHelp, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
 import { Player } from './audio';
+import { buildBarHighlights } from './bar-highlight';
 import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, validateScore, type Score } from './score';
 
 const DEFAULT_SCORE = `${import.meta.env.BASE_URL}scores/julia-florida.sotto.json`;
@@ -32,6 +33,8 @@ export default function App() {
   const scrollRoot = useRef<HTMLDivElement>(null);
   const noteElements = useRef(new Map<string, SVGElement>());
   const previousActive = useRef(new Set<string>());
+  const barElements = useRef(new Map<number, SVGRectElement>());
+  const previousBar = useRef<SVGRectElement | null>(null);
   const lastFollowed = useRef(-1);
   const performance = useMemo(() => score ? makePerformance(score, repeats) : null, [score, repeats]);
   const pages = useMemo(() => score?.pages.map(cleanSvg) ?? [], [score]);
@@ -99,6 +102,8 @@ export default function App() {
       element.setAttribute('aria-label', `Seek to ${voice?.name.toLowerCase() ?? 'score'} note`);
     });
     noteElements.current = elements; previousActive.current.clear();
+    barElements.current = score && scoreRoot.current ? buildBarHighlights(scoreRoot.current, score) : new Map();
+    previousBar.current = null;
   }, [pages, score]);
 
   useEffect(() => {
@@ -109,8 +114,14 @@ export default function App() {
     for (const id of previousActive.current) if (!ids.has(id)) noteElements.current.get(id)?.classList.remove('is-active');
     for (const id of ids) noteElements.current.get(id)?.classList.add('is-active');
     previousActive.current = ids;
+    const currentBar = measure ? barElements.current.get(measure.written) : undefined;
+    if (currentBar !== previousBar.current) {
+      previousBar.current?.classList.remove('is-current');
+      currentBar?.classList.add('is-current');
+      previousBar.current = currentBar ?? null;
+    }
     if (!follow || !measure || measure.index === lastFollowed.current) return;
-    const anchor = active.map(note => noteElements.current.get(note.id)).find(Boolean);
+    const anchor = currentBar ?? active.map(note => noteElements.current.get(note.id)).find(Boolean);
     const scroller = scrollRoot.current;
     if (anchor && scroller) {
       const bounds = anchor.getBoundingClientRect();

@@ -23,6 +23,12 @@ try {
   await page.goto(process.env.BASE_URL || (pages ? 'http://localhost:4174/sotto/' : production ? 'http://localhost:4173/' : 'http://localhost:5173/'));
   await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
   assert.equal(await page.locator('.score-note').count(), 500);
+  assert.equal(await page.locator('.current-bar-highlight').count(), 61, 'Every written measure has a highlight rectangle');
+  assert.equal(await page.locator('.current-bar-highlight.is-current').count(), 1);
+  assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), '0');
+  const barBox = await page.locator('.current-bar-highlight.is-current').boundingBox();
+  const noteBox = await page.locator('.score-note.is-active').first().boundingBox();
+  assert.ok(barBox.width > noteBox.width * 5 && barBox.height > noteBox.height * 5, 'The current bar highlight covers the whole phrase area, not just one note');
   assert.equal(await page.locator('.practice-main h1').count(), 0, 'Piece details no longer take space above the score');
   assert.equal(await page.locator('.app-header').getByRole('button', { name: 'Save score', exact: true }).count(), 1);
   await page.screenshot({ path: 'test-results/desktop.png' });
@@ -57,6 +63,7 @@ try {
   assert.equal(await page.locator('.score-note.voice-muted').count(), 0);
   await page.getByRole('button', { name: 'Next measure', exact: true }).click();
   assert.equal(await page.locator('.measure-readout strong').innerText(), '2 / 59');
+  assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), '1');
   await page.getByRole('button', { name: 'Previous measure', exact: true }).click();
   await page.getByRole('button', { name: 'Faster', exact: true }).click();
   assert.equal(await page.getByRole('slider', { name: 'Tempo', exact: true }).inputValue(), '45');
@@ -78,6 +85,9 @@ try {
   const noteId = await page.evaluate(async () => (await (await fetch(new URL('scores/julia-florida.sotto.json', location.href))).json()).notes.find(note => note.bar === 3 && note.grace === 0).id);
   await page.locator(`#${noteId}`).click({ force: true });
   assert.equal(await page.locator('.measure-readout strong').innerText(), '3 / 59');
+  assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), '2');
+  await page.getByRole('slider', { name: 'Playback position', exact: true }).fill('96');
+  assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), '20', 'Repeated playback highlights the original written bar');
   await page.locator('input[type=file]').setInputFiles({ name: 'bad.sotto.json', mimeType: 'application/json', buffer: Buffer.from('{"format":"midi"}') });
   await page.getByRole('alert').waitFor();
   await page.getByRole('button', { name: 'Dismiss error', exact: true }).click();

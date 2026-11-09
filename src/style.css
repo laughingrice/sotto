@@ -20,3 +20,6 @@
 }
 @media(max-width:650px){.header-actions{gap:8px}.app-header{gap:9px}.header-actions .quiet-button{padding:8px}.header-actions .quiet-button>span{display:none}.header-actions .controls-toggle>span{display:inline;font-size:9px}.header-actions .controls-toggle{gap:5px}.selected-piece h1{font-size:16px}.score-tools .tool-divider{display:none}.controls-collapsed .score-toolbar{padding:0 8px}.controls-collapsed .compact-piece-title{border-left:0;padding-left:0;margin-left:0;max-width:110px}.controls-collapsed .status-dot{display:none}.compact-play{width:26px;height:26px}.controls-collapsed .follow-control{margin-right:0;font-size:8px}.controls-collapsed .score-tools{gap:1px}.controls-collapsed .zoom-label{width:27px}.controls-collapsed .score-footnote{padding:7px 10px}.player{padding-bottom:calc(10px + env(safe-area-inset-bottom))}}
 @media(max-width:380px){.app-header{padding:0 12px}.brand{font-size:27px;gap:6px}.header-actions{gap:5px}.header-actions .controls-toggle>span{display:none}.selected-piece-details{gap:3px 7px}.selected-piece .piece-subtitle{font-size:8px}}
+
+/* A full-measure wash stays visible while individual notes change within it. */
+.current-bar-highlight{display:none;fill:#d7e8bf;fill-opacity:.58;stroke:#739650;stroke-width:1.2px;vector-effect:non-scaling-stroke;pointer-events:none}.current-bar-highlight.is-current{display:inline}

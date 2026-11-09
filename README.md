@@ -47,7 +47,7 @@ The production build includes a service worker that caches the app, built-in sco
 ## Included
 
 - Actual LilyPond SVG pages with individual notehead IDs and voice membership.
-- Playback with simultaneous active-note highlighting and automatic scrolling.
+- Playback with a full-bar highlight, simultaneous active-note highlighting, and automatic scrolling. Bar highlights also work with existing score bundles.
 - Click-to-seek, pause/resume, restart, previous/next bar, and scrubber.
 - Tempo control measured in dotted-quarter beats for Julia Florida.
 - Piece details in the settings panel; Open and Save score together in the top bar.
@@ -86,6 +86,23 @@ python3 scripts/export_score.py my-score.ly \
 ```
 
 Then open the resulting bundle in the app. Use `--transpose -12` for guitar written in the conventional treble octave, `--beats-per-bar 3 --beat-unit 1.5` for a 6/8 score with dotted-quarter tempo. These flags describe playback; they do not change engraving.
+
+### Where scores are stored, and what “Open” means
+
+The example is committed to this repository in two forms:
+
+- `scores/julia-florida.ly`: editable notation source.
+- `public/scores/julia-florida.sotto.json`: rendered SVG pages, note timings, voices, metadata, and playback sequence. This is what the deployed app downloads.
+
+The browser caches the built-in bundle for offline use; the cache is not the original or only copy. **Open score** reads a `.sotto.json` file locally for the current session. It does not upload anything to GitHub or to a server, and a page reload returns to the built-in example. Keep your bundle file to reopen it later; **Save score** downloads a copy.
+
+For a new piece:
+
+1. Prepare a LilyPond file, or convert MusicXML using `musicxml2ly`. PDF transcription/recognition remains a separate step.
+2. Run the exporter above, choosing the correct meter, tempo pulse, and pitch transposition. For ordinary 4/4 the defaults are `--beats-per-bar 4 --beat-unit 1`; for guitar add `--transpose -12`.
+3. Transfer the generated bundle to the device (for example through Files/AirDrop), then choose **Open score** in Sotto. No deployment is needed for this.
+
+To publish a different built-in score for everyone, commit its `.ly` source under `scores/` and its bundle under `public/scores/`, then change `DEFAULT_SCORE` in `src/App.tsx` to that bundle's URL, using `import.meta.env.BASE_URL` as the prefix. Push to `main`; GitHub Actions rebuilds and deploys. Simply adding a file to the repo does not list it in the app: a multi-score library is not implemented yet.
 
 The exporter currently requires a single score, an explicit `\layout { }` block, named voices for meaningful part controls, and a constant meter. Julia Florida's repeat/jump sequence is configured explicitly. Other scores currently play in written order; arbitrary repeat navigation, tempo maps, changing meters, and transposing-instrument metadata need a more general importer. Export only LilyPond files you trust, since the compiler executes Scheme.
 
