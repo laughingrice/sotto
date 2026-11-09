@@ -101,12 +101,30 @@ try {
     assert.equal(geometry.length, score.bars.length, 'Every Capricho bar has a rectangle');
     assert.ok(geometry.every(bar => bar.contains), 'Highlights contain only their actual measure notes, including first rows');
     assert.ok(geometry.every(bar => bar.height < 30), 'No highlight bridges neighboring systems');
-    for (let index = 0; index < 9; index++) {
+    let expectedPosition = 0;
+    for (let index = 0; index < Math.min(9, score.sequence.length); index++) {
+      const written = score.sequence[index];
       const position = Number(await page.getByRole('slider', { name: 'Playback position', exact: true }).inputValue());
-      assert.equal(position, score.bars[index].start, `Bar ${index + 1} uses its exported start`);
-      assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), String(index));
+      assert.equal(position, expectedPosition, `Playback bar ${index + 1} uses its cumulative start`);
+      assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), String(written));
+      expectedPosition += score.bars[written].duration;
       await page.getByRole('button', { name: 'Next measure', exact: true }).click();
     }
+    const duration = score.sequence.reduce((sum, written) => sum + score.bars[written].duration, 0);
+    assert.equal(Number(await page.getByRole('slider', { name: 'Playback position', exact: true }).getAttribute('max')), duration);
+    let position = 0;
+    for (let index = 0; index < score.sequence.length; index++) {
+      const written = score.sequence[index];
+      if (index && written !== score.sequence[index - 1] + 1) {
+        await page.getByRole('slider', { name: 'Playback position', exact: true }).fill(String(position));
+        assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), String(written), 'Repeat and D.S./coda jumps highlight the original printed bar');
+      }
+      position += score.bars[written].duration;
+    }
+    await page.getByRole('checkbox', { name: 'Follow repeats & jumps', exact: true }).uncheck();
+    assert.equal(await page.getByRole('combobox', { name: 'Loop start measure' }).locator('option').count(), score.bars.length);
+    await page.getByRole('checkbox', { name: 'Follow repeats & jumps', exact: true }).check();
+    assert.equal(await page.getByRole('combobox', { name: 'Loop start measure' }).locator('option').count(), score.sequence.length);
     await page.getByRole('button', { name: 'Sound and metronome settings', exact: true }).click();
     assert.equal(await page.getByLabel('Playback octave', { exact: true }).inputValue(), '0');
     await page.getByLabel('Playback octave', { exact: true }).selectOption('12');

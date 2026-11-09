@@ -78,9 +78,9 @@ try {
   assert.ok(Number(await page.getByRole('slider', { name: 'Playback position', exact: true }).inputValue()) < 3, 'Single-bar loop wraps');
   await page.getByRole('button', { name: 'Pause playback', exact: true }).click();
   await page.getByRole('switch', { name: 'Practice loop' }).click();
-  await page.getByRole('checkbox', { name: 'Follow repeats & D.C.' }).uncheck();
+  await page.getByRole('checkbox', { name: 'Follow repeats & jumps' }).uncheck();
   assert.equal(await page.getByRole('combobox', { name: 'Loop start measure' }).locator('option').count(), 61);
-  await page.getByRole('checkbox', { name: 'Follow repeats & D.C.' }).check();
+  await page.getByRole('checkbox', { name: 'Follow repeats & jumps' }).check();
   assert.equal(await page.getByRole('combobox', { name: 'Loop start measure' }).locator('option').count(), 88);
   const noteId = await page.evaluate(async () => (await (await fetch(new URL('scores/julia-florida.sotto.json', location.href))).json()).notes.find(note => note.bar === 3 && note.grace === 0).id);
   await page.locator(`#${noteId}`).click({ force: true });

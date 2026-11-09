@@ -128,7 +128,7 @@ The editable example is `scores/julia-florida.ly`. After editing it:
 npm run export:score
 ```
 
-This regenerates `public/scores/julia-florida.sotto.json`. The exporter installs a custom engraver that writes note IDs, durations, voices, ties, score positions and measure numbers while LilyPond renders SVG. The player expands Julia Florida's repeat/coda order separately; repeated performances reference the same notehead IDs.
+This regenerates `public/scores/julia-florida.sotto.json`. The exporter installs a custom engraver that writes note IDs, durations, voices, ties, score positions and measure numbers while LilyPond renders SVG. Repeated performances reference the same notehead IDs. For new pieces, the exporter unfolds LilyPond’s structured repeats and uses the source locations of notes/rests to map each playback measure back to its printed measure.
 
 ### Where scores are stored, and what “Open” means
 
@@ -141,7 +141,20 @@ The browser caches the built-in bundle for offline use; the cache is not the ori
 
 To publish a different built-in score for everyone, commit its `.ly` source under `scores/` and its bundle under `public/scores/`, then change `DEFAULT_SCORE` in `src/App.tsx` to that bundle's URL, using `import.meta.env.BASE_URL` as the prefix. Push to `main`; GitHub Actions rebuilds and deploys. Simply adding a file to the repo does not list it in the app: the personal Library lists files/folders you choose, rather than scanning the deployed repository.
 
-The exporter requires a single engraved score, an explicit `\layout { }` block, and named voices for meaningful part controls. It reads actual measure timing from LilyPond, including changing meters, silent measures, pickups, and a final cadenza. Julia Florida's repeat/jump sequence is configured explicitly. Other scores currently play in written order; arbitrary repeat navigation, tempo maps, and `\transposition` instrument metadata need a more general importer. Export only LilyPond files you trust, since the compiler executes Scheme.
+The exporter requires a single engraved score, an explicit `\layout { }` block, and named voices for meaningful part controls. It reads actual measure timing from LilyPond, including changing meters, silent measures, pickups, and a final cadenza. The exporter unfolds structured repeats (including nested repeats and alternate endings). If there is a MIDI score, it uses that score’s music for playback order; otherwise it unfolds the engraved score. Printed and MIDI versions must share named voices and underlying measure definitions so source locations can link them reliably. Ambiguous mappings fail explicitly. Tempo maps and `\transposition` instrument metadata still need a more general importer. Julia Florida retains its existing explicit navigation map. Export only LilyPond files you trust, since the compiler executes Scheme.
+
+### Repeats, D.S. and coda
+
+Use LilyPond’s structured repeats (`\repeat volta` and `\alternative`) for repeated sections. The exporter unfolds them automatically. For D.S./D.C./coda navigation, encode the return in the music performed by LilyPond; a text-only `\markup` does not define a jump. A separate MIDI score is supported, with music assembled from the **same measure variables and named voices** as the printed score:
+
+```lilypond
+printedMusic = { \intro \mainSection \development \codaMusic }
+playbackMusic = { \intro \mainSection \development \returnToSegno \codaMusic }
+\score { \new Staff { \printedMusic } \layout { } }
+\score { \unfoldRepeats \new Staff { \playbackMusic } \midi { } }
+```
+
+The named voices live inside those shared section/measure variables. `returnToSegno` should reuse the intended original measures and stop at the intended To Coda point; do not re-enter a separate copy of their notes. Capricho Árabe already defines this explicitly: its 45 written measures yield 73 playback measures, including the repeated introduction, both alternate endings, D.S. return and coda. Re-export older bundles and reopen the regenerated file. Keep **Follow repeats & jumps** checked to use that sequence; unchecking it plays each written measure once. The sequence controls playback, highlighting, looping and bar navigation together.
 
 ## Library without duplicate score files
 
@@ -191,7 +204,7 @@ Next work, in practical order:
 
 1. **Library refinements:** automatic/shared index synchronization and optional direct cloud integration; the initial reference-based library and portable favorites index are available now.
 2. **SoundFonts and per-voice instruments:** load an SF2/SF3 font locally and select its presets; allow violin melody over guitar accompaniment. Retain the bundled recordings and lightweight synths.
-3. **More general import:** derive tempo, instrument transposition and repeat navigation automatically, support tempo changes, and simplify preparation. Measure timing and meter changes are already derived during export. Julia Florida's repeat/jump sequence is currently configured explicitly; other exports play in written order.
+3. **More general import:** derive tempo and instrument transposition automatically, support tempo changes, and simplify preparation. Measure timing, meter changes, structured repeats and explicit LilyPond MIDI playback order are already derived during export; Julia Florida retains its explicit jump map.
 4. **Microphone rhythm feedback:** calibrate input/output latency, detect note attacks, and compare them to a fixed-tempo reference. Validate on actual iPad/Safari hardware.
 5. **Pitch feedback and following:** start with single-note melody/bass practice, then overlapping guitar notes/chords and following a freely varying tempo.
 

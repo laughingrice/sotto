@@ -305,7 +305,7 @@ export default function App() {
           <div className="section-heading"><h2><Repeat2 size={17}/> Practice loop</h2><button className={`switch ${loop ? 'on' : ''}`} role="switch" aria-checked={loop} aria-label="Practice loop" onClick={() => setLoop(current => !current)}><span/></button></div>
           <p className="section-description">Stay with a phrase until it feels right.</p>
           <div className="loop-range"><label>FROM<select aria-label="Loop start measure" value={loopStart} onChange={event => { const next = Number(event.target.value); setLoopStart(next); if (next > loopEnd) setLoopEnd(next); }}>{performance?.measures.map(m => <option key={m.index} value={m.index}>Bar {labelFor(m.index)}</option>)}</select><ChevronDown size={13}/></label><span className="loop-to">→</span><label>TO<select aria-label="Loop end measure" value={loopEnd} onChange={event => { const next = Number(event.target.value); setLoopEnd(next); if (next < loopStart) setLoopStart(next); }}>{performance?.measures.map(m => <option key={m.index} value={m.index}>Bar {labelFor(m.index)}</option>)}</select><ChevronDown size={13}/></label></div>
-          <label className="checkbox-row"><input type="checkbox" checked={repeats} onChange={event => setRepeats(event.target.checked)}/><span>Follow repeats &amp; D.C.</span></label>
+          <label className="checkbox-row"><input type="checkbox" checked={repeats} onChange={event => setRepeats(event.target.checked)}/><span>Follow repeats &amp; jumps</span></label>
         </div>
 
         <div className="listening-card"><div className="listening-icon"><Mic size={18}/></div><div><strong>A listening ear</strong><p>Rhythm and pitch feedback.<br/>Coming in a later version.</p></div></div>
