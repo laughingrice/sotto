@@ -1,0 +1,56 @@
+import { chromium } from '@playwright/test';
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+
+const chromeArgument = process.argv.indexOf('--chrome');
+const chromePath = process.env.CHROME_PATH || (chromeArgument >= 0 ? process.argv[chromeArgument + 1] : undefined);
+const browser = await chromium.launch({ headless: true, ...(chromePath ? { executablePath: chromePath } : {}) });
+const page = await browser.newPage({ viewport: { width: 2560, height: 1440 } });
+page.setDefaultTimeout(10000);
+const errors = [];
+page.on('pageerror', error => errors.push(error.message));
+await mkdir('test-results', { recursive: true });
+try {
+  await page.goto(process.env.BASE_URL || 'http://localhost:4174/sotto/');
+  await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
+  const initialFrame = await page.locator('.score-frame').boundingBox();
+  assert.ok(initialFrame.width > 2100, `Score frame should fill a wide viewport; got ${initialFrame.width}px`);
+  await page.getByRole('button', { name: 'Hide controls', exact: true }).click();
+  assert.ok((await page.locator('.score-frame').boundingBox()).width > 2500, 'Focused score fills the full ultrawide viewport');
+  const originalSvg = await page.locator('.score-page svg').first().boundingBox();
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  const zoomedSvg = await page.locator('.score-page svg').first().boundingBox();
+  assert.ok(zoomedSvg.width > originalSvg.width * 1.18, 'Zoom increases actual notation size');
+  assert.ok(await page.locator('.score-scroller').evaluate(element => element.scrollWidth > element.clientWidth), 'Zoomed pages can be panned horizontally');
+  const firstNote = await page.locator('.score-note').first().boundingBox();
+  const lastNoteId = await page.evaluate(async () => (await (await fetch(new URL('scores/julia-florida.sotto.json', location.href))).json()).notes.find(note => note.bar === 4 && note.grace === 0).id);
+  await page.getByRole('button', { name: 'Show controls', exact: true }).click();
+  await page.getByRole('slider', { name: 'Playback position', exact: true }).fill('9');
+  await page.waitForTimeout(450);
+  const visibleBar = await page.locator('.current-bar-highlight.is-current').boundingBox();
+  const viewport = await page.locator('.score-scroller').boundingBox();
+  assert.ok(visibleBar.x >= viewport.x - 2 && visibleBar.x + visibleBar.width <= viewport.x + viewport.width + 2, 'Follow score brings a zoomed bar fully into view horizontally');
+  assert.ok(await page.locator('.score-scroller').evaluate(element => element.scrollLeft > 0), 'Following a bar at the right pans the enlarged score');
+  assert.equal(await page.locator(`#${lastNoteId}`).count(), 1);
+  assert.ok(firstNote.width > 0);
+  await page.screenshot({ path: 'test-results/ultrawide-zoom.png' });
+  await page.getByRole('button', { name: 'Fit score to width', exact: true }).click();
+  assert.equal(await page.locator('.zoom-label').innerText(), '100%');
+  assert.ok(await page.locator('.score-scroller').evaluate(element => element.scrollWidth <= element.clientWidth + 1 && element.scrollLeft === 0), 'Fit restores full page width with no cropping');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Hide controls', exact: true }).click();
+  const phoneSvg = await page.locator('.score-page svg').first().boundingBox();
+  for (let index = 0; index < 5; index++) await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  assert.ok((await page.locator('.score-page svg').first().boundingBox()).width > phoneSvg.width * 1.4, 'Phone zoom enlarges the notation too');
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Enlargement stays in the score viewport, not the whole page');
+  await page.locator('.score-scroller').evaluate(element => { element.scrollLeft = element.scrollWidth; });
+  assert.ok(await page.locator('.score-scroller').evaluate(element => element.scrollLeft > 0), 'The right side of zoomed notation remains reachable');
+  await page.getByRole('button', { name: 'Fit score to width', exact: true }).click();
+  await page.screenshot({ path: 'test-results/phone-fit.png' });
+  assert.deepEqual(errors, []);
+  console.log('PASS: ultrawide layout, actual SVG zoom, horizontal following/panning, fit width, and phone layout.');
+} catch (error) {
+  await page.screenshot({ path: 'test-results/layout-failure.png' });
+  throw error;
+} finally { await browser.close(); }

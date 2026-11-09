@@ -52,6 +52,7 @@ The production build includes a service worker that caches the app, built-in sco
 - Tempo control measured in dotted-quarter beats for Julia Florida.
 - Piece details in the settings panel; Open and Save score together in the top bar.
 - Hide/show all practice controls to give the score the full viewport, with a compact play/pause button. The setting is remembered and playback continues while controls are hidden.
+- The score panel fills the available browser width. Zoom ranges from 50–250%; click the percentage to fit the page to the available width again. Enlarged pages can be panned horizontally, and Follow score keeps the current bar in view in both directions.
 - Voice mute, solo, and independent volume.
 - Phrase loops and metronome.
 - Both alternate endings, repeated section, and D.C. al Coda for the example.
@@ -114,6 +115,8 @@ npm run build
 node scripts/browser-test.mjs
 # Against a running production preview, including offline reload/playback:
 node scripts/browser-test.mjs --production
+# Ultrawide sizing, zoom, panning, and fit-to-width regression checks:
+node scripts/layout-test.mjs
 ```
 
 The browser checks use Playwright Chromium (`npx playwright install chromium`); optionally set `CHROME_PATH` to an existing Chromium executable and `BASE_URL` to a preview/deployed URL. `node scripts/browser-test.mjs --pages` tests the `/sotto/` preview including offline playback. They exercise real audio-buffer scheduling, note highlighting, seek/pause, mute/solo, tempo, loop wrapping, repeats, invalid imports, SVG sanitization and responsive layouts. Captures go in `test-results/`.

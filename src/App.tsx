@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, CircleHelp, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
 import { Player } from './audio';
 import { buildBarHighlights } from './bar-highlight';
@@ -31,6 +31,7 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const scoreRoot = useRef<HTMLDivElement>(null);
   const scrollRoot = useRef<HTMLDivElement>(null);
+  const zoomAnchor = useRef<{ x: number; y: number } | null>(null);
   const noteElements = useRef(new Map<string, SVGElement>());
   const previousActive = useRef(new Set<string>());
   const barElements = useRef(new Map<number, SVGRectElement>());
@@ -45,6 +46,37 @@ export default function App() {
     try { localStorage.setItem('sotto.controlsCollapsed', String(controlsCollapsed)); } catch { /* Storage can be unavailable in private browsing. */ }
     lastFollowed.current = -1;
   }, [controlsCollapsed]);
+
+  const changeZoom = (next: number) => {
+    const scroller = scrollRoot.current;
+    const sheet = scoreRoot.current?.getBoundingClientRect();
+    if (scroller && sheet?.width && sheet.height) {
+      const viewport = scroller.getBoundingClientRect();
+      zoomAnchor.current = {
+        x: (viewport.left + scroller.clientWidth / 2 - sheet.left) / sheet.width,
+        y: (viewport.top + scroller.clientHeight / 2 - sheet.top) / sheet.height,
+      };
+    }
+    const value = Math.max(50, Math.min(250, next));
+    if (value <= 100 && scroller) scroller.scrollLeft = 0;
+    if (playing) lastFollowed.current = -1;
+    setZoom(value);
+  };
+
+  useLayoutEffect(() => {
+    const anchor = zoomAnchor.current;
+    const scroller = scrollRoot.current;
+    const sheet = scoreRoot.current?.getBoundingClientRect();
+    if (!anchor || !scroller || !sheet) return;
+    const viewport = scroller.getBoundingClientRect();
+    // Keep the part being read in view while changing the actual SVG size.
+    scroller.scrollTo({
+      left: zoom <= 100 ? 0 : scroller.scrollLeft + sheet.left + anchor.x * sheet.width - viewport.left - scroller.clientWidth / 2,
+      top: scroller.scrollTop + sheet.top + anchor.y * sheet.height - viewport.top - scroller.clientHeight / 2,
+      behavior: 'instant',
+    });
+    zoomAnchor.current = null;
+  }, [zoom]);
 
   const openScore = useCallback((value: unknown) => {
     validateScore(value);
@@ -126,12 +158,18 @@ export default function App() {
     if (anchor && scroller) {
       const bounds = anchor.getBoundingClientRect();
       const viewport = scroller.getBoundingClientRect();
-      if (bounds.top < viewport.top + 80 || bounds.bottom > viewport.bottom - 90) {
-        scroller.scrollTo({ top: scroller.scrollTop + bounds.top - viewport.top - viewport.height * .35, behavior: 'smooth' });
+      const outsideY = bounds.top < viewport.top + 50 || bounds.bottom > viewport.bottom - 50;
+      const outsideX = bounds.left < viewport.left + 15 || bounds.right > viewport.right - 15;
+      if (outsideY || outsideX) {
+        scroller.scrollTo({
+          top: outsideY ? scroller.scrollTop + bounds.top - viewport.top - viewport.height * .25 : scroller.scrollTop,
+          left: outsideX ? scroller.scrollLeft + bounds.left - viewport.left - Math.max(15, (scroller.clientWidth - bounds.width) / 2) : scroller.scrollLeft,
+          behavior: 'smooth',
+        });
       }
       lastFollowed.current = measure.index;
     }
-  }, [active, effectivelyMuted, follow, measure]);
+  }, [active, effectivelyMuted, follow, measure, zoom, controlsCollapsed]);
 
   const togglePlay = useCallback(async () => {
     if (starting || !performance) return;
@@ -234,7 +272,7 @@ export default function App() {
         {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><X size={17}/></button></div>}
 
         <section className="score-frame" aria-label="Interactive sheet music">
-          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools"><label className="follow-control"><input type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 75} onClick={() => setZoom(value => Math.max(75, value - 10))}><Minus size={15}/></button><span className="zoom-label">{zoom}%</span><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 150} onClick={() => setZoom(value => Math.min(150, value + 10))}><Plus size={15}/></button></div></div>
+          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools"><label className="follow-control"><input type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 50} onClick={() => changeZoom(zoom - 10)}><Minus size={15}/></button><button className="zoom-label" aria-label="Fit score to width" title="Fit score to width (100%)" onClick={() => changeZoom(100)}>{zoom}%</button><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 250} onClick={() => changeZoom(zoom + 10)}><Plus size={15}/></button></div></div>
           <div className="score-scroller" ref={scrollRoot}><div className="score-pages" ref={scoreRoot} style={{ '--score-zoom': zoom / 100 } as React.CSSProperties} onClick={scoreClick}>
             {!score && <div className="loading-score"><Music2 size={32}/><p>Putting your music on the stand…</p></div>}
             {pages.map((page, index) => <div key={`${score?.title}-${index}`} className="score-page" aria-label={`Score page ${index + 1}`}><span className="page-number">{String(index + 1).padStart(2, '0')}</span><div dangerouslySetInnerHTML={{ __html: page }}/></div>)}
