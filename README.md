@@ -1,6 +1,6 @@
 # Sotto v0.1
 
-A local web practice player, starting with Julia Florida. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The built-in instruments and metronome work offline.
+A local web practice player, starting with Julia Florida. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The bundled instrument recordings, synthesized timbres, and metronome work offline.
 
 **New piece? Start with [Prepare a new score](#prepare-a-new-score).**
 
@@ -59,7 +59,7 @@ The production build includes a service worker that caches the app, built-in sco
 - Phrase loops and an accented metronome with beat/subdivision choice and independent click volume. It can click while the score is paused or follow playback.
 - Both alternate endings, repeated section, and D.C. al Coda for the example.
 - Guitar playback one octave below the written notation, including low D2.
-- Instrument selection: guitar/plucked string, piano, marimba, organ, and flute. These are synthesized timbres generated in the browser, not recorded instruments or SoundFont presets.
+- Instrument selection: recorded nylon guitar, piano and violin, plus synthesized marimba, organ and flute. The recordings are bundled with the app, balanced in level, and cached for offline use.
 - Save/open portable `.sotto.json` bundles. Imported SVG is sanitized before rendering.
 
 Keyboard: **Space** play/pause, **←/→** previous/next bar, **R** restart, **M** metronome, **C** hide/show controls. Keyboard shortcuts do not interfere with focused controls.
@@ -143,12 +143,12 @@ The exporter currently requires a single score, an explicit `\layout { }` block,
 
 Open **Sound and metronome settings** (the sliders icon above the score) to select an instrument or configure the click.
 
-- The five built-in instrument timbres work offline: **guitar/plucked string, piano, marimba, organ, flute**. They are synthesized practice sounds, not recordings. Instrument choice is remembered on this browser and changes all voices together; mute/solo/volume remain independent.
+- The six instruments work offline: **recorded nylon guitar, piano and violin**, plus **synthesized marimba, organ and flute**. Instrument choice is remembered on this browser and changes all voices together; mute/solo/volume remain independent. Switching waits for recordings to finish loading and keeps the previous sound available until then. The pitches stay unchanged; notes outside a recording bank’s range use pitch-shifted samples.
 - Toggle the **Metronome** button, or use **M**. It starts even while the score is paused; while the score plays, clicks are scheduled on the same audio clock as the notes. Pausing the score returns to standalone clicks. Turning the metronome off stops them.
 - The first click of each bar is stronger/higher. **Beat** gives two dotted-quarter clicks per bar in 6/8; **Subdivision** gives six eighth-note clicks. In 4/4, these give four/eight clicks respectively.
 - **Click volume** is independent of voice volumes and muting. A visible pulse follows the click.
 
-The underlying Web Audio/Tone.js player is not restricted to guitar: sampled instruments can be loaded with a sampler. There is currently **no `.sf2`/`.sf3` SoundFont loader or SoundFont selection menu**. Those files require a SoundFont engine rather than just changing the synthesizer preset. A General MIDI SoundFont would allow its available instrument programs (typically the 128 GM programs and percussion), subject to what the font includes. Candidate engine: [SpessaSynth](https://github.com/spessasus/spessasynth_lib). Imported SoundFonts would remain on-device; network sample libraries would need explicit download/cache behavior.
+Nylon guitar, piano and violin now use Tone.js samplers with actual recordings, rather than generated waveforms. There is currently **no `.sf2`/`.sf3` SoundFont loader or SoundFont selection menu**. Those files require a SoundFont engine rather than just changing the synthesizer preset. A General MIDI SoundFont would allow its available instrument programs (typically the 128 GM programs and percussion), subject to what the font includes. Candidate engine: [SpessaSynth](https://github.com/spessasus/spessasynth_lib). Imported SoundFonts would remain on-device; network sample libraries would need explicit download/cache behavior.
 
 ## Validation
 
@@ -171,9 +171,21 @@ The browser checks use Playwright Chromium (`npx playwright install chromium`); 
 Next work, in practical order:
 
 1. **Persistent score library:** keep imported pieces across reloads, choose between scores, and manage offline copies.
-2. **Sampled instruments / SoundFonts:** load an SF2/SF3 font locally, select its presets, then allow different sounds per voice. Keep the lightweight built-in synth as the offline fallback.
+2. **SoundFonts and per-voice instruments:** load an SF2/SF3 font locally and select its presets; allow violin melody over guitar accompaniment. Retain the bundled recordings and lightweight synths.
 3. **More general import:** derive meter, tempo, transposition and repeat navigation automatically, support tempo/meter changes, and simplify preparation. Julia Florida's repeat/jump sequence is currently configured explicitly; other exports play in written order.
 4. **Microphone rhythm feedback:** calibrate input/output latency, detect note attacks, and compare them to a fixed-tempo reference. Validate on actual iPad/Safari hardware.
 5. **Pitch feedback and following:** start with single-note melody/bass practice, then overlapping guitar notes/chords and following a freely varying tempo.
 
 Current limits: constant meter and fixed tempo for imported scores; grace notes use a short fixed interpretation; harmonic-specific sounding pitches and expressive tempo changes are not modelled; notation zooms/scrolls but does not reflow; direct browser MusicXML/LilyPond compilation, raw MIDI import, PDF recognition, and microphone assessment are not implemented. Export only LilyPond files you trust, since the compiler executes Scheme.
+
+## Recording credits and maintenance
+
+The 29 MP3 recordings (about 6.4 MB total) come from [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments), assembled/edited by Nicholaus P. Brosowsky and distributed under **CC BY 3.0**. Upstream credits quartertone/Freesound for nylon guitar and VSCO/Versilian Studios for piano and violin. Full attribution, source revision, original notices, and file hashes are under [public/samples](public/samples/ATTRIBUTION.md); credits are also linked from the sound settings. The app serves these files from its own deployment, with no third-party sample requests during playback.
+
+Refresh the pinned, unchanged source recordings only when needed:
+
+```sh
+python3 scripts/fetch-samples.py
+```
+
+A normal checkout/build already includes them. The service worker precaches all three banks so an instrument first selected offline can still load. Runtime gain matching balances the sampled instruments; attack/release envelopes and pitch interpolation are applied during playback.

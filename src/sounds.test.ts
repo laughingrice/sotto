@@ -22,8 +22,8 @@ describe('metronome pulse and accents', () => {
   });
 });
 describe('synthesized timbres', () => {
-  it('offers five distinct validated choices and rejects arbitrary preferences', () => {
-    expect(INSTRUMENTS).toHaveLength(5);
+  it('offers six validated choices, including recorded violin and rejects arbitrary preferences', () => {
+    expect(INSTRUMENTS).toHaveLength(6);
     for (const instrument of INSTRUMENTS) expect(isInstrument(instrument.id)).toBe(true);
     expect(isInstrument('unknown-font')).toBe(false);
     expect(isInstrument(null)).toBe(false);

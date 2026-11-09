@@ -1,6 +1,7 @@
 export const INSTRUMENTS = [
-  { id: 'guitar', name: 'Guitar · plucked string' },
-  { id: 'piano', name: 'Piano' },
+  { id: 'guitar', name: 'Nylon guitar · recorded' },
+  { id: 'piano', name: 'Piano · recorded' },
+  { id: 'violin', name: 'Violin · recorded' },
   { id: 'marimba', name: 'Marimba' },
   { id: 'organ', name: 'Organ' },
   { id: 'flute', name: 'Flute' },

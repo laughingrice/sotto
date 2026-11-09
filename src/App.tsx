@@ -24,6 +24,7 @@ export default function App() {
   const [clickPulse, setClickPulse] = useState(false);
   const [clickAccent, setClickAccent] = useState('downbeat');
   const [soundSettings, setSoundSettings] = useState(false);
+  const [soundLoading, setSoundLoading] = useState(false);
   const [instrument, setInstrument] = useState<InstrumentId>(() => {
     try { const saved = localStorage.getItem('sotto.instrument'); return isInstrument(saved) ? saved : 'guitar'; } catch { return 'guitar'; }
   });
@@ -44,6 +45,7 @@ export default function App() {
   const scrollRoot = useRef<HTMLDivElement>(null);
   const zoomAnchor = useRef<{ x: number; y: number } | null>(null);
   const noteElements = useRef(new Map<string, SVGElement>());
+  const readyInstrument = useRef(instrument);
   const previousActive = useRef(new Set<string>());
   const barElements = useRef(new Map<number, SVGRectElement>());
   const previousBar = useRef<SVGRectElement | null>(null);
@@ -114,8 +116,23 @@ export default function App() {
   }, [score, performance, player]);
   useEffect(() => player.tempo(bpm), [bpm, player, performance]);
   useEffect(() => {
-    player.setInstrument(instrument);
-    try { localStorage.setItem('sotto.instrument', instrument); } catch { /* Optional preference. */ }
+    player.onSoundLoading = setSoundLoading;
+    player.onError = error => setError(`Sound could not be loaded: ${error.message}`);
+    return () => { player.onSoundLoading = () => {}; player.onError = () => {}; };
+  }, [player]);
+  useEffect(() => {
+    let current = true;
+    setSoundLoading(true);
+    void player.setInstrument(instrument).then(() => {
+      if (!current) return;
+      readyInstrument.current = instrument;
+      try { localStorage.setItem('sotto.instrument', instrument); } catch { /* Optional preference. */ }
+    }).catch(error => {
+      if (!current) return;
+      setError(`Sound could not be loaded: ${error.message}`);
+      setInstrument(readyInstrument.current);
+    }).finally(() => { if (current) setSoundLoading(false); });
+    return () => { current = false; };
   }, [player, instrument]);
   useEffect(() => player.setMetronomeOptions(clickVolume / 100, clickMode), [player, clickVolume, clickMode]);
   useEffect(() => {
@@ -303,7 +320,7 @@ export default function App() {
         {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><X size={17}/></button></div>}
 
         <section className="score-frame" aria-label="Interactive sheet music">
-          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools"><label className="follow-control"><input type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className="icon-button sound-settings-button" aria-label="Sound and metronome settings" title="Instrument and metronome settings" onClick={() => setSoundSettings(true)}><SlidersHorizontal size={16}/></button><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 50} onClick={() => changeZoom(zoom - 10)}><Minus size={15}/></button><button className="zoom-label" aria-label="Fit score to width" title="Fit score to width (100%)" onClick={() => changeZoom(100)}>{zoom}%</button><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 250} onClick={() => changeZoom(zoom + 10)}><Plus size={15}/></button></div></div>
+          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools"><label className="follow-control"><input type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className="icon-button sound-settings-button" aria-label="Sound and metronome settings" title="Instrument and metronome settings" onClick={() => setSoundSettings(true)}><SlidersHorizontal size={16}/></button><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 50} onClick={() => changeZoom(zoom - 10)}><Minus size={15}/></button><button className="zoom-label" aria-label="Fit score to width" title="Fit score to width (100%)" onClick={() => changeZoom(100)}>{zoom}%</button><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 250} onClick={() => changeZoom(zoom + 10)}><Plus size={15}/></button></div></div>
           <div className="score-scroller" ref={scrollRoot}><div className="score-pages" ref={scoreRoot} style={{ '--score-zoom': zoom / 100 } as React.CSSProperties} onClick={scoreClick}>
             {!score && <div className="loading-score"><Music2 size={32}/><p>Putting your music on the stand…</p></div>}
             {pages.map((page, index) => <div key={`${score?.title}-${index}`} className="score-page" aria-label={`Score page ${index + 1}`}><span className="page-number">{String(index + 1).padStart(2, '0')}</span><div dangerouslySetInnerHTML={{ __html: page }}/></div>)}
@@ -313,18 +330,20 @@ export default function App() {
 
         <section className="player" id="playback-panel" aria-label="Playback controls" hidden={controlsCollapsed}>
           <div className="progress-row"><span>{clockTime(beat, bpm, score?.beatUnit ?? 1.5)}</span><div className="progress-wrap">{loop && performance && <div className="loop-highlight" style={{ left: `${performance.measures[loopStart].start / performance.duration * 100}%`, width: `${(performance.measures[loopEnd].end - performance.measures[loopStart].start) / performance.duration * 100}%` }}/>}<input aria-label="Playback position" type="range" min="0" max={performance?.duration ?? 1} step="0.01" value={beat} style={{ '--progress': `${beat / (performance?.duration || 1) * 100}%` } as React.CSSProperties} onChange={event => seek(Number(event.target.value))}/></div><span>{fullDuration}</span></div>
-          <div className="transport-row"><div className="transport-buttons"><button className="icon-button restart-button" aria-label="Restart" title="Restart (R)" onClick={restart} disabled={!score}><RotateCcw size={18}/></button><button className="icon-button" aria-label="Previous measure" title="Previous measure (←)" onClick={() => stepMeasure(-1)} disabled={!score}><ArrowLeft size={18}/></button><button className="play-button" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting}>{playing ? <Pause size={23} fill="currentColor"/> : <Play size={23} fill="currentColor"/>}</button><button className="icon-button" aria-label="Next measure" title="Next measure (→)" onClick={() => stepMeasure(1)} disabled={!score}><ArrowRight size={18}/></button><div className="measure-readout"><span>BAR</span><strong>{measure?.label.split(' · ')[0] ?? '1'}<small> / {score?.bars.at(-1)?.label ?? '59'}</small></strong>{measure && measure.occurrence > 1 && <span className="pass-label">pass {measure.occurrence}</span>}</div></div>
+          <div className="transport-row"><div className="transport-buttons"><button className="icon-button restart-button" aria-label="Restart" title="Restart (R)" onClick={restart} disabled={!score}><RotateCcw size={18}/></button><button className="icon-button" aria-label="Previous measure" title="Previous measure (←)" onClick={() => stepMeasure(-1)} disabled={!score}><ArrowLeft size={18}/></button><button className="play-button" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={23} fill="currentColor"/> : <Play size={23} fill="currentColor"/>}</button><button className="icon-button" aria-label="Next measure" title="Next measure (→)" onClick={() => stepMeasure(1)} disabled={!score}><ArrowRight size={18}/></button><div className="measure-readout"><span>BAR</span><strong>{measure?.label.split(' · ')[0] ?? '1'}<small> / {score?.bars.at(-1)?.label ?? '59'}</small></strong>{measure && measure.occurrence > 1 && <span className="pass-label">pass {measure.occurrence}</span>}</div></div>
             <div className="tempo-control"><label htmlFor="tempo">TEMPO</label><div><button className="icon-button" aria-label="Slower" onClick={() => setBpm(value => Math.max(15, value - 1))}><Minus size={14}/></button><strong>{bpm}<span>BPM</span></strong><button className="icon-button" aria-label="Faster" onClick={() => setBpm(value => Math.min(150, value + 1))}><Plus size={14}/></button></div><input id="tempo" aria-label="Tempo" type="range" min="15" max="150" value={bpm} onChange={event => setBpm(Number(event.target.value))}/><button className="tempo-reset" title="Reset to score tempo" onClick={() => setBpm(score?.bpm ?? 44)}>{Math.round(bpm / (score?.bpm ?? 44) * 100)}%</button></div>
             <button className={`metronome-button ${metronome ? 'enabled' : ''} ${clickPulse && metronome ? 'is-ticking' : ''}`} data-tick-count={clickCount} data-accent={clickAccent} aria-label="Metronome" aria-pressed={metronome} title="Metronome (M)" disabled={metronomeStarting} onClick={() => void toggleMetronome()}><AudioLines size={19}/><span>Metronome</span><span className="metronome-state">{metronome ? 'ON' : 'OFF'}</span></button>
           </div>
         </section>
-        <div className="below-player" hidden={controlsCollapsed}><span><Headphones size={13}/> {INSTRUMENTS.find(item => item.id === instrument)?.name} · synthesized playback.</span><span className="keyboard-hint"><kbd>space</kbd> play / pause</span></div>
+        <div className="below-player" hidden={controlsCollapsed}><span><Headphones size={13}/> {INSTRUMENTS.find(item => item.id === instrument)?.name} · playback.</span><span className="keyboard-hint"><kbd>space</kbd> play / pause</span></div>
       </main>
     </div>
 
     {soundSettings && <div className="modal-backdrop" onClick={() => setSoundSettings(false)}><section className="help-modal sound-modal" role="dialog" aria-modal="true" aria-labelledby="sound-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close sound settings" onClick={() => setSoundSettings(false)} autoFocus><X size={20}/></button><div className="eyebrow">PLAYBACK</div><h2 id="sound-title">Sound &amp; metronome</h2>
-      <label className="settings-field">Instrument<select aria-label="Playback instrument" value={instrument} onChange={event => setInstrument(event.target.value as InstrumentId)}>{INSTRUMENTS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <p className="settings-note">Synthesized timbres, available offline. This changes the playback sound for all voices; notation and pitch stay the same. Recorded instruments and SoundFont files are not loaded.</p>
+      <label className="settings-field">Instrument<select aria-label="Playback instrument" disabled={soundLoading} aria-busy={soundLoading} value={instrument} onChange={event => setInstrument(event.target.value as InstrumentId)}>{INSTRUMENTS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <p className="settings-note">Nylon guitar, piano and violin use recorded instruments. Marimba, organ and flute are synthesized. All are bundled for offline playback. Changing the instrument changes the sound for all voices, keeping the score’s pitches.</p>
+      {soundLoading && <p className="settings-note" role="status">Loading instrument recordings…</p>}
+      <p className="settings-note"><a href={`${import.meta.env.BASE_URL}samples/ATTRIBUTION.md`} target="_blank" rel="noopener noreferrer">Recording credits and licenses</a></p>
       <div className="metronome-setting-heading"><h3>Metronome</h3><button className={`switch ${metronome ? 'on' : ''}`} role="switch" aria-label="Metronome enabled" aria-checked={metronome} disabled={metronomeStarting} onClick={() => void toggleMetronome()}><span/></button><span className={`settings-beat-light ${clickPulse && metronome ? 'lit' : ''}`} data-accent={clickAccent}/></div>
       <p className="settings-note">Clicks on its own while paused, and follows the score while playing. The first beat of each bar is accented.</p>
       <label className="settings-field">Pulse<select aria-label="Metronome pulse" value={clickMode} onChange={event => setClickMode(event.target.value as ClickMode)}><option value="beat">Beat · {Math.round((score?.beatsPerBar ?? 3) / (score?.beatUnit ?? 1.5))} clicks per bar</option><option value="subdivision">Subdivision · {Math.round((score?.beatsPerBar ?? 3) / clickStep(score?.beatUnit ?? 1.5, 'subdivision'))} clicks per bar</option></select></label>

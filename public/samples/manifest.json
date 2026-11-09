@@ -1,0 +1,189 @@
+{
+  "source": "https://github.com/nbrosowsky/tonejs-instruments",
+  "revision": "622c2f1c32c8cfce4158ddc3eb26e518ddef37e5",
+  "license": "CC-BY-3.0",
+  "banks": {
+    "guitar": {
+      "D2": "guitar/D2.mp3",
+      "A2": "guitar/A2.mp3",
+      "D3": "guitar/D3.mp3",
+      "G3": "guitar/G3.mp3",
+      "B3": "guitar/B3.mp3",
+      "E4": "guitar/E4.mp3",
+      "A4": "guitar/A4.mp3",
+      "E5": "guitar/E5.mp3",
+      "A5": "guitar/A5.mp3"
+    },
+    "piano": {
+      "C2": "piano/C2.mp3",
+      "F#2": "piano/Fs2.mp3",
+      "C3": "piano/C3.mp3",
+      "F#3": "piano/Fs3.mp3",
+      "C4": "piano/C4.mp3",
+      "F#4": "piano/Fs4.mp3",
+      "C5": "piano/C5.mp3",
+      "F#5": "piano/Fs5.mp3",
+      "C6": "piano/C6.mp3"
+    },
+    "violin": {
+      "A3": "violin/A3.mp3",
+      "C4": "violin/C4.mp3",
+      "E4": "violin/E4.mp3",
+      "G4": "violin/G4.mp3",
+      "A4": "violin/A4.mp3",
+      "C5": "violin/C5.mp3",
+      "E5": "violin/E5.mp3",
+      "G5": "violin/G5.mp3",
+      "A5": "violin/A5.mp3",
+      "C6": "violin/C6.mp3",
+      "E6": "violin/E6.mp3"
+    }
+  },
+  "files": [
+    {
+      "path": "guitar/A2.mp3",
+      "bytes": 126484,
+      "sha256": "0e20a4c2cb8451919121c19815f8fe9b2a3003ee823a26a55790dd16bd640ea8"
+    },
+    {
+      "path": "guitar/A4.mp3",
+      "bytes": 76404,
+      "sha256": "3436e55cf99281a40467dce558ea3009b929080d837193492fb110b7afd348e7"
+    },
+    {
+      "path": "guitar/A5.mp3",
+      "bytes": 38844,
+      "sha256": "b64c9c52964afcf1749c0c79cab1e035083a9caade9f604a618c36830a3f24d2"
+    },
+    {
+      "path": "guitar/B3.mp3",
+      "bytes": 76404,
+      "sha256": "9e4b3df9cda03761dc093b910000bfc68083d9ce40605fdd2af370140521f2cd"
+    },
+    {
+      "path": "guitar/D2.mp3",
+      "bytes": 126484,
+      "sha256": "3bc63f909bfb14394df455c0406f61e365a10f95cd6825f88e09bb4171f4331e"
+    },
+    {
+      "path": "guitar/D3.mp3",
+      "bytes": 126484,
+      "sha256": "aaeb2afa295e5d1733fe5b475851d590b56d7dfe26d841cb56272cd6867716c6"
+    },
+    {
+      "path": "guitar/E4.mp3",
+      "bytes": 76404,
+      "sha256": "3f95d206021f8935d79da1f1b5bffe45c17f8dbfb598148e6a3ac4999cb0fa0b"
+    },
+    {
+      "path": "guitar/E5.mp3",
+      "bytes": 36340,
+      "sha256": "9ab5b711d43f7bd0cf5a7ec2c5d5a382c701b0258341a0a4483ccb377c4fd63c"
+    },
+    {
+      "path": "guitar/G3.mp3",
+      "bytes": 76404,
+      "sha256": "85cbc7aeb84956c5b30333d73fedb57f1c393d04302684566ca77523015a6449"
+    },
+    {
+      "path": "piano/C2.mp3",
+      "bytes": 429468,
+      "sha256": "4fb4d2a432deb5355f62a29b87087f7f1cdd2ca4885016c53d3a65c71b637935"
+    },
+    {
+      "path": "piano/C3.mp3",
+      "bytes": 262326,
+      "sha256": "277149247cbd666ce256689369e5f501bafdb68d027d866178b7944820f8ebc6"
+    },
+    {
+      "path": "piano/C4.mp3",
+      "bytes": 239164,
+      "sha256": "a265c8cfd4140cf27b55054b4953b6c691fce3523530ca8ae0faed5e4cd39063"
+    },
+    {
+      "path": "piano/C5.mp3",
+      "bytes": 177190,
+      "sha256": "54a9304d2c609328580c0e06a394670559fe5f594f643d5d12c6dae158051b4a"
+    },
+    {
+      "path": "piano/C6.mp3",
+      "bytes": 100192,
+      "sha256": "c3c9ee316e7b98a07d89be2340c2382aa689826b50db9080dab7f6e23ebc3d7c"
+    },
+    {
+      "path": "piano/Fs2.mp3",
+      "bytes": 309902,
+      "sha256": "131eed911369b4a0bdc52addd38dec2abbeeaf68499991c1fc46aa4ec38ded6a"
+    },
+    {
+      "path": "piano/Fs3.mp3",
+      "bytes": 233530,
+      "sha256": "d43f583706a2e6a1803e2360a79248b2f1aa9b3d1f8e5f04f5f9027d2b1afda7"
+    },
+    {
+      "path": "piano/Fs4.mp3",
+      "bytes": 161540,
+      "sha256": "0b23feb9c67e409aa18b7bd2b1897f198e5914121a709e4dfd9996af4f0a15b4"
+    },
+    {
+      "path": "piano/Fs5.mp3",
+      "bytes": 169052,
+      "sha256": "2ed25faa160029fcd28071ffa98f9504588511b2cb2179f74d7da00284f1bc33"
+    },
+    {
+      "path": "violin/A3.mp3",
+      "bytes": 390656,
+      "sha256": "22573e45ae1dd09043c4456ccb9835a067fee8222e7170b5d3d4c564562b98b1"
+    },
+    {
+      "path": "violin/A4.mp3",
+      "bytes": 339950,
+      "sha256": "b51bab05788a078a1ab8480acae9aa96bf2072aafe237991e414759fb0005243"
+    },
+    {
+      "path": "violin/A5.mp3",
+      "bytes": 271716,
+      "sha256": "d7649681176736f820a3ff460fbfb1656922b4da0150ec7df4527b01c9bd8ffe"
+    },
+    {
+      "path": "violin/C4.mp3",
+      "bytes": 318666,
+      "sha256": "47a86f01f5a9f978e3328d72ecc3d12ad72cc18852676f655090e68c34b87d8c"
+    },
+    {
+      "path": "violin/C5.mp3",
+      "bytes": 341202,
+      "sha256": "51315c5bce2c5186d0ac5bd69b72d632bc6188c9401a19212998fcd11ba2934a"
+    },
+    {
+      "path": "violin/C6.mp3",
+      "bytes": 295504,
+      "sha256": "85c103492bd20f3bcf8eab6fd3de5f41853c98259b7d92a6a2ca169861d21f7c"
+    },
+    {
+      "path": "violin/E4.mp3",
+      "bytes": 329934,
+      "sha256": "5dad3626ee3654e79cfdb9cdb769658b5c4b3da4c62d8cb08a2a88323b9d267a"
+    },
+    {
+      "path": "violin/E5.mp3",
+      "bytes": 323048,
+      "sha256": "65ece2416a99a1e415286e75897dcc71f4a675e744bd9caf2a06ac75c8636d12"
+    },
+    {
+      "path": "violin/E6.mp3",
+      "bytes": 322422,
+      "sha256": "0c86d3d9169a6f026fed1d1716441120ec0bb93a199f37431bb98f6e9f91887e"
+    },
+    {
+      "path": "violin/G4.mp3",
+      "bytes": 323048,
+      "sha256": "37ea8621e0217d18c832864913a5a4615208733b38c7c5fcfcb347e40c16fe67"
+    },
+    {
+      "path": "violin/G5.mp3",
+      "bytes": 303642,
+      "sha256": "9de7664fafe3f81d2db6007d1ff19b0223afbfe3fe6c6dac8ad74be00105d1ec"
+    }
+  ]
+}

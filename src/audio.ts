@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { RecordingLibrary, isRecordedInstrument } from './recordings';
 import type { Performance, Score } from './score';
 import { clickAccent, clickStep, type ClickMode, type InstrumentId } from './sounds';
 
@@ -20,8 +21,12 @@ export class Player {
   private score?: Score;
   private master?: Tone.Gain;
   private initialized = false;
+  private recordings = new RecordingLibrary();
+  private rebuildVersion = 0;
   private loopBounds = { enabled: false, start: 0, end: 0 };
   onEnded: () => void = () => {};
+  onSoundLoading: (loading: boolean) => void = () => {};
+  onError: (error: Error) => void = () => {};
   onMetronomeTick: (count: number, accent: string) => void = () => {};
 
   get beat() { return Number(Tone.getTransport().ticks) / Tone.getTransport().PPQ; }
@@ -49,62 +54,59 @@ export class Player {
       this.playClick(time, beat);
     }, this.clickFrequency);
     this.initialized = true;
-    this.makeInstruments();
     this.schedule();
   }
 
-  private makeInstruments() {
+  private async makeInstruments(instrument: InstrumentId = this.instrumentId) {
     if (!this.score || !this.master) return;
-    this.instruments.forEach(instrument => instrument.dispose()); this.instruments.clear();
-    if (this.instrumentId !== 'guitar') {
-      const profiles = {
-        piano: { partials: [1, .55, .3, .15, .08, .04], attack: .003, decay: 1.1, sustain: .04, release: .2, volume: -15 },
-        marimba: { partials: [1, 0, .12, .55, 0, 0, 0, 0, .08], attack: .001, decay: .45, sustain: 0, release: .12, volume: -14 },
-        organ: { partials: [1, .25, .5, .12, .18, .08], attack: .012, decay: .03, sustain: .8, release: .08, volume: -18 },
-        flute: { partials: [1, .13, .04, .015], attack: .06, decay: .1, sustain: .75, release: .13, volume: -15 },
-      };
-      const profile = profiles[this.instrumentId];
-      for (const voice of this.score.voices) {
-        const synth = new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: 'custom', partials: profile.partials },
-          envelope: { attack: profile.attack, decay: profile.decay, sustain: profile.sustain, release: profile.release },
-          volume: profile.volume,
-        }).connect(this.master);
-        this.instruments.set(voice.id, synth);
-        this.applyVolume(voice.id);
-      }
-      return;
-    }
-    const context = Tone.getContext().rawContext;
-    const buffers: Record<number, Tone.ToneAudioBuffer> = {};
-    for (const midi of new Set(this.score.notes.map(note => note.midi))) {
-      const rate = context.sampleRate;
-      const buffer = context.createBuffer(1, Math.ceil(rate * 3), rate);
-      const channel = buffer.getChannelData(0);
-      const frequency = 440 * 2 ** ((midi - 69) / 12);
-      // Small self-contained plucked-string sample bank: no external soundfonts.
-      for (let i = 0; i < channel.length; i++) {
-        const t = i / rate;
-        let amplitude = 0;
-        for (let harmonic = 1; harmonic <= 7; harmonic++) {
-          if (frequency * harmonic >= rate / 2) break;
-          amplitude += Math.sin(2 * Math.PI * frequency * harmonic * t) * Math.exp(-t * (.9 + harmonic * .7)) / harmonic ** 1.7;
+    const version = ++this.rebuildVersion;
+    const voices = this.score.voices;
+    const next = new Map<string, Tone.Sampler | Tone.PolySynth<Tone.Synth>>();
+    this.onSoundLoading(true);
+    try {
+      if (isRecordedInstrument(instrument)) {
+        const buffers = await this.recordings.load(instrument, Tone.getContext().rawContext);
+        if (version !== this.rebuildVersion) return;
+        for (const voice of voices) {
+          next.set(voice.id, new Tone.Sampler({
+            urls: buffers,
+            attack: instrument === 'violin' ? .025 : .002,
+            release: instrument === 'violin' ? .18 : .16,
+            curve: 'exponential',
+          }).connect(this.master));
         }
-        channel[i] = amplitude * .45 * Math.min(1, t / .004);
+      } else {
+        const profiles = {
+          marimba: { partials: [1, 0, .12, .55, 0, 0, 0, 0, .08], attack: .001, decay: .45, sustain: 0, release: .12 },
+          organ: { partials: [1, .25, .5, .12, .18, .08], attack: .012, decay: .03, sustain: .8, release: .08 },
+          flute: { partials: [1, .13, .04, .015], attack: .06, decay: .1, sustain: .75, release: .13 },
+        };
+        const profile = profiles[instrument];
+        for (const voice of voices) {
+          next.set(voice.id, new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: 'custom', partials: profile.partials },
+            envelope: { attack: profile.attack, decay: profile.decay, sustain: profile.sustain, release: profile.release },
+          }).connect(this.master));
+        }
       }
-      buffers[midi] = new Tone.ToneAudioBuffer(buffer);
-    }
-    for (const voice of this.score.voices) {
-      const sampler = new Tone.Sampler({ urls: buffers, attack: .002, release: .12, volume: -5 }).connect(this.master);
-      this.instruments.set(voice.id, sampler);
-      this.applyVolume(voice.id);
+      // Keep the previous instrument available until every new sample is ready.
+      this.release();
+      this.instruments.forEach(previous => previous.dispose());
+      this.instruments = next;
+      this.instrumentId = instrument;
+      voices.forEach(voice => this.applyVolume(voice.id));
+    } catch (error) {
+      next.forEach(sound => sound.dispose());
+      throw error;
+    } finally {
+      if (version === this.rebuildVersion) this.onSoundLoading(false);
     }
   }
 
   load(score: Score, performance: Performance) {
     this.pause(); this.score = score; this.performance = performance;
     this.muted.clear(); this.volumes.clear();
-    if (this.initialized) this.makeInstruments();
+    if (this.initialized) void this.makeInstruments().catch(error => this.onError(error));
     this.schedule(); this.seek(0); this.tempo(score.bpm);
   }
 
@@ -137,6 +139,7 @@ export class Player {
   async play() {
     await this.initialize();
     if (!this.performance) return;
+    if (!this.instruments.size) await this.makeInstruments();
     if (this.beat >= this.performance.duration - .01) this.seek(0);
     const now = Tone.now() + .06;
     this.stopStandalone();
@@ -177,7 +180,7 @@ export class Player {
   }
   private applyVolume(voice: string) {
     const instrument = this.instruments.get(voice);
-    const level = { guitar: -5, piano: -15, marimba: -14, organ: -18, flute: -15 }[this.instrumentId];
+    const level = { guitar: -8, piano: -8, violin: -10, marimba: -14, organ: -18, flute: -15 }[this.instrumentId];
     if (instrument) instrument.volume.value = this.muted.has(voice) ? -Infinity : level + 20 * Math.log10(Math.max(.001, this.volumes.get(voice) ?? 1));
   }
   mute(voice: string, muted: boolean) {
@@ -186,18 +189,16 @@ export class Player {
     this.applyVolume(voice);
   }
   volume(voice: string, volume: number) { this.volumes.set(voice, volume); this.applyVolume(voice); }
-  setInstrument(instrument: InstrumentId) {
+  async setInstrument(instrument: InstrumentId) {
     if (this.instrumentId === instrument) return;
-    this.release(); this.instrumentId = instrument;
-    if (this.initialized) {
-      this.makeInstruments();
-      // Revoice notes already held at the current position, without seeking.
-      if (this.playing && this.performance) {
-        const beat = this.beat;
-        for (const note of this.performance.sounds) {
-          if (note.start < beat && note.end > beat && !this.muted.has(note.voice)) {
-            this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(note.midi, 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, Tone.now(), .65);
-          }
+    if (!this.initialized) { this.instrumentId = instrument; return; }
+    await this.makeInstruments(instrument);
+    // Revoice held notes after loading, without seeking or restarting the clock.
+    if (this.playing && this.performance) {
+      const beat = this.beat;
+      for (const note of this.performance.sounds) {
+        if (note.start < beat && note.end > beat && !this.muted.has(note.voice)) {
+          this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(note.midi, 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, Tone.now(), .65);
         }
       }
     }
@@ -246,6 +247,7 @@ export class Player {
     }
   }
   dispose() {
+    this.rebuildVersion++;
     this.metronomeOn = false;
     this.pause(); Tone.getTransport().cancel();
     this.instruments.forEach(instrument => instrument.dispose()); this.instruments.clear();
