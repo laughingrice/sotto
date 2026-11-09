@@ -1,4 +1,4 @@
-# Sotto v0.1
+# Sotto v0.2
 
 A local web practice player, starting with Julia Florida. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The bundled instrument recordings, synthesized timbres, and metronome work offline.
 
@@ -13,7 +13,7 @@ The repository includes a workflow that tests, builds, and publishes the static 
 3. Open [Actions → Deploy Sotto to GitHub Pages](https://github.com/laughingrice/sotto/actions/workflows/pages.yml), select **Run workflow**, choose **main**, and run it.
 4. Once the deployment finishes, visit **https://laughingrice.github.io/sotto/**.
 
-Subsequent pushes to `main` test and deploy automatically. Before Pages is enabled, the workflow still builds and tests successfully and skips publication. The `v0.1` tag records the first release.
+Subsequent pushes to `main` test and deploy automatically. Before Pages is enabled, the workflow still builds and tests successfully and skips publication. The `v0.1` tag records the first release; `v0.2` includes full-bar highlighting, expanded score/zoom controls, an accented standalone metronome, and recorded nylon-guitar, piano and violin playback.
 
 To preview the same `/sotto/` deployment path locally:
 
