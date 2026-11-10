@@ -1,6 +1,23 @@
 import type { Performance } from './score';
 
 export type LevelFrame = { time: number; rms: number; peak: number };
+export const TRACE_HISTORY_SECONDS = 50;
+
+/** Preserve the loudest short transient in each screen column when zoomed out. */
+export function traceColumns(samples: LevelFrame[], left: number, span: number, width: number) {
+  const columns = new Map<number, { x: number; rms: number; peak: number }>();
+  for (const sample of samples) {
+    if (sample.time < left || sample.time > left + span || width <= 0) continue;
+    const x = Math.min(Math.ceil(width) - 1, Math.floor((sample.time - left) / span * width));
+    const previous = columns.get(x);
+    columns.set(x, { x, rms: Math.max(previous?.rms ?? 0, sample.rms), peak: Math.max(previous?.peak ?? 0, sample.peak) });
+  }
+  return [...columns.values()].sort((a, b) => a.x - b.x);
+}
+export function traceLevel(amplitude: number, boostDb: number) {
+  const db = 20 * Math.log10(Math.max(amplitude, 1e-6)) + boostDb;
+  return Math.max(0, Math.min(1, (db + 70) / 70));
+}
 export type Attack = { beat: number; errorMs: number | null; kind: 'on-time' | 'early' | 'late' | 'extra' };
 export type RhythmStats = { onTime: number; early: number; late: number; missed: number; extra: number };
 export const emptyStats = (): RhythmStats => ({ onTime: 0, early: 0, late: 0, missed: 0, extra: 0 });

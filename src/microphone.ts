@@ -17,11 +17,32 @@ export class MicrophoneInput {
   private source?: MediaStreamAudioSourceNode;
   private worklet?: AudioWorkletNode;
   private sink?: GainNode;
+  private highpass?: BiquadFilterNode;
+  private lowpass?: BiquadFilterNode;
+  private filter = { highpass: 0, lowpass: 4000 };
   private version = 0;
   private pulses = new Set<AudioBufferSourceNode>();
   onFrame: (frame: LevelFrame) => void = () => {};
   onEnded: (message: string) => void = () => {};
   get time() { return Tone.immediate(); }
+  get settings() { return this.stream?.getAudioTracks()[0]?.getSettings(); }
+  setFilters(highpass: number, lowpass: number) {
+    this.filter = { highpass, lowpass };
+    this.wireFilters();
+  }
+  private wireFilters() {
+    if (!this.source || !this.worklet || !this.highpass || !this.lowpass) return;
+    this.source.disconnect(); this.highpass.disconnect(); this.lowpass.disconnect();
+    let tail: AudioNode = this.source;
+    if (this.filter.highpass > 0) {
+      this.highpass.frequency.value = this.filter.highpass; tail.connect(this.highpass); tail = this.highpass;
+    }
+    if (this.filter.lowpass > 0) {
+      this.lowpass.frequency.value = Math.min(this.filter.lowpass, this.lowpass.context.sampleRate * .45);
+      tail.connect(this.lowpass); tail = this.lowpass;
+    }
+    tail.connect(this.worklet);
+  }
   async start(deviceId = '') {
     this.stop();
     const version = this.version;
@@ -42,8 +63,10 @@ export class MicrophoneInput {
       const source = (context.rawContext as AudioContext).createMediaStreamSource(stream);
       this.source = source;
       this.worklet = context.createAudioWorkletNode('sotto-level', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      this.highpass = context.rawContext.createBiquadFilter(); this.highpass.type = 'highpass'; this.highpass.Q.value = Math.SQRT1_2;
+      this.lowpass = context.rawContext.createBiquadFilter(); this.lowpass.type = 'lowpass'; this.lowpass.Q.value = Math.SQRT1_2;
       this.sink = context.rawContext.createGain(); this.sink.gain.value = 0;
-      source.connect(this.worklet); this.worklet.connect(this.sink); this.sink.connect(context.rawContext.destination);
+      this.wireFilters(); this.worklet.connect(this.sink); this.sink.connect(context.rawContext.destination);
       this.worklet.port.onmessage = event => this.onFrame(event.data as LevelFrame);
       this.worklet.onprocessorerror = () => { this.stop(); this.onEnded('The microphone processor stopped. Enable the microphone again to retry.'); };
       stream.getAudioTracks().forEach(track => { track.onended = () => { this.stop(); this.onEnded('Microphone access ended. Enable the microphone to reconnect.'); }; });
@@ -72,6 +95,7 @@ export class MicrophoneInput {
     this.cancelCalibration();
     this.worklet?.port.close(); this.worklet?.disconnect(); this.worklet = undefined;
     this.source?.disconnect(); this.source = undefined; this.sink?.disconnect(); this.sink = undefined;
+    this.highpass?.disconnect(); this.highpass = undefined; this.lowpass?.disconnect(); this.lowpass = undefined;
     this.stream?.getTracks().forEach(track => { track.onended = null; track.stop(); }); this.stream = undefined;
   }
 }

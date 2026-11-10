@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { calibrationOffset, expectedAttacks, OnsetDetector, RhythmPass } from './rhythm';
+import { calibrationOffset, expectedAttacks, OnsetDetector, RhythmPass, traceColumns, traceLevel } from './rhythm';
 import { makePerformance, type Score } from './score';
 import { readFileSync } from 'node:fs';
 
 describe('rhythm input and timing', () => {
+  it('keeps short peaks visible when many input windows share a screen pixel', () => {
+    const columns = traceColumns([
+      { time: 10.001, rms: .001, peak: .002 },
+      { time: 10.002, rms: .1, peak: .5 },
+      { time: 10.003, rms: .001, peak: .002 },
+      { time: -1, rms: 1, peak: 1 },
+    ], 0, 24, 300);
+    expect(columns).toEqual([{ x: 125, rms: .1, peak: .5 }]);
+    expect(traceLevel(.001, 12)).toBeGreaterThan(traceLevel(.001, 0));
+    expect(traceLevel(1, 36)).toBe(1);
+    expect(traceLevel(0, 0)).toBe(0);
+  });
   it('detects separate plucks, ignores quiet input and suppresses ringing', () => {
     const detector = new OnsetDetector();
     const hits: number[] = [];

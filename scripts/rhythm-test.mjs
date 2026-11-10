@@ -12,12 +12,18 @@ await page.addInitScript(() => {
   // Replace getUserMedia before the app loads: this test never opens a real
   // microphone. All input is generated in the playback AudioContext.
   window.testContexts = [];
+  window.testFilters = [];
+  const createFilter = BaseAudioContext.prototype.createBiquadFilter;
+  BaseAudioContext.prototype.createBiquadFilter = function (...args) {
+    const filter = createFilter.apply(this, args); window.testFilters.push(filter); return filter;
+  };
   const NativeContext = window.AudioContext;
   window.AudioContext = class extends NativeContext {
     constructor(...args) { super(...args); window.testContexts.push(this); }
   };
   window.testInputDelay = .12;
-  navigator.mediaDevices.getUserMedia = async () => {
+  navigator.mediaDevices.getUserMedia = async constraints => {
+    window.requestedMicConstraints = constraints;
     if (window.denyMicrophone) throw new DOMException('Denied for test', 'NotAllowedError');
     const context = window.testContexts.findLast(context => context.state === 'running');
     const destination = context.createMediaStreamDestination();
@@ -80,9 +86,24 @@ try {
   await page.locator('[data-score-input]').setInputFiles({ name: 'rhythm.sotto.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) });
   await page.getByRole('heading', { name: 'Rhythm test', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Rhythm feedback', exact: true }).click();
+  assert.equal(await page.getByRole('combobox', { name: 'Rhythm plot window', exact: true }).inputValue(), '24', 'Plot defaults to one quarter of the previous scrolling speed');
+  assert.equal(await page.getByRole('combobox', { name: 'Microphone trace boost', exact: true }).inputValue(), '12');
   await page.locator('.rhythm-options summary').click();
   await page.getByRole('button', { name: 'Enable microphone', exact: true }).click();
   await page.getByRole('button', { name: 'Stop microphone', exact: true }).waitFor();
+  assert.equal(await page.getByRole('combobox', { name: 'Microphone low-pass filter', exact: true }).inputValue(), '4000');
+  assert.equal(await page.getByRole('combobox', { name: 'Microphone high-pass filter', exact: true }).inputValue(), '0');
+  const response = await page.evaluate(() => {
+    const filter = window.testFilters.findLast(node => node.type === 'lowpass' && node.frequency.value === 4000);
+    const magnitude = new Float32Array(3), phase = new Float32Array(3);
+    filter.getFrequencyResponse(new Float32Array([100, 1000, 8000]), magnitude, phase);
+    return { magnitude: [...magnitude], constraints: window.requestedMicConstraints.audio };
+  });
+  assert.ok(response.magnitude[0] > .99 && response.magnitude[2] < .25, '4 kHz filter preserves the low band and attenuates high-frequency noise');
+  for (const key of ['noiseSuppression', 'echoCancellation', 'autoGainControl']) assert.equal(response.constraints[key], false);
+  await page.getByRole('combobox', { name: 'Microphone high-pass filter', exact: true }).selectOption('40');
+  assert.ok(await page.evaluate(() => window.testFilters.some(node => node.type === 'highpass' && node.frequency.value === 40)));
+  await page.getByRole('combobox', { name: 'Microphone high-pass filter', exact: true }).selectOption('0');
   await page.evaluate(() => { window.injectPerformance = true; });
   await play().click();
   await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.late) >= 3);
@@ -94,6 +115,11 @@ try {
   await page.getByRole('button', { name: 'Restart', exact: true }).click();
   await play().click();
   await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.onTime) >= 3);
+  await page.getByRole('combobox', { name: 'Rhythm plot window', exact: true }).selectOption('48');
+  await page.getByRole('combobox', { name: 'Microphone trace boost', exact: true }).selectOption('24');
+  assert.ok(Number(await controls.getAttribute('data-on-time')) >= 3, 'Display controls preserve detection results');
+  await page.getByRole('combobox', { name: 'Rhythm plot window', exact: true }).selectOption('24');
+  await page.getByRole('combobox', { name: 'Microphone trace boost', exact: true }).selectOption('12');
   await page.screenshot({ path: 'test-results/rhythm-desktop.png' });
   await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).selectOption('all');
   assert.equal(await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).inputValue(), 'all');
