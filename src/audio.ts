@@ -26,6 +26,8 @@ export class Player {
   private recordings = new RecordingLibrary();
   private rebuildVersion = 0;
   private loopBounds = { enabled: false, start: 0, end: 0 };
+  private captureStart = Infinity;
+  private captureEnd = -Infinity;
   onEnded: () => void = () => {};
   onSoundLoading: (loading: boolean) => void = () => {};
   onError: (error: Error) => void = () => {};
@@ -33,6 +35,10 @@ export class Player {
 
   get beat() { return Number(Tone.getTransport().ticks) / Tone.getTransport().PPQ; }
   get playing() { return this.initialized && Tone.getTransport().state === 'started'; }
+  clockAt(time: number) {
+    return { active: this.initialized && time >= this.captureStart && time < this.captureEnd,
+      beat: Tone.getTransport().getTicksAtTime(Math.max(0, time)) / Tone.getTransport().PPQ };
+  }
 
   private async initialize() {
     await Tone.start();
@@ -133,6 +139,7 @@ export class Player {
     this.clickEventIds = [];
     this.scheduleMetronome();
     transport.schedule(time => {
+      this.captureEnd = time;
       transport.pause(time);
       Tone.getDraw().schedule(() => { this.release(); this.onEnded(); this.syncStandalone(); }, time);
     }, `${Math.round(this.performance.duration * ppq)}i`);
@@ -144,6 +151,7 @@ export class Player {
     if (!this.instruments.size) await this.makeInstruments();
     if (this.beat >= this.performance.duration - .01) this.seek(0);
     const now = Tone.now() + .06;
+    this.captureStart = now; this.captureEnd = Infinity;
     this.stopStandalone();
     const beat = this.beat;
     // Resume sustained notes when starting inside a beat or after pausing.
@@ -157,6 +165,7 @@ export class Player {
 
   private release() { this.instruments.forEach(instrument => instrument.releaseAll()); }
   pause(standalone = true) {
+    this.captureEnd = Tone.now();
     Tone.getTransport().pause();
     if (this.initialized) this.release();
     if (standalone) this.syncStandalone();

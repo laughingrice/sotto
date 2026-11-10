@@ -31,7 +31,16 @@ try {
   await page.getByRole('button', { name: 'Favorite Library fixture', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.favorite-button')?.getAttribute('aria-pressed') === 'true');
   await page.getByRole('button', { name: 'Connect folder', exact: true }).click();
-  await page.getByRole('button', { name: 'Refresh / reconnect', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).waitFor();
+  // Refresh must reuse the existing handle, never call the directory picker.
+  await page.evaluate(async fixture => {
+    window.showDirectoryPicker = async () => { throw new Error('Refresh opened the picker'); };
+    const root = await navigator.storage.getDirectory(); const directory = await root.getDirectoryHandle('OneDrive test Scores');
+    const file = await directory.getFileHandle('added.sotto.json', { create: true });
+    const writer = await file.createWritable(); await writer.write(JSON.stringify(fixture)); await writer.close();
+  }, fixture);
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await page.getByRole('button', { name: 'Favorite added', exact: true }).waitFor();
   // IDB contains references, not File/Blob objects or the SVG/notes payload.
   const stored = await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => { const request = indexedDB.open('sotto-library'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
@@ -46,6 +55,15 @@ try {
   assert.equal(JSON.parse(index).entries.filter(entry => entry.favorite).length, 1);
   await page.reload(); await ready(); await openLibrary();
   assert.equal(await page.getByRole('button', { name: 'Favorite Library fixture', exact: true }).getAttribute('aria-pressed'), 'true', 'Favorites persist across reloads');
+  // The next panel open refreshes silently when permission is already granted.
+  await page.keyboard.press('Escape');
+  await page.evaluate(async fixture => {
+    const root = await navigator.storage.getDirectory(); const directory = await root.getDirectoryHandle('OneDrive test Scores');
+    const file = await directory.getFileHandle('automatic.sotto.json', { create: true });
+    const writer = await file.createWritable(); await writer.write(JSON.stringify(fixture)); await writer.close();
+  }, fixture);
+  await openLibrary(); await page.getByRole('button', { name: 'Favorite automatic', exact: true }).waitFor();
+
   // A file changed by another application is read afresh, rather than from
   // a saved JSON/Blob snapshot.
   await page.evaluate(async fixture => {
@@ -72,9 +90,32 @@ try {
   await page.locator('.library-entry').filter({ has: page.getByRole('button', { name: 'Favorite Fallback score', exact: true }) }).locator('.library-open').click();
   await (await chooserPromise).setFiles({ name: 'fallback.sotto.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...fixture, title: 'Fallback score' })) });
   await page.getByRole('heading', { name: 'Fallback score', exact: true }).waitFor();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  // Hold an automatic directory scan across an index import. The later scan
+  // must merge into the imported metadata instead of overwriting favorites.
+  await page.evaluate(() => {
+    window.testLibraryCommits = 0;
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+      const result = put.apply(this, args);
+      if (this.name === 'library') this.transaction.addEventListener('complete', () => window.testLibraryCommits++);
+      return result;
+    };
+    const values = FileSystemDirectoryHandle.prototype.values;
+    window.holdDirectoryScan = true;
+    FileSystemDirectoryHandle.prototype.values = async function* () {
+      if (window.holdDirectoryScan && this.name === 'OneDrive test Scores') {
+        await new Promise(resolve => { window.resumeDirectoryScan = () => { window.holdDirectoryScan = false; resolve(); }; });
+      }
+      yield* values.call(this);
+    };
+  });
   await openLibrary();
+  await page.waitForFunction(() => typeof window.resumeDirectoryScan === 'function');
   await page.getByLabel('Import library index', { exact: true }).setInputFiles({ name: 'sotto-library.json', mimeType: 'application/json', buffer: Buffer.from(index) });
   await page.getByText('Index imported. Reconnect its folders on this device to open the scores.', { exact: true }).waitFor();
+  await page.evaluate(() => window.resumeDirectoryScan());
+  await page.waitForFunction(() => window.testLibraryCommits >= 2);
   await page.getByRole('checkbox', { name: 'Favorites', exact: true }).check();
   assert.equal(await page.locator('.library-entry').count(), 1, 'Portable index restores favorites');
   await page.setViewportSize({ width: 390, height: 844 });

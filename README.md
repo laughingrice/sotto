@@ -44,7 +44,7 @@ npm run build
 npm run preview -- --port 4173
 ```
 
-The production build includes a service worker that caches the app, built-in score, and synthesizer code for offline use on a secure origin (HTTPS or localhost). A plain HTTP LAN address works for online playback but does not enable service workers or future microphone access. Deploy the `dist/` folder to an HTTPS static host for installable, offline tablet use.
+The production build includes a service worker that caches the app, built-in score, and synthesizer code for offline use on a secure origin (HTTPS or localhost). A plain HTTP LAN address works for online playback but does not enable service workers or microphone access. Deploy the `dist/` folder to an HTTPS static host for installable, offline tablet use.
 
 ## Included
 
@@ -62,9 +62,10 @@ The production build includes a service worker that caches the app, built-in sco
 - Instrument selection: recorded nylon guitar, piano and violin, plus synthesized marimba, organ and flute. The recordings are bundled with the app, balanced in level, and cached for offline use.
 - Save/open portable `.sotto.json` bundles. Imported SVG is sanitized before rendering.
 - Meter changes use exported bar timing for playback, navigation, highlights, and metronome accents.
-- A persistent library of file/folder bookmarks, favorites, and a portable index; imported score contents are never duplicated into browser storage.
+- A persistent library of file/folder bookmarks, favorites, and a portable index; imported score contents are never duplicated into browser storage. Granted folder handles are refreshed when Library opens, with separate Refresh and Reconnect actions.
+- Microphone rhythm preview: a volume trace, expected/detected attack markers, early/late estimates, input offset and optional speaker calibration. No microphone audio is recorded or uploaded.
 
-Keyboard: **Space** play/pause, **←/→** previous/next bar, **R** restart, **M** metronome, **C** hide/show controls. Keyboard shortcuts do not interfere with focused controls.
+Keyboard: **Space** play/pause, **←/→** previous/next bar, **R** restart, **M** metronome, **C** hide/show controls. Space and Left/Right remain transport keys after clicking buttons, checkboxes, sliders or score controls. Holding Space does not repeatedly toggle playback. Text-entry fields and open dialogs keep their normal keyboard behavior; modified browser shortcuts are left alone.
 
 ## Prepare a new score
 
@@ -161,7 +162,7 @@ The named voices live inside those shared section/measure variables. `returnToSe
 1. Keep `.sotto.json` files in your preferred folder, such as a locally synced **OneDrive/Scores** folder.
 2. Open **Library → Connect folder**, choose that folder, and open a score from the list. Subfolders are included. **Open score / Add score** can bookmark individual files instead.
 3. Use the star to mark pieces you are working on; **Favorites** filters the list. Search matches title, composer, and relative path. Recently opened scores appear first within each favorites group.
-4. Use **Refresh / reconnect** to discover newly added files. Opening a linked score reads its current contents from disk, including changes made outside Sotto. If the file moved or permission expired, reconnect the folder/file.
+4. Library automatically scans remembered folder handles when it opens if read permission is already granted. **Refresh** rescans that same handle; it requests permission only when necessary and does not reopen a folder picker. **Reconnect** explicitly chooses a folder again. Opening a linked score reads its current contents from disk, including changes made outside Sotto. Browsers without directory handles still require reselection; the browser may label its local picker “Upload”, but Sotto does not upload the selected files.
 5. Choose **Export index** and save `sotto-library.json` in OneDrive. This small metadata file preserves folder labels, relative paths, favorites, and recents, **not score contents or browser permissions**. Import it on another device, then reconnect each folder. Index imports merge by bookmark ID; exporting/importing is manual, not live synchronization.
 
 Desktop Chrome/Edge can store read-only file/directory handles in IndexedDB; permissions may need granting again. A OneDrive folder must be available through the local file picker (and the selected files downloaded by OneDrive when needed). No OneDrive account integration is required. Safari/iPad and other browsers without these pickers retain metadata only: reselect the score or reconnect a folder after reopening the app. On iPad, select OneDrive through the Files picker; folder selection depends on the browser/provider. Bookmark metadata is local to this browser and site address; export the index for backup or transfer. Clearing browser storage removes the index/handles but never deletes the original files. Bookmarks and permissions are not a backup of the score files themselves.
@@ -179,6 +180,19 @@ Open **Sound and metronome settings** (the sliders icon above the score) to sele
 
 Nylon guitar, piano and violin now use Tone.js samplers with actual recordings, rather than generated waveforms. There is currently **no `.sf2`/`.sf3` SoundFont loader or SoundFont selection menu**. Those files require a SoundFont engine rather than just changing the synthesizer preset. A General MIDI SoundFont would allow its available instrument programs (typically the 128 GM programs and percussion), subject to what the font includes. Candidate engine: [SpessaSynth](https://github.com/spessasus/spessasynth_lib). Imported SoundFonts would remain on-device; network sample libraries would need explicit download/cache behavior.
 
+## Microphone rhythm feedback (preview)
+
+1. Open the **microphone icon** above the score, then choose **Enable mic**. Permission is requested only after that click. This requires HTTPS (the deployed site) or localhost; ordinary HTTP on your Wi-Fi address cannot access the microphone.
+2. Use headphones and select the voice you are practicing under **Input, timing & calibration**. Choose **Mute practice voice** so the accompaniment can continue. Otherwise speakers, metronome clicks and other voices may be detected as your playing. An input selector is populated after microphone permission is granted.
+3. Start the score. **Space** starts/pauses it and **Left/Right** jump bars even when a practice button retains focus. The trace shows recent microphone volume; dashed lines show the selected voice’s expected attacks. Dots show detected attacks: green on time, amber early, blue late. Gray dots are unmatched. The timing readout gives an estimated signed error in milliseconds, with a default ±80 ms on-time tolerance.
+4. Adjust **Input offset** to move delayed input earlier (positive values). For an optional automatic estimate, play **Calibrate speakers** through speakers in a quiet room; the app pauses playback/metronome, emits six clicks and estimates their round-trip delay through the microphone. Inconsistent or insufficient detections are rejected. Changing to headphones, Bluetooth, another microphone or a different audio route can change the delay; adjust for the route you actually practice with. Calibration is an alignment estimate, not a measurement of human timing accuracy.
+5. If quiet plucks are missed, lower **Attack gate**; raise it if room noise produces detections. Lower the hardware input gain if clipping is shown. The timing tolerance is adjustable from 25–150 ms. A chord is one expected attack; tied continuations and grace ornaments are excluded from the initial target list.
+6. Pausing freezes the last take’s graph while the input meter remains live. A new playback run, seek, loop wrap, voice/tempo change or timing-setting change starts a fresh take. Hide the strip to give more room to the score; its microphone icon stays highlighted while input is active. **Stop mic** releases the microphone tracks. Backgrounding Sotto stops input and requires re-enabling it on return.
+
+Audio is processed locally in an AudioWorklet using 10 ms level windows and audio-clock timestamps. Only a bounded level/onset trace is kept in memory; raw audio is never recorded, persisted or uploaded. Input gate, tolerance and offset preferences are remembered locally. The worklet is included in the offline app cache; the browser still controls microphone permission.
+
+This is an energy-based attack detector and fixed-tempo reference, not pitch recognition or automatic score following. It is best suited to one clear practice voice. Sustained notes, legato, quiet attacks over ringing strings, strumming, dense passages and room noise can cause missing/extra detections. “Missed” means an expected attack had no matching detection, not proof that a note was omitted. Actual guitar/microphone combinations and physical iPad/Safari behavior still need testing. The browser regression tests use generated input with a known delay and do not open a physical microphone.
+
 ## Validation
 
 ```sh
@@ -194,6 +208,8 @@ node scripts/layout-test.mjs
 node scripts/sound-test.mjs
 # File/folder bookmarks, fresh reads, favorites, backup/import, and fallback:
 node scripts/library-test.mjs
+# Focused-control shortcuts, generated microphone input, timing and calibration:
+node scripts/rhythm-test.mjs
 ```
 
 The browser checks use Playwright Chromium (`npx playwright install chromium`); optionally set `CHROME_PATH` to an existing Chromium executable and `BASE_URL` to a preview/deployed URL. `node scripts/browser-test.mjs --pages` tests the `/sotto/` preview including offline playback. They exercise real audio-buffer scheduling, note highlighting, seek/pause, mute/solo, tempo, loop wrapping, repeats, invalid imports, SVG sanitization and responsive layouts. Captures go in `test-results/`.
@@ -205,10 +221,10 @@ Next work, in practical order:
 1. **Library refinements:** automatic/shared index synchronization and optional direct cloud integration; the initial reference-based library and portable favorites index are available now.
 2. **SoundFonts and per-voice instruments:** load an SF2/SF3 font locally and select its presets; allow violin melody over guitar accompaniment. Retain the bundled recordings and lightweight synths.
 3. **More general import:** derive tempo and instrument transposition automatically, support tempo changes, and simplify preparation. Measure timing, meter changes, structured repeats and explicit LilyPond MIDI playback order are already derived during export; Julia Florida retains its explicit jump map.
-4. **Microphone rhythm feedback:** calibrate input/output latency, detect note attacks, and compare them to a fixed-tempo reference. Validate on actual iPad/Safari hardware.
+4. **Improve microphone rhythm feedback:** validate the preview on actual guitar and iPad/Safari hardware, improve detection of overlapping/legato attacks, and refine device-specific latency calibration. The level trace, onset matching, manual offset and speaker alignment are implemented.
 5. **Pitch feedback and following:** start with single-note melody/bass practice, then overlapping guitar notes/chords and following a freely varying tempo.
 
-Current limits: fixed tempo and pulse unit for imported scores; grace notes use a short fixed interpretation; harmonic-specific sounding pitches and expressive tempo changes are not modelled; notation zooms/scrolls but does not reflow; direct browser MusicXML/LilyPond compilation, raw MIDI import, PDF recognition, and microphone assessment are not implemented. Export only LilyPond files you trust, since the compiler executes Scheme.
+Current limits: fixed tempo and pulse unit for imported scores; grace notes use a short fixed interpretation; harmonic-specific sounding pitches and expressive tempo changes are not modelled; notation zooms/scrolls but does not reflow; direct browser MusicXML/LilyPond compilation, raw MIDI import, PDF recognition and microphone pitch assessment are not implemented. Rhythm feedback is an initial energy-based estimate that needs physical-device validation. Export only LilyPond files you trust, since the compiler executes Scheme.
 
 ## Recording credits and maintenance
 

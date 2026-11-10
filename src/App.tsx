@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, Check, ChevronDown, CircleHelp, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, SlidersHorizontal, Volume2, VolumeX, X } from 'lucide-react';
 import { Player } from './audio';
+import RhythmPanel from './RhythmPanel';
 import { LibraryPanel, type LibraryControl } from './LibraryPanel';
 import { buildBarHighlights } from './bar-highlight';
 import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, validateScore, type Score } from './score';
@@ -37,6 +38,8 @@ export default function App() {
   const [loopEnd, setLoopEnd] = useState(3);
   const [zoom, setZoom] = useState(100);
   const [help, setHelp] = useState(false);
+  const [rhythmVisible, setRhythmVisible] = useState(false);
+  const [microphoneActive, setMicrophoneActive] = useState(false);
   const [libraryVisible, setLibraryVisible] = useState(false);
   const [pitchOffset, setPitchOffset] = useState(0);
   const [starting, setStarting] = useState(false);
@@ -247,15 +250,23 @@ export default function App() {
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (help || soundSettings || libraryVisible) { if (event.key === 'Escape') { setHelp(false); setSoundSettings(false); setLibraryVisible(false); } return; }
-      if ((event.target as HTMLElement).closest('input,select,textarea,button')) return;
-      if (event.code === 'Space') { event.preventDefault(); void togglePlay(); }
-      if (event.code === 'ArrowRight') { event.preventDefault(); stepMeasure(1); }
-      if (event.code === 'ArrowLeft') { event.preventDefault(); stepMeasure(-1); }
+      if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+      const target = event.target as HTMLElement;
+      if (target.isContentEditable || target.closest('textarea,[contenteditable=true],input:not([type=range]):not([type=checkbox]):not([type=button])')) return;
+      // Reserve transport keys even after a button, slider or checkbox gains
+      // focus. Prevent the browser's Space-to-click behavior on that control.
+      if (['Space', 'ArrowRight', 'ArrowLeft'].includes(event.code)) {
+        event.preventDefault(); event.stopPropagation();
+        if (event.code === 'Space') { if (!event.repeat) void togglePlay(); }
+        else stepMeasure(event.code === 'ArrowRight' ? 1 : -1);
+        return;
+      }
+      if (target.closest('input,select,button')) return;
       if (event.key.toLowerCase() === 'r') restart();
       if (event.key.toLowerCase() === 'm') void toggleMetronome();
       if (event.key.toLowerCase() === 'c') setControlsCollapsed(value => !value);
     };
-    document.addEventListener('keydown', keydown); return () => document.removeEventListener('keydown', keydown);
+    document.addEventListener('keydown', keydown, true); return () => document.removeEventListener('keydown', keydown, true);
   }, [togglePlay, stepMeasure, restart, help, soundSettings, libraryVisible, toggleMetronome]);
 
   const scoreClick = (event: React.MouseEvent) => {
@@ -308,7 +319,7 @@ export default function App() {
           <label className="checkbox-row"><input type="checkbox" checked={repeats} onChange={event => setRepeats(event.target.checked)}/><span>Follow repeats &amp; jumps</span></label>
         </div>
 
-        <div className="listening-card"><div className="listening-icon"><Mic size={18}/></div><div><strong>A listening ear</strong><p>Rhythm and pitch feedback.<br/>Coming in a later version.</p></div></div>
+        <button className="listening-card listening-launch" aria-label="Open rhythm feedback" onClick={() => setRhythmVisible(true)}><div className="listening-icon"><Mic size={18}/></div><div><strong>A listening ear</strong><p>Microphone rhythm feedback.<br/>Listen, line up, try again.</p></div></button>
         <div className="sidebar-footer"><span className="local-dot"/> Your scores stay on this device.</div>
       </aside>
 
@@ -316,13 +327,17 @@ export default function App() {
         {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><X size={17}/></button></div>}
 
         <section className="score-frame" aria-label="Interactive sheet music">
-          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools"><label className="follow-control"><input type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className="icon-button sound-settings-button" aria-label="Sound and metronome settings" title="Instrument and metronome settings" onClick={() => setSoundSettings(true)}><SlidersHorizontal size={16}/></button><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 50} onClick={() => changeZoom(zoom - 10)}><Minus size={15}/></button><button className="zoom-label" aria-label="Fit score to width" title="Fit score to width (100%)" onClick={() => changeZoom(100)}>{zoom}%</button><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 250} onClick={() => changeZoom(zoom + 10)}><Plus size={15}/></button></div></div>
+          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools"><label className="follow-control"><input type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className={`icon-button rhythm-toggle ${microphoneActive ? 'mic-active' : ''}`} aria-label="Rhythm feedback" aria-expanded={rhythmVisible} title={microphoneActive ? 'Microphone on · rhythm feedback' : 'Microphone rhythm feedback'} onClick={() => setRhythmVisible(value => !value)}><Mic size={16}/></button><button className="icon-button sound-settings-button" aria-label="Sound and metronome settings" title="Instrument and metronome settings" onClick={() => setSoundSettings(true)}><SlidersHorizontal size={16}/></button><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 50} onClick={() => changeZoom(zoom - 10)}><Minus size={15}/></button><button className="zoom-label" aria-label="Fit score to width" title="Fit score to width (100%)" onClick={() => changeZoom(100)}>{zoom}%</button><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 250} onClick={() => changeZoom(zoom + 10)}><Plus size={15}/></button></div></div>
           <div className="score-scroller" ref={scrollRoot}><div className="score-pages" ref={scoreRoot} style={{ '--score-zoom': zoom / 100 } as React.CSSProperties} onClick={scoreClick}>
             {!score && <div className="loading-score"><Music2 size={32}/><p>Putting your music on the stand…</p></div>}
             {pages.map((page, index) => <div key={`${score?.title}-${index}`} className="score-page" aria-label={`Score page ${index + 1}`}><span className="page-number">{String(index + 1).padStart(2, '0')}</span><div dangerouslySetInnerHTML={{ __html: page }}/></div>)}
           </div><div className="score-end"><Music2 size={16}/><span>A good place to begin again.</span></div></div>
           <div className="score-footnote"><span>Click a note to start there.</span><span>{score?.description}</span></div>
         </section>
+
+        <RhythmPanel visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} onMicState={setMicrophoneActive}
+          prepareCalibration={() => { player.pause(); setPlaying(false); setBeat(player.beat); void player.setMetronome(false); setMetronome(false); }}
+          muteVoice={voice => setMuted(current => new Set([...current, voice]))}/>
 
         <section className="player" id="playback-panel" aria-label="Playback controls" hidden={controlsCollapsed}>
           <div className="progress-row"><span>{clockTime(beat, bpm, score?.beatUnit ?? 1.5)}</span><div className="progress-wrap">{loop && performance && <div className="loop-highlight" style={{ left: `${performance.measures[loopStart].start / performance.duration * 100}%`, width: `${(performance.measures[loopEnd].end - performance.measures[loopStart].start) / performance.duration * 100}%` }}/>}<input aria-label="Playback position" type="range" min="0" max={performance?.duration ?? 1} step="0.01" value={beat} style={{ '--progress': `${beat / (performance?.duration || 1) * 100}%` } as React.CSSProperties} onChange={event => seek(Number(event.target.value))}/></div><span>{fullDuration}</span></div>
@@ -351,6 +366,6 @@ export default function App() {
       <button className="primary-button" onClick={() => setSoundSettings(false)}>Back to the music <ArrowRight size={16}/></button>
     </section></div>}
 
-    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close help" onClick={() => setHelp(false)} autoFocus><X size={20}/></button><div className="eyebrow">SOTTO · VERSION 0.2</div><h2 id="help-title">Find your own tempo.</h2><p>Play the score, slow down a phrase, or mute your part and play along with the other voices. Click a note to move there.</p><div className="help-shortcuts"><span><kbd>space</kbd> Play / pause</span><span><kbd>←</kbd> <kbd>→</kbd> Previous / next bar</span><span><kbd>R</kbd> Restart</span><span><kbd>M</kbd> Metronome</span></div><h3>Bringing another score</h3><p>Open a <code>.sotto.json</code> bundle created by the included LilyPond exporter. Use Library to bookmark files or folders and mark favorites; export its index to back them up. MusicXML can first be converted with <code>musicxml2ly</code>. Direct PDF recognition, raw MIDI import, and microphone feedback are outside v0.2.</p><h3>Playback details</h3><p>The example follows both endings and D.C. al Coda. Guitar pitches sound an octave below the notation. Tempo is measured in dotted-quarter beats; expressive tempo changes and harmonic overtones are not modelled yet.</p><button className="primary-button" onClick={() => setHelp(false)}>Back to the music <ArrowRight size={16}/></button></section></div>}
+    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close help" onClick={() => setHelp(false)} autoFocus><X size={20}/></button><div className="eyebrow">SOTTO · VERSION 0.2</div><h2 id="help-title">Find your own tempo.</h2><p>Play the score, slow down a phrase, or mute your part and play along with the other voices. Click a note to move there.</p><div className="help-shortcuts"><span><kbd>space</kbd> Play / pause</span><span><kbd>←</kbd> <kbd>→</kbd> Previous / next bar</span><span><kbd>R</kbd> Restart</span><span><kbd>M</kbd> Metronome</span></div><h3>Bringing another score</h3><p>Open a <code>.sotto.json</code> bundle created by the included LilyPond exporter. Use Library to bookmark files or folders and mark favorites; export its index to back them up. MusicXML can first be converted with <code>musicxml2ly</code>. Use the microphone icon for volume and attack-timing feedback. Direct PDF recognition, raw MIDI import and pitch assessment are not implemented yet.</p><h3>Playback details</h3><p>The example follows both endings and D.C. al Coda. Guitar pitches sound an octave below the notation. Tempo is measured in dotted-quarter beats; expressive tempo changes and harmonic overtones are not modelled yet.</p><button className="primary-button" onClick={() => setHelp(false)}>Back to the music <ArrowRight size={16}/></button></section></div>}
   </div>;
 }

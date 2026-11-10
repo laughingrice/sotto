@@ -1,6 +1,6 @@
 const BASE = new URL('./', self.location.href);
 const CACHE_PREFIX = `sotto:${BASE.pathname}:`;
-const CACHE = `${CACHE_PREFIX}v0.2.2`;
+const CACHE = `${CACHE_PREFIX}v0.2.3`;
 const localUrl = path => new URL(path, BASE).href;
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
@@ -12,7 +12,7 @@ self.addEventListener('install', event => {
       .filter(url => url.origin === BASE.origin && url.pathname.startsWith(BASE.pathname) && url.pathname.includes('/assets/'))
       .map(url => url.href);
     await cache.put(BASE.href, shell);
-    await cache.addAll(['icon.svg', 'manifest.webmanifest', 'scores/julia-florida.sotto.json'].map(localUrl).concat(assets));
+    await cache.addAll(['icon.svg', 'manifest.webmanifest', 'rhythm-worklet.js', 'scores/julia-florida.sotto.json'].map(localUrl).concat(assets));
     const manifestResponse = await fetch(localUrl('samples/manifest.json'));
     if (!manifestResponse.ok) throw new Error('Instrument recordings could not be cached.');
     const manifest = await manifestResponse.clone().json();
