@@ -4,7 +4,7 @@ import { Player } from './audio';
 import RhythmPanel, { type RhythmControl } from './RhythmPanel';
 import { LibraryPanel, type LibraryControl } from './LibraryPanel';
 import { buildBarHighlights } from './bar-highlight';
-import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, validateScore, type Score } from './score';
+import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, loopDisplayBeat, validateScore, type Score } from './score';
 import { INSTRUMENTS, clickStep, isInstrument, type ClickMode, type InstrumentId } from './sounds';
 
 const DEFAULT_SCORE = `${import.meta.env.BASE_URL}scores/julia-florida.sotto.json`;
@@ -63,8 +63,9 @@ export default function App() {
   const lastFollowed = useRef(-1);
   const performance = useMemo(() => score ? makePerformance(score, repeats) : null, [score, repeats]);
   const pages = useMemo(() => score?.pages.map(cleanSvg) ?? [], [score]);
-  const measure = performance ? measureAt(performance, beat) : null;
-  const active = useMemo(() => performance ? activeNotes(performance, beat) : [], [performance, beat]);
+  const displayBeat = loop && performance ? loopDisplayBeat(beat, performance.measures[loopStart]?.start ?? 0, performance.measures[loopEnd]?.end ?? performance.duration) : beat;
+  const measure = performance ? measureAt(performance, displayBeat) : null;
+  const active = useMemo(() => performance ? activeNotes(performance, displayBeat) : [], [performance, displayBeat]);
   const effectivelyMuted = useMemo(() => new Set(score?.voices.filter(voice => muted.has(voice.id) || (solo !== null && solo !== voice.id)).map(voice => voice.id)), [score, muted, solo]);
   useEffect(() => {
     try { localStorage.setItem('sotto.controlsCollapsed', String(controlsCollapsed)); } catch { /* Storage can be unavailable in private browsing. */ }
@@ -350,7 +351,7 @@ export default function App() {
           }}/>
 
         <section className="player" id="playback-panel" aria-label="Playback controls" hidden={controlsCollapsed}>
-          <div className="progress-row"><span>{clockTime(beat, bpm, score?.beatUnit ?? 1.5)}</span><div className="progress-wrap">{loop && performance && <div className="loop-highlight" style={{ left: `${performance.measures[loopStart].start / performance.duration * 100}%`, width: `${(performance.measures[loopEnd].end - performance.measures[loopStart].start) / performance.duration * 100}%` }}/>}<input aria-label="Playback position" type="range" min="0" max={performance?.duration ?? 1} step="0.01" value={beat} style={{ '--progress': `${beat / (performance?.duration || 1) * 100}%` } as React.CSSProperties} onChange={event => seek(Number(event.target.value))}/></div><span>{fullDuration}</span></div>
+          <div className="progress-row"><span>{clockTime(displayBeat, bpm, score?.beatUnit ?? 1.5)}</span><div className="progress-wrap">{loop && performance && <div className="loop-highlight" style={{ left: `${performance.measures[loopStart].start / performance.duration * 100}%`, width: `${(performance.measures[loopEnd].end - performance.measures[loopStart].start) / performance.duration * 100}%` }}/>}<input aria-label="Playback position" type="range" min="0" max={performance?.duration ?? 1} step="0.01" value={displayBeat} style={{ '--progress': `${displayBeat / (performance?.duration || 1) * 100}%` } as React.CSSProperties} onChange={event => seek(Number(event.target.value))}/></div><span>{fullDuration}</span></div>
           <div className="transport-row"><div className="transport-buttons"><button className="icon-button restart-button" aria-label="Restart" title="Restart (R)" onClick={restart} disabled={!score}><RotateCcw size={18}/></button><button className="icon-button" aria-label="Previous measure" title="Previous measure (←)" onClick={() => stepMeasure(-1)} disabled={!score}><ArrowLeft size={18}/></button><button className="play-button" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={23} fill="currentColor"/> : <Play size={23} fill="currentColor"/>}</button><button className="icon-button" aria-label="Next measure" title="Next measure (→)" onClick={() => stepMeasure(1)} disabled={!score}><ArrowRight size={18}/></button><div className="measure-readout"><span>BAR</span><strong>{measure?.label.split(' · ')[0] ?? '1'}<small> / {score?.bars.at(-1)?.label ?? '59'}</small></strong>{measure && measure.occurrence > 1 && <span className="pass-label">pass {measure.occurrence}</span>}</div></div>
             <div className="tempo-control"><label htmlFor="tempo">TEMPO</label><div><button className="icon-button" aria-label="Slower" onClick={() => setBpm(value => Math.max(15, value - 1))}><Minus size={14}/></button><strong>{bpm}<span>BPM</span></strong><button className="icon-button" aria-label="Faster" onClick={() => setBpm(value => Math.min(150, value + 1))}><Plus size={14}/></button></div><input id="tempo" aria-label="Tempo" type="range" min="15" max="150" value={bpm} onChange={event => setBpm(Number(event.target.value))}/><button className="tempo-reset" title="Reset to score tempo" onClick={() => setBpm(score?.bpm ?? 44)}>{Math.round(bpm / (score?.bpm ?? 44) * 100)}%</button></div>
             <button className={`metronome-button ${metronome ? 'enabled' : ''} ${clickPulse && metronome ? 'is-ticking' : ''}`} data-tick-count={clickCount} data-accent={clickAccent} aria-label="Metronome" aria-pressed={metronome} data-mode={metronomeMode} title={`Metronome: ${metronomeLabel} (M)`} disabled={metronomeStarting} onClick={() => void toggleMetronome()}><AudioLines size={19}/><span>Metronome</span><span className="metronome-state">{metronomeLabel}</span></button>

@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { clickAccent, clickStep, INSTRUMENTS, isInstrument, countInPattern, metronomeGrid, metronomePattern } from './sounds';
+import { clickAccent, clickStep, INSTRUMENTS, isInstrument, countInPattern, metronomePattern } from './sounds';
 
 describe('metronome pulse and accents', () => {
-  it('shows all notated beats in compound meter and adds any finer audible clicks', () => {
-    const compound = [{ start: 0, end: 3, meter: [6, 8] as [number, number] }];
-    expect(metronomePattern(compound, 1.5, 'beat')).toHaveLength(2);
-    expect(metronomeGrid(compound, 1.5, 'beat').map(click => click.beat)).toEqual([0, .5, 1, 1.5, 2, 2.5]);
-    expect(metronomeGrid(compound, 1.5, 'subdivision')).toHaveLength(6);
-    const mixed = [{ start: 0, end: 3, meter: [3, 4] as [number, number] }, { start: 3, end: 7, meter: [4, 4] as [number, number] }];
-    expect(metronomeGrid(mixed, 1, 'beat').filter(click => click.accent === 'downbeat').map(click => click.beat)).toEqual([0, 3]);
-    expect(metronomeGrid(mixed, 1, 'beat')).toHaveLength(7);
-    expect(metronomeGrid(mixed, 1, 'subdivision')).toHaveLength(14);
+  it('plots the selected pulse in compound meter and keeps bar starts accented', () => {
+    const compound = [{ start: 0, end: 3 }];
+    expect(metronomePattern(compound, 1.5, 'beat')).toEqual([
+      { beat: 0, accent: 'downbeat' }, { beat: 1.5, accent: 'beat' },
+    ]);
+    const subdivisions = metronomePattern(compound, 1.5, 'subdivision');
+    expect(subdivisions.map(click => click.beat)).toEqual([0, .5, 1, 1.5, 2, 2.5]);
+    expect(subdivisions.filter(click => click.accent === 'downbeat')).toHaveLength(1);
   });
   it('uses two dotted-quarter beats or six eighth-note subdivisions in 6/8', () => {
     expect(clickStep(1.5, 'beat')).toBe(1.5);

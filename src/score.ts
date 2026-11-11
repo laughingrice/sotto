@@ -52,6 +52,13 @@ export function makePerformance(score: Score, repeats = true): Performance {
   return { notes, sounds, measures, duration: position };
 }
 
+/** Hold the last loop bar while the audio scheduler catches up to a wrap.
+ * The upper bound is exclusive, so a transient end tick cannot select the next bar.
+ */
+export function loopDisplayBeat(beat: number, start: number, end: number): number {
+  return Math.max(start, Math.min(beat, end - 1e-6));
+}
+
 export function measureAt(performance: Performance, beat: number): Measure {
   return performance.measures.find(m => beat >= m.start && beat < m.end) ?? performance.measures.at(-1)!;
 }

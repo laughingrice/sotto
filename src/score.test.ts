@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { activeNotes, clockTime, makePerformance, measureAt, validateScore, type Score } from './score';
+import { activeNotes, clockTime, makePerformance, measureAt, loopDisplayBeat, validateScore, type Score } from './score';
 
 const score: Score = JSON.parse(readFileSync(new URL('../public/scores/julia-florida.sotto.json', import.meta.url), 'utf8'));
 
@@ -71,4 +71,19 @@ describe('performance order and note mapping', () => {
     expect(makePerformance(inferred).notes.map(n => n.start)).toEqual([0, 1, 4, 8]);
     expect(() => validateScore({ ...mixed, bars: mixed.bars.map((bar, index) => index === 2 ? { ...bar, start: 3 } : bar) })).toThrow();
   });
+});
+
+it('keeps loop display inside the selected bars until the clock wraps', () => {
+  const performance = makePerformance(score);
+  const start = performance.measures[1].start, end = performance.measures[3].end;
+  expect(loopDisplayBeat(start + .5, start, end)).toBe(start + .5);
+  for (const beat of [end, end + .001, end + .15]) {
+    const display = loopDisplayBeat(beat, start, end);
+    expect(display).toBeLessThan(end);
+    expect(measureAt(performance, display).index).toBe(3);
+    expect(activeNotes(performance, display).every(note => note.start < end)).toBe(true);
+  }
+  expect(loopDisplayBeat(start, start, end)).toBe(start);
+  expect(loopDisplayBeat(start - .01, start, end)).toBe(start);
+  expect(measureAt(performance, end).index).toBe(4); // Normal following still advances.
 });

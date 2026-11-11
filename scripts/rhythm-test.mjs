@@ -89,6 +89,16 @@ try {
   await compact.getByRole('button', { name: 'Stop listening', exact: true }).waitFor();
   await compact.getByRole('button', { name: 'Stop listening', exact: true }).click();
   assert.equal(await page.evaluate(() => window.testMicTrack.readyState), 'ended', 'Compact listening button releases the microphone');
+  const juliaGrid = page.locator('.rhythm-panel canvas');
+  assert.equal(await juliaGrid.getAttribute('data-metronome-beats'), '176', '6/8 Beat mode has two red lines per bar');
+  assert.equal(await juliaGrid.getAttribute('data-downbeats'), '88', 'Only the first pulse in each bar is solid');
+  await page.getByRole('button', { name: 'Sound and metronome settings', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Metronome pulse', exact: true }).selectOption('subdivision');
+  assert.equal(await juliaGrid.getAttribute('data-metronome-beats'), '528', '6/8 Subdivision mode has all six red lines per bar');
+  assert.equal(await juliaGrid.getAttribute('data-downbeats'), '88');
+  await page.getByRole('combobox', { name: 'Metronome pulse', exact: true }).selectOption('beat');
+  assert.equal(await juliaGrid.getAttribute('data-metronome-beats'), '176', 'Switching back restores the two dotted-quarter pulses');
+  await page.getByRole('button', { name: 'Back to the music', exact: true }).click();
   await page.getByRole('button', { name: 'Hide rhythm feedback', exact: true }).click();
   await page.getByRole('button', { name: 'Show controls', exact: true }).click();
   await page.getByRole('button', { name: 'Mute bass', exact: true }).click();
