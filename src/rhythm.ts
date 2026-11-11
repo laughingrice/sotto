@@ -14,7 +14,22 @@ export function traceColumns(samples: LevelFrame[], left: number, span: number, 
   }
   return [...columns.values()].sort((a, b) => a.x - b.x);
 }
-export function traceLevel(amplitude: number, boostDb: number) {
+export type BackgroundLevel = { rms: number; peak: number };
+export function estimateBackground(frames: LevelFrame[]): BackgroundLevel {
+  const percentile = (key: 'rms' | 'peak') => {
+    const values = frames.map(frame => frame[key]).filter(value => Number.isFinite(value) && value >= 0).sort((a, b) => a - b);
+    if (!values.length) return 1e-5;
+    // Short attacks don't determine the floor. A small display margin below
+    // then removes most quiet fluctuations without changing detection.
+    return Math.max(1e-5, values[Math.floor((values.length - 1) * .6)]);
+  };
+  return { rms: percentile('rms'), peak: percentile('peak') };
+}
+export function traceLevel(amplitude: number, boostDb: number, background?: number) {
+  if (background !== undefined) {
+    const aboveFloor = Math.max(0, amplitude / Math.max(1e-5, background) - 10 ** (3 / 20));
+    return Math.min(1, 20 * Math.log10(1 + aboveFloor * 10 ** (boostDb / 20)) / 36);
+  }
   const db = 20 * Math.log10(Math.max(amplitude, 1e-6)) + boostDb;
   return Math.max(0, Math.min(1, (db + 70) / 70));
 }

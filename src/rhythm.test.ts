@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { calibrationOffset, expectedAttacks, OnsetDetector, RhythmPass, traceColumns, traceLevel } from './rhythm';
+import { calibrationOffset, estimateBackground, expectedAttacks, OnsetDetector, RhythmPass, traceColumns, traceLevel } from './rhythm';
 import { makePerformance, type Score } from './score';
 import { readFileSync } from 'node:fs';
 
 describe('rhythm input and timing', () => {
+  it('learns background without brief plucks lifting the floor, and crops it visually', () => {
+    const frames = Array.from({ length: 200 }, (_, i) => ({ time: i / 100,
+      rms: i % 20 === 0 ? .2 : .005, peak: i % 20 === 0 ? .5 : .015 }));
+    const floor = estimateBackground(frames);
+    expect(floor).toEqual({ rms: .005, peak: .015 });
+    expect(traceLevel(.005, 12, floor.rms)).toBe(0);
+    expect(traceLevel(.006, 12, floor.rms)).toBe(0);
+    expect(traceLevel(.02, 12, floor.rms)).toBeGreaterThan(.5);
+    expect(traceLevel(.1, 12, floor.rms)).toBeGreaterThan(traceLevel(.02, 12, floor.rms));
+    expect(Number.isFinite(traceLevel(0, 12, estimateBackground([]).rms))).toBe(true);
+  });
   it('keeps short peaks visible when many input windows share a screen pixel', () => {
     const columns = traceColumns([
       { time: 10.001, rms: .001, peak: .002 },

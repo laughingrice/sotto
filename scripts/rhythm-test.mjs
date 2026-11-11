@@ -29,6 +29,16 @@ await page.addInitScript(() => {
     const destination = context.createMediaStreamDestination();
     window.testMicDestination = destination;
     window.testMicTrack = destination.stream.getTracks()[0];
+    // A quiet continuous noise floor exercises baseline learning through the
+    // actual input/filter/worklet path, not just the pure display helper.
+    const noise = context.createBufferSource();
+    noise.buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
+    const data = noise.buffer.getChannelData(0);
+    let seed = 1234567;
+    for (let i = 0; i < data.length; i++) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; data[i] = (seed / 4294967296 * 2 - 1) * .008; }
+    noise.loop = true; noise.connect(destination); noise.start();
+    const stopTrack = window.testMicTrack.stop.bind(window.testMicTrack);
+    window.testMicTrack.stop = () => { noise.stop(); noise.disconnect(); stopTrack(); };
     if (window.holdMicrophone) return new Promise(resolve => { window.resolveMicrophone = () => resolve(destination.stream); });
     return destination.stream;
   };
@@ -104,6 +114,15 @@ try {
   await page.getByRole('combobox', { name: 'Microphone high-pass filter', exact: true }).selectOption('40');
   assert.ok(await page.evaluate(() => window.testFilters.some(node => node.type === 'highpass' && node.frequency.value === 40)));
   await page.getByRole('combobox', { name: 'Microphone high-pass filter', exact: true }).selectOption('0');
+  const chart = page.locator('.rhythm-panel canvas');
+  assert.equal(await chart.getAttribute('data-metronome-beats'), '32', 'Beat grid uses the same quarter-note pulse as the metronome');
+  assert.equal(await chart.getAttribute('data-downbeats'), '8', 'Each synthetic bar has a stronger downbeat');
+  assert.equal(await chart.getAttribute('data-lookahead-seconds'), '8', 'Default plot shows eight seconds ahead');
+  await page.waitForFunction(() => document.querySelector('.rhythm-panel canvas').dataset.backgroundReady === 'true');
+  assert.ok(Number(await chart.getAttribute('data-background-rms')) > .0001, 'Baseline is measured from the generated background noise');
+  await page.getByRole('button', { name: 'Learn microphone baseline', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.rhythm-panel canvas').dataset.backgroundReady === 'true');
+  assert.equal(await chart.getAttribute('data-hide-background'), 'true');
   await page.evaluate(() => { window.injectPerformance = true; });
   await play().click();
   await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.late) >= 3);
@@ -115,6 +134,14 @@ try {
   await page.getByRole('button', { name: 'Restart', exact: true }).click();
   await play().click();
   await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.onTime) >= 3);
+  await page.getByRole('checkbox', { name: 'Hide learned microphone background', exact: true }).uncheck();
+  assert.ok(Number(await controls.getAttribute('data-on-time')) >= 3, 'Background display adjustment preserves detection results');
+  await page.getByRole('checkbox', { name: 'Hide learned microphone background', exact: true }).check();
+  await pause().click(); await page.waitForTimeout(300);
+  const beforeLearning = Number(await controls.getAttribute('data-on-time'));
+  await page.getByRole('button', { name: 'Learn microphone baseline', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.rhythm-panel canvas').dataset.backgroundReady === 'true');
+  assert.equal(Number(await controls.getAttribute('data-on-time')), beforeLearning, 'Relearning background preserves the paused take and its timing results');
   await page.getByRole('combobox', { name: 'Rhythm plot window', exact: true }).selectOption('48');
   await page.getByRole('combobox', { name: 'Microphone trace boost', exact: true }).selectOption('24');
   assert.ok(Number(await controls.getAttribute('data-on-time')) >= 3, 'Display controls preserve detection results');
@@ -123,7 +150,7 @@ try {
   await page.screenshot({ path: 'test-results/rhythm-desktop.png' });
   await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).selectOption('all');
   assert.equal(await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).inputValue(), 'all');
-  await pause().click();
+  if (await pause().count()) await pause().click();
   await page.evaluate(() => { window.injectPerformance = false; window.injectCalibration = true; });
   await page.getByRole('button', { name: 'Calibrate speakers', exact: true }).click();
   await page.getByText(/Speaker\/microphone alignment:/).waitFor();

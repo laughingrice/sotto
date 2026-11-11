@@ -335,7 +335,7 @@ export default function App() {
           <div className="score-footnote"><span>Click a note to start there.</span><span>{score?.description}</span></div>
         </section>
 
-        <RhythmPanel visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} onMicState={setMicrophoneActive}
+        <RhythmPanel visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} clickMode={clickMode} onMicState={setMicrophoneActive}
           prepareCalibration={() => { player.pause(); setPlaying(false); setBeat(player.beat); void player.setMetronome(false); setMetronome(false); }}
           muteVoice={voice => setMuted(current => new Set([...current, voice]))}/>
 
@@ -345,8 +345,9 @@ export default function App() {
             <div className="tempo-control"><label htmlFor="tempo">TEMPO</label><div><button className="icon-button" aria-label="Slower" onClick={() => setBpm(value => Math.max(15, value - 1))}><Minus size={14}/></button><strong>{bpm}<span>BPM</span></strong><button className="icon-button" aria-label="Faster" onClick={() => setBpm(value => Math.min(150, value + 1))}><Plus size={14}/></button></div><input id="tempo" aria-label="Tempo" type="range" min="15" max="150" value={bpm} onChange={event => setBpm(Number(event.target.value))}/><button className="tempo-reset" title="Reset to score tempo" onClick={() => setBpm(score?.bpm ?? 44)}>{Math.round(bpm / (score?.bpm ?? 44) * 100)}%</button></div>
             <button className={`metronome-button ${metronome ? 'enabled' : ''} ${clickPulse && metronome ? 'is-ticking' : ''}`} data-tick-count={clickCount} data-accent={clickAccent} aria-label="Metronome" aria-pressed={metronome} title="Metronome (M)" disabled={metronomeStarting} onClick={() => void toggleMetronome()}><AudioLines size={19}/><span>Metronome</span><span className="metronome-state">{metronome ? 'ON' : 'OFF'}</span></button>
           </div>
+        <div className="player-meta"><span><Headphones size={13}/> {INSTRUMENTS.find(item => item.id === instrument)?.name} · playback.</span><span className="keyboard-hint"><kbd>space</kbd> play / pause</span></div>
         </section>
-        <div className="below-player" hidden={controlsCollapsed}><span><Headphones size={13}/> {INSTRUMENTS.find(item => item.id === instrument)?.name} · playback.</span><span className="keyboard-hint"><kbd>space</kbd> play / pause</span></div>
+
       </main>
     </div>
 
