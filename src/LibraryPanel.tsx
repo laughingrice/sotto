@@ -1,13 +1,13 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { FolderOpen, Star, Trash2, X } from 'lucide-react';
-import { lastScore, rememberScore } from './preferences';
+import { lastScore, rememberScore, exportPreferences, importPreferences, parsePreferences } from './preferences';
 import { validateScore } from './score';
 import { connectFolder, emptyLibrary, exportLibrary, filePickers, loadLastScore, loadLibrary, parseLibrary, readEntry, saveLibrary, scanDirectory,
   type Library, type LibraryEntry, type LibraryFolder, type ReadHandle } from './library';
 
 export type LibraryControl = { chooseFile(): void; restoreLastScore(isCurrent?: () => boolean): Promise<boolean>; reconnectLastScore(): void };
-export const LibraryPanel = forwardRef<LibraryControl, { visible: boolean; onClose(): void; onOpen(value: unknown, key: string): void; onResumeNeeded(title: string): void; onError(message: string): void }>(
-function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onError }, ref) {
+export const LibraryPanel = forwardRef<LibraryControl, { visible: boolean; onClose(): void; onOpen(value: unknown, key: string): void; onResumeNeeded(title: string): void; onBeforeBackup(): void; onSettingsImported(): void; onError(message: string): void }>(
+function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup, onSettingsImported, onError }, ref) {
   const [library, setLibrary] = useState<Library>(emptyLibrary);
   const current = useRef(library);
   const ready = useRef<Promise<void>>(Promise.resolve());
@@ -183,10 +183,12 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onError }, ref
       {!filePickers.showDirectoryPicker && <p className="settings-note">Your last song can reopen from its cached copy. Other scores may require you to reselect files or reconnect a folder after reopening Sotto. On iPad, choose a score through Files → OneDrive. Chrome/Edge on desktop can remember file and folder access. A picker may call the selection “Upload”; Sotto reads it locally and does not send it anywhere.</p>}
       <div className="library-actions"><button className="quiet-button" disabled={busy} onClick={() => void chooseFile()}><FolderOpen size={16}/> Add score</button><button className="quiet-button" disabled={busy} onClick={() => void chooseFolder()}>Connect folder</button>
         <button className="quiet-button" disabled={busy} onClick={() => {
-          const href = URL.createObjectURL(new Blob([exportLibrary(current.current)], { type: 'application/json' }));
+          onBeforeBackup();
+          const settings = exportPreferences(current.current.entries.map(entry => `library:${entry.id}`));
+          const href = URL.createObjectURL(new Blob([exportLibrary(current.current, settings)], { type: 'application/json' }));
           const link = document.createElement('a'); link.href = href; link.download = 'sotto-library.json'; link.click(); setTimeout(() => URL.revokeObjectURL(href), 1000);
-        }}>Export index</button><button className="quiet-button" disabled={busy} onClick={() => indexInput.current?.click()}>Import index</button></div>
-      <p className="settings-note">Export the small index to OneDrive to back up favorites. Import it on another device, then reconnect the folders there.</p>
+        }}>Export backup</button><button className="quiet-button" disabled={busy} onClick={() => indexInput.current?.click()}>Import backup</button></div>
+      <p className="settings-note">Save a backup to OneDrive to transfer favorites, library references, general preferences and per-song practice settings. Import on the other device, then reconnect the folders. Cached sheet music and microphone device/calibration are excluded. Import merges songs and replaces saved settings for matching songs.</p>
       {message && <p className="library-message" role="status">{message}</p>}
       {busy && <p role="status">Reading files…</p>}
       <div className="library-filters"><input aria-label="Search library" placeholder="Find a score…" value={search} onChange={event => setSearch(event.target.value)}/><label className="checkbox-row"><input type="checkbox" checked={favoritesOnly} onChange={event => setFavoritesOnly(event.target.checked)}/>Favorites</label></div>
@@ -213,16 +215,20 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onError }, ref
           });
         })().catch(report).finally(() => { setBusy(false); reconnectFolder.current = undefined; });
       }}/>
-      <input ref={indexInput} type="file" accept=".json" className="visually-hidden" aria-label="Import library index" onChange={event => {
+      <input ref={indexInput} type="file" accept=".json" className="visually-hidden" aria-label="Import library backup" onChange={event => {
         const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
         setBusy(true);
         void (async () => {
-          if (file.size > 5_000_000) throw new Error('Please select a library index smaller than 5 MB.');
-          const imported = parseLibrary(await file.text()); await ready.current;
+          if (file.size > 15_000_000) throw new Error('Please select a library backup smaller than 15 MB.');
+          const text = await file.text();
+          const imported = parseLibrary(text);
+          const settings = parsePreferences(JSON.parse(text).settings, imported.entries.map(entry => `library:${entry.id}`));
+          await ready.current;
           // Merge metadata; retain this device's handles for matching IDs.
           const merge = <T extends { id: string }>(old: T[], added: T[]) => [...old.filter(item => !added.some(next => next.id === item.id)), ...added.map(item => ({ ...old.find(previous => previous.id === item.id), ...item }))];
           await commit(library => ({ entries: merge(library.entries, imported.entries), folders: merge(library.folders, imported.folders) }));
-          setMessage('Index imported. Reconnect its folders on this device to open the scores.');
+          if (settings) { importPreferences(settings); onSettingsImported(); }
+          setMessage(settings ? 'Library and settings restored. Reconnect the score files or folders on a new device.' : 'Library index imported. Reconnect its folders on this device to open the scores.');
         })().catch(report).finally(() => setBusy(false));
       }}/>
     </section></div>}

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { loadPractice, loadPreferences, lastScore, remember, rememberScore, savePractice } from './preferences';
+import { loadPractice, loadPreferences, lastScore, remember, rememberScore, savePractice, exportPreferences, importPreferences, parsePreferences } from './preferences';
 import type { Score } from './score';
 const score: Score = { format: 'sotto-score', version: 1, title: 'Test', composer: '', subtitle: '', description: '', bpm: 80, beatUnit: 1, beatsPerBar: 4,
   voices: [{ id: 'melody', name: 'Melody', color: '#000' }], notes: [], pages: ['<svg/>'],
@@ -33,4 +33,32 @@ it('falls back safely for corrupt or unavailable browser storage', () => {
   vi.stubGlobal('localStorage', { getItem: () => { throw new Error('Unavailable'); }, setItem: () => { throw new Error('Unavailable'); } });
   expect(loadPreferences().clickMode).toBe('beat');
   expect(() => savePractice('one', loadPractice('one', score))).not.toThrow();
+});
+
+it('backs up song settings and portable preferences, excluding score data and device calibration', () => {
+  const saved = { ...loadPractice('library:one', score), bpm: 62, loop: true, loopStart: 1, loopEnd: 2, beat: 5, muted: ['melody'] };
+  savePractice('library:one', saved); savePractice('library:other', { ...saved, bpm: 90 });
+  rememberScore('library:one');
+  localStorage.setItem('sotto.instrument', 'violin'); localStorage.setItem('sotto.inputDelay', '180'); localStorage.setItem('sotto.inputDevice', 'source-mic');
+  const backup = exportPreferences(['library:one']);
+  expect(backup.songs).toEqual({ 'library:one': saved });
+  expect(backup.options).toEqual({ 'sotto.instrument': 'violin' });
+  expect(JSON.stringify(backup)).not.toMatch(/pages|notes|source-mic|inputDelay/);
+  localStorage.setItem('sotto.inputDelay', '25'); localStorage.setItem('sotto.inputDevice', 'target-mic');
+  savePractice('library:one', { ...saved, bpm: 100 });
+  importPreferences(parsePreferences(JSON.parse(JSON.stringify(backup)), ['library:one'])!);
+  expect(loadPractice('library:one', score)).toEqual(saved);
+  expect(loadPractice('library:other', score).bpm).toBe(90);
+  expect(localStorage.getItem('sotto.inputDelay')).toBe('25'); expect(localStorage.getItem('sotto.inputDevice')).toBe('target-mic');
+  expect(lastScore()).toBe('library:one');
+});
+it('accepts older indexes and validates the whole backup before importing settings', () => {
+  expect(parsePreferences(undefined, [])).toBeUndefined();
+  const backup = exportPreferences([]);
+  expect(() => parsePreferences({ ...backup, options: { 'sotto.inputDevice': 'foreign-mic' } }, [])).toThrow();
+  expect(() => parsePreferences({ ...backup, options: { toString: 'anything' } }, [])).toThrow();
+  expect(() => parsePreferences({ ...backup, songs: { 'library:unknown': {} } }, [])).toThrow();
+  expect(() => parsePreferences({ ...backup, songs: { 'builtin:julia-florida': { volumes: { melody: 200 } } } }, [])).toThrow();
+  expect(() => parsePreferences({ ...backup, general: { ...backup.general, clickMode: ['beat'] } }, [])).toThrow();
+  expect(loadPreferences().zoom).toBe(100);
 });

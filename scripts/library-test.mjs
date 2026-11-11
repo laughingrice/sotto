@@ -49,7 +49,7 @@ try {
   });
   assert.ok(stored.handle && stored.folder, 'Real file/folder handles survive IndexedDB storage');
   assert.ok(stored.json.length < 5000 && !stored.json.includes('<svg') && !stored.json.includes('"notes"'), 'Only a small reference index is stored');
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export index', exact: true }).click()]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export backup', exact: true }).click()]);
   const index = await readFile(await download.path(), 'utf8');
   assert.ok(index.length < 5000 && !index.includes('handle') && !index.includes('<svg'));
   assert.equal(JSON.parse(index).entries.filter(entry => entry.favorite).length, 1);
@@ -112,8 +112,8 @@ try {
   });
   await openLibrary();
   await page.waitForFunction(() => typeof window.resumeDirectoryScan === 'function');
-  await page.getByLabel('Import library index', { exact: true }).setInputFiles({ name: 'sotto-library.json', mimeType: 'application/json', buffer: Buffer.from(index) });
-  await page.getByText('Index imported. Reconnect its folders on this device to open the scores.', { exact: true }).waitFor();
+  await page.getByLabel('Import library backup', { exact: true }).setInputFiles({ name: 'sotto-library.json', mimeType: 'application/json', buffer: Buffer.from(index) });
+  await page.getByText('Library and settings restored. Reconnect the score files or folders on a new device.', { exact: true }).waitFor();
   await page.evaluate(() => window.resumeDirectoryScan());
   await page.waitForFunction(() => window.testLibraryCommits >= 2);
   await page.getByRole('checkbox', { name: 'Favorites', exact: true }).check();

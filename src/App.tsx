@@ -16,6 +16,7 @@ export default function App() {
   const player = useMemo(() => new Player(), []);
   const [score, setScore] = useState<Score | null>(null);
   const [scoreKey, setScoreKey] = useState('builtin:julia-florida');
+  const [settingsGeneration, setSettingsGeneration] = useState(0);
   const [resumeNeeded, setResumeNeeded] = useState('');
   const [practiceVoice, setPracticeVoice] = useState('melody');
   const pendingRestore = useRef<{ score: Score; settings: PracticeSettings } | null>(null);
@@ -389,7 +390,7 @@ export default function App() {
           <div className="score-footnote"><span>Click a note to start there.</span><span>{score?.description}</span></div>
         </section>
 
-        <RhythmPanel ref={rhythmControl} visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} clickMode={clickMode} practiceVoice={practiceVoice} onPracticeVoice={setPracticeVoice} onMicState={setMicrophoneActive}
+        <RhythmPanel key={settingsGeneration} ref={rhythmControl} visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} clickMode={clickMode} practiceVoice={practiceVoice} onPracticeVoice={setPracticeVoice} onMicState={setMicrophoneActive}
           prepareCalibration={() => { player.pause(); setPlaying(false); setBeat(player.beat); void player.setMetronome(false); setMetronomeMode('off'); }}
           mutedVoices={effectivelyMuted} muteVoice={voice => {
             const selected = score?.voices.filter(item => voice === 'all' || item.id === voice) ?? [];
@@ -410,7 +411,18 @@ export default function App() {
       </main>
     </div>
 
-    <LibraryPanel ref={libraryControl} visible={libraryVisible} onClose={() => setLibraryVisible(false)} onOpen={openScore} onResumeNeeded={setResumeNeeded} onError={setError}/>
+    <LibraryPanel ref={libraryControl} visible={libraryVisible} onClose={() => setLibraryVisible(false)} onOpen={openScore} onResumeNeeded={setResumeNeeded}
+      onBeforeBackup={() => { if (latestPractice.current) savePractice(latestPractice.current.key, latestPractice.current.settings); }}
+      onSettingsImported={() => {
+        player.pause(); setPlaying(false); void player.setMetronome(false); setMicrophoneActive(false);
+        const saved = loadPreferences();
+        setZoom(saved.zoom); setFollow(saved.follow); setClickVolume(saved.clickVolume); setClickMode(saved.clickMode); setMetronomeMode(saved.metronomeMode); setRhythmVisible(saved.rhythmVisible);
+        try { const sound = localStorage.getItem('sotto.instrument'); if (isInstrument(sound)) setInstrument(sound);
+          setCountIn(localStorage.getItem('sotto.countIn') === 'true'); setControlsCollapsed(localStorage.getItem('sotto.controlsCollapsed') === 'true'); } catch { /* Optional preferences. */ }
+        latestPractice.current = null;
+        if (score) openScore(score, scoreKey, false);
+        setSettingsGeneration(value => value + 1);
+      }} onError={setError}/>
 
     {soundSettings && <div className="modal-backdrop" onClick={() => setSoundSettings(false)}><section className="help-modal sound-modal" role="dialog" aria-modal="true" aria-labelledby="sound-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close sound settings" onClick={() => setSoundSettings(false)} autoFocus><X size={20}/></button><div className="eyebrow">PLAYBACK</div><h2 id="sound-title">Sound &amp; metronome</h2>
       <label className="settings-field">Instrument<select aria-label="Playback instrument" disabled={soundLoading} aria-busy={soundLoading} value={instrument} onChange={event => setInstrument(event.target.value as InstrumentId)}>{INSTRUMENTS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -428,6 +440,6 @@ export default function App() {
       <button className="primary-button" onClick={() => setSoundSettings(false)}>Back to the music <ArrowRight size={16}/></button>
     </section></div>}
 
-    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close help" onClick={() => setHelp(false)} autoFocus><X size={20}/></button><div className="eyebrow">SOTTO · VERSION 0.3</div><h2 id="help-title">Find your own tempo.</h2><p>Play the score, slow down a phrase, or mute your part and play along with the other voices. Click a note to move there.</p><div className="help-shortcuts"><span><kbd>space</kbd> Play / pause</span><span><kbd>←</kbd> <kbd>→</kbd> Previous / next bar</span><span><kbd>R</kbd> Restart</span><span><kbd>M</kbd> Metronome</span></div><h3>Bringing another score</h3><p>Open a <code>.sotto.json</code> bundle created by the included LilyPond exporter. Use Library to bookmark files or folders and mark favorites; export its index to back them up. MusicXML can first be converted with <code>musicxml2ly</code>. Use the microphone icon for volume and attack-timing feedback. Direct PDF recognition, raw MIDI import and pitch assessment are not implemented yet.</p><h3>Playback details</h3><p>The example follows both endings and D.C. al Coda. Guitar pitches sound an octave below the notation. Tempo is measured in dotted-quarter beats; expressive tempo changes and harmonic overtones are not modelled yet.</p><button className="primary-button" onClick={() => setHelp(false)}>Back to the music <ArrowRight size={16}/></button></section></div>}
+    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close help" onClick={() => setHelp(false)} autoFocus><X size={20}/></button><div className="eyebrow">SOTTO · VERSION 0.3</div><h2 id="help-title">Find your own tempo.</h2><p>Play the score, slow down a phrase, or mute your part and play along with the other voices. Click a note to move there.</p><div className="help-shortcuts"><span><kbd>space</kbd> Play / pause</span><span><kbd>←</kbd> <kbd>→</kbd> Previous / next bar</span><span><kbd>R</kbd> Restart</span><span><kbd>M</kbd> Metronome</span></div><h3>Bringing another score</h3><p>Open a <code>.sotto.json</code> bundle created by the included LilyPond exporter. Use Library to bookmark files or folders and mark favorites; use Export backup to save the library and practice settings. MusicXML can first be converted with <code>musicxml2ly</code>. Use the microphone icon for volume and attack-timing feedback. Direct PDF recognition, raw MIDI import and pitch assessment are not implemented yet.</p><h3>Playback details</h3><p>The example follows both endings and D.C. al Coda. Guitar pitches sound an octave below the notation. Tempo is measured in dotted-quarter beats; expressive tempo changes and harmonic overtones are not modelled yet.</p><button className="primary-button" onClick={() => setHelp(false)}>Back to the music <ArrowRight size={16}/></button></section></div>}
   </div>;
 }

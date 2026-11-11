@@ -62,7 +62,7 @@ The production build includes a service worker that caches the app, built-in sco
 - Instrument selection: recorded nylon guitar, piano and violin, plus synthesized marimba, organ and flute. The recordings are bundled with the app, balanced in level, and cached for offline use.
 - Save/open portable `.sotto.json` bundles. Imported SVG is sanitized before rendering.
 - Meter changes use exported bar timing for playback, navigation, highlights, and metronome accents.
-- A persistent library of file/folder bookmarks, favorites, and a portable index; the last opened song alone is cached for resuming. Granted folder handles are refreshed when Library opens, with separate Refresh and Reconnect actions.
+- A persistent library of file/folder bookmarks, favorites, and a portable settings backup; the last opened song alone is cached for resuming. Granted folder handles are refreshed when Library opens, with separate Refresh and Reconnect actions.
 - Microphone rhythm preview: a volume trace, expected/detected attack markers, early/late estimates, input offset and optional speaker calibration. No microphone audio is recorded or uploaded.
 
 Keyboard: **Space** play/pause, **←/→** previous/next bar, **R** restart, **M** metronome, **C** hide/show controls. Space and Left/Right remain transport keys after clicking buttons, checkboxes, sliders or score controls. Holding Space does not repeatedly toggle playback. Text-entry fields and open dialogs keep their normal keyboard behavior; modified browser shortcuts are left alone.
@@ -163,7 +163,7 @@ The named voices live inside those shared section/measure variables. `returnToSe
 2. Open **Library → Connect folder**, choose that folder, and open a score from the list. Subfolders are included. **Open score / Add score** can bookmark individual files instead.
 3. Use the star to mark pieces you are working on; **Favorites** filters the list. Search matches title, composer, and relative path. Recently opened scores appear first within each favorites group.
 4. Library automatically scans remembered folder handles when it opens if read permission is already granted. **Refresh** rescans that same handle; it requests permission only when necessary and does not reopen a folder picker. **Reconnect** explicitly chooses a folder again. Opening a linked score reads its current contents from disk, including changes made outside Sotto. Browsers without directory handles still require reselection; the browser may label its local picker “Upload”, but Sotto does not upload the selected files.
-5. Choose **Export index** and save `sotto-library.json` in OneDrive. This small metadata file preserves folder labels, relative paths, favorites, and recents, **not score contents or browser permissions**. Import it on another device, then reconnect each folder. Index imports merge by bookmark ID; exporting/importing is manual, not live synchronization.
+5. Choose **Export backup** and save `sotto-library.json` in OneDrive. This small JSON file preserves folder labels, relative paths, favorites, recents, general preferences and each bookmarked song’s practice settings. On another computer, choose **Library → Import backup**, then reconnect the score files or folders. Existing bookmarks merge by ID; imported settings replace saved values for matching songs, while other songs stay intact. Preferences apply immediately, with playback/microphone stopped. Older metadata-only library indexes remain importable. Export/import is manual, not live synchronization.
 
 Desktop Chrome/Edge can store read-only file/directory handles in IndexedDB; permissions may need granting again. A OneDrive folder must be available through the local file picker (and the selected files downloaded by OneDrive when needed). No OneDrive account integration is required. Safari/iPad and other browsers without these pickers can resume the last cached song; other pieces require reselection or reconnecting their folder. On iPad, select OneDrive through the Files picker; folder selection depends on the browser/provider. Bookmark metadata is local to this browser and site address; export the index for backup or transfer. Clearing browser storage removes the index/handles but never deletes the original files. Bookmarks and permissions are not a backup of the score files themselves.
 
@@ -171,7 +171,7 @@ Only **one imported song** is cached in IndexedDB, in a single replaceable slot.
 
 Sotto remembers general preferences (instrument, zoom, follow score, control visibility, feedback-panel visibility, count-in, metronome mode/pulse/volume, and microphone input/filter/timing/display choices). Each song separately remembers tempo, bar position, repeat order, loop range and enablement, mute/solo/voice volumes, practice voice and playback octave. Settings are checked against the current score when reopening, so shortened scores or changed voice IDs do not leave invalid controls. Playback and microphone input always reopen paused; a saved Continuous metronome mode starts after Play or a metronome click. Rhythm results and microphone audio are not persisted.
 
-These settings and the one-song resume copy are local to this browser and site address. The portable library index does not include practice settings or the cached score. Clearing site storage removes them, but never changes files in OneDrive or another source folder.
+These settings and the one-song resume copy are local to this browser and site address. The portable backup includes practice settings and common preferences, but excludes the cached score, file-access permissions, microphone device ID and device-specific input-delay calibration. Keep the source score files in OneDrive or another backed-up folder; reconnecting their imported bookmarks restores the associated practice settings. Clearing site storage removes them, but never changes files in OneDrive or another source folder. Browser account sync does not provide application-level synchronization of this site storage. A future sync feature can exchange this same small settings/index format through a shared file or cloud service; it need not copy the full score library.
 
 ## Instruments, metronome, and SoundFonts
 
@@ -219,6 +219,8 @@ node scripts/sound-test.mjs
 node scripts/library-test.mjs
 # Last-song caching, saved settings, fresh linked reads and offline resume:
 node scripts/session-test.mjs
+# Export/restore settings and library references into a separate browser profile:
+node scripts/backup-test.mjs
 # Focused-control shortcuts, generated microphone input, timing and calibration:
 node scripts/rhythm-test.mjs
 ```
@@ -229,7 +231,7 @@ The browser checks use Playwright Chromium (`npx playwright install chromium`); 
 
 Next work, in practical order:
 
-1. **Library refinements:** automatic/shared index synchronization and optional direct cloud integration; the initial reference-based library and portable favorites index are available now.
+1. **Library refinements:** automatic/shared backup synchronization and optional direct cloud integration; the initial reference-based library and portable library/settings backup are available now.
 2. **SoundFonts and per-voice instruments:** load an SF2/SF3 font locally and select its presets; allow violin melody over guitar accompaniment. Retain the bundled recordings and lightweight synths.
 3. **More general import:** derive tempo and instrument transposition automatically, support tempo changes, and simplify preparation. Measure timing, meter changes, structured repeats and explicit LilyPond MIDI playback order are already derived during export; Julia Florida retains its explicit jump map.
 4. **Improve microphone rhythm feedback:** validate the preview on actual guitar and iPad/Safari hardware, improve detection of overlapping/legato attacks, and refine device-specific latency calibration. The level trace, onset matching, manual offset and speaker alignment are implemented.

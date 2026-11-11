@@ -1,4 +1,5 @@
 import type { Score } from './score';
+import type { PortablePreferences } from './preferences';
 /** The library index stores references and metadata. A separate single slot
  * caches the last opened score for resuming when file access is unavailable. */
 export type ReadHandle = {
@@ -85,8 +86,8 @@ export function saveLastScore(key: string, score: Score): Promise<void> {
   });
   return scoreWrites;
 }
-export function exportLibrary(library: Library): string {
-  return JSON.stringify({ format: 'sotto-library', version: 1,
+export function exportLibrary(library: Library, settings?: PortablePreferences): string {
+  return JSON.stringify({ format: 'sotto-library', version: 1, ...(settings ? { settings } : {}),
     folders: library.folders.map(({ id, name }) => ({ id, name })),
     entries: library.entries.map(({ handle: _handle, ...metadata }) => metadata),
   }, null, 2);
