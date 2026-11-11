@@ -53,7 +53,7 @@ try {
   const index = await readFile(await download.path(), 'utf8');
   assert.ok(index.length < 5000 && !index.includes('handle') && !index.includes('<svg'));
   assert.equal(JSON.parse(index).entries.filter(entry => entry.favorite).length, 1);
-  await page.reload(); await ready(); await openLibrary();
+  await page.reload(); await page.getByRole('heading', { name: 'Library fixture', exact: true }).waitFor(); await openLibrary();
   assert.equal(await page.getByRole('button', { name: 'Favorite Library fixture', exact: true }).getAttribute('aria-pressed'), 'true', 'Favorites persist across reloads');
   // The next panel open refreshes silently when permission is already granted.
   await page.keyboard.press('Escape');
@@ -79,12 +79,12 @@ try {
   assert.ok(await page.evaluate(async () => (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('OneDrive test Scores')).getFileHandle('fixture.sotto.json')).getFile().then(file => file.size > 0)), 'Removing bookmarks leaves the file intact');
   await page.keyboard.press('Escape');
 
-  // Safari-style fallback remembers only metadata and requests reselection
-  // when its session File objects no longer exist.
+  // Safari-style fallback reopens the single cached song; bookmarks still
+  // require reselection to refresh from the source file.
   await page.evaluate(() => { window.showOpenFilePicker = undefined; window.showDirectoryPicker = undefined; });
   await inputScore.setInputFiles({ name: 'fallback.sotto.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...fixture, title: 'Fallback score' })) });
   await page.getByRole('heading', { name: 'Fallback score', exact: true }).waitFor();
-  await page.reload(); await ready(); await openLibrary();
+  await page.reload(); await page.getByRole('heading', { name: 'Fallback score', exact: true }).waitFor(); await openLibrary();
   await page.evaluate(() => { window.showOpenFilePicker = undefined; });
   const chooserPromise = page.waitForEvent('filechooser');
   await page.locator('.library-entry').filter({ has: page.getByRole('button', { name: 'Favorite Fallback score', exact: true }) }).locator('.library-open').click();

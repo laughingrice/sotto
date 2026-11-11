@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, Check, ChevronDown, CircleHelp, Ear, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, SlidersHorizontal, Volume2, VolumeX, X } from 'lucide-react';
 import { Player } from './audio';
+import { loadPreferences, loadPractice, remember, rememberScore, savePractice, type PracticeSettings, type MetronomeMode } from './preferences';
+import { saveLastScore } from './library';
 import RhythmPanel, { type RhythmControl } from './RhythmPanel';
 import { LibraryPanel, type LibraryControl } from './LibraryPanel';
 import { buildBarHighlights } from './bar-highlight';
@@ -10,22 +12,29 @@ import { INSTRUMENTS, clickStep, isInstrument, type ClickMode, type InstrumentId
 const DEFAULT_SCORE = `${import.meta.env.BASE_URL}scores/julia-florida.sotto.json`;
 
 export default function App() {
+  const [preferences] = useState(loadPreferences);
   const player = useMemo(() => new Player(), []);
   const [score, setScore] = useState<Score | null>(null);
+  const [scoreKey, setScoreKey] = useState('builtin:julia-florida');
+  const [resumeNeeded, setResumeNeeded] = useState('');
+  const [practiceVoice, setPracticeVoice] = useState('melody');
+  const pendingRestore = useRef<{ score: Score; settings: PracticeSettings } | null>(null);
+  const latestPractice = useRef<{ key: string; settings: PracticeSettings } | null>(null);
+  const openedVersion = useRef(0);
   const [error, setError] = useState('');
   const [playing, setPlaying] = useState(false);
   const [beat, setBeat] = useState(0);
   const [bpm, setBpm] = useState(44);
   const [repeats, setRepeats] = useState(true);
-  const [follow, setFollow] = useState(true);
+  const [follow, setFollow] = useState(preferences.follow);
   const [countIn, setCountIn] = useState(() => { try { return localStorage.getItem('sotto.countIn') === 'true'; } catch { return false; } });
   const [countingIn, setCountingIn] = useState(false);
-  const [metronomeMode, setMetronomeMode] = useState<'off' | 'playback' | 'continuous'>('off');
+  const [metronomeMode, setMetronomeMode] = useState<MetronomeMode>(preferences.metronomeMode);
   const metronome = metronomeMode !== 'off';
   const metronomeLabel = { off: 'Off', playback: 'Playback', continuous: 'Continuous' }[metronomeMode];
   const [metronomeStarting, setMetronomeStarting] = useState(false);
-  const [clickVolume, setClickVolume] = useState(70);
-  const [clickMode, setClickMode] = useState<ClickMode>('beat');
+  const [clickVolume, setClickVolume] = useState(preferences.clickVolume);
+  const [clickMode, setClickMode] = useState<ClickMode>(preferences.clickMode);
   const [clickCount, setClickCount] = useState(0);
   const [clickPulse, setClickPulse] = useState(false);
   const [clickAccent, setClickAccent] = useState('downbeat');
@@ -40,9 +49,9 @@ export default function App() {
   const [loop, setLoop] = useState(false);
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(3);
-  const [zoom, setZoom] = useState(100);
+  const [zoom, setZoom] = useState(preferences.zoom);
   const [help, setHelp] = useState(false);
-  const [rhythmVisible, setRhythmVisible] = useState(false);
+  const [rhythmVisible, setRhythmVisible] = useState(preferences.rhythmVisible);
   const [microphoneActive, setMicrophoneActive] = useState(false);
   const [libraryVisible, setLibraryVisible] = useState(false);
   const [pitchOffset, setPitchOffset] = useState(0);
@@ -103,29 +112,67 @@ export default function App() {
     zoomAnchor.current = null;
   }, [zoom]);
 
-  const openScore = useCallback((value: unknown) => {
+  const openScore = useCallback((value: unknown, key = 'builtin:julia-florida', persist = true) => {
     validateScore(value);
-    // Sanitize before accepting a bundle; reject malformed SVG immediately.
     value.pages.forEach(cleanSvg);
-    player.pause(); setPlaying(false); setLoop(false); setLoopStart(0); setLoopEnd(Math.min(3, value.bars.length - 1));
-    setMuted(new Set()); setSolo(null); setVolumes({}); setBeat(0); setBpm(value.bpm); setScore(value); setPitchOffset(0); setError('');
+    if (latestPractice.current) savePractice(latestPractice.current.key, latestPractice.current.settings);
+    openedVersion.current++;
+    const settings = loadPractice(key, value);
+    pendingRestore.current = { score: value, settings };
+    player.pause(); setPlaying(false);
+    setRepeats(settings.repeats); setLoop(settings.loop); setLoopStart(settings.loopStart); setLoopEnd(settings.loopEnd);
+    setMuted(new Set(settings.muted)); setSolo(settings.solo); setVolumes(settings.volumes); setPracticeVoice(settings.practiceVoice);
+    setBeat(settings.beat); setBpm(settings.bpm); setScore(value); setScoreKey(key); setPitchOffset(settings.pitchOffset); setError(''); if (persist) setResumeNeeded('');
+    if (persist) { rememberScore(key); void saveLastScore(key, value).catch(() => setError('Song opened, but its resume copy could not be saved. Your original file is unchanged.')); }
     lastFollowed.current = -1;
   }, [player]);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(DEFAULT_SCORE, { signal: controller.signal }).then(response => {
-      if (!response.ok) throw new Error('The example score could not be loaded.'); return response.json();
-    }).then(openScore).catch(reason => { if (reason.name !== 'AbortError') setError(reason.message); });
+    const version = openedVersion.current;
+    void (async () => {
+      if (await libraryControl.current?.restoreLastScore(() => !controller.signal.aborted && openedVersion.current === version)) return;
+      if (controller.signal.aborted || openedVersion.current !== version) return;
+      const response = await fetch(DEFAULT_SCORE, { signal: controller.signal });
+      if (!response.ok) throw new Error('The example score could not be loaded.');
+      const value: unknown = await response.json();
+      if (!controller.signal.aborted && openedVersion.current === version) openScore(value, 'builtin:julia-florida', false);
+    })().catch(reason => { if (reason.name !== 'AbortError') setError(reason.message); });
     return () => { controller.abort(); player.dispose(); };
   }, [openScore, player]);
 
   useEffect(() => {
     if (!score || !performance) return;
-    player.load(score, performance); setPlaying(false); setBeat(0); setLoop(false);
-    setLoopStart(0); setLoopEnd(Math.min(3, performance.measures.length - 1));
+    player.load(score, performance); setPlaying(false);
+    const restored = pendingRestore.current;
+    if (restored?.score === score) {
+      pendingRestore.current = null;
+      player.seek(restored.settings.beat); setBeat(restored.settings.beat);
+    } else {
+      setBeat(0); setLoop(false); setLoopStart(0); setLoopEnd(Math.min(3, performance.measures.length - 1));
+    }
     player.onEnded = () => { setPlaying(false); setBeat(performance.duration - .001); };
   }, [score, performance, player]);
+  useEffect(() => {
+    remember('sotto.preferences', { zoom, follow, clickVolume, clickMode, metronomeMode, rhythmVisible });
+  }, [zoom, follow, clickVolume, clickMode, metronomeMode, rhythmVisible]);
+  useEffect(() => {
+    if (!score) return;
+    latestPractice.current = { key: scoreKey, settings: { bpm, beat: displayBeat, repeats, loop, loopStart, loopEnd, muted: [...muted], solo, volumes, pitchOffset, practiceVoice } };
+  }, [score, scoreKey, bpm, displayBeat, repeats, loop, loopStart, loopEnd, muted, solo, volumes, pitchOffset, practiceVoice]);
+  useEffect(() => {
+    let previous: string | undefined;
+    const flush = () => {
+      const snapshot = latestPractice.current;
+      if (!snapshot) return;
+      const serialized = JSON.stringify(snapshot);
+      if (serialized !== previous) { savePractice(snapshot.key, snapshot.settings); previous = serialized; }
+    };
+    const timer = window.setInterval(flush, 500);
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', flush);
+    return () => { flush(); window.clearInterval(timer); window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', flush); };
+  }, []);
   useEffect(() => player.setPitchOffset(pitchOffset), [pitchOffset, player]);
   useEffect(() => player.tempo(bpm), [bpm, player, performance]);
   useEffect(() => {
@@ -229,10 +276,10 @@ export default function App() {
     if (starting || !performance) return;
     if (playing) { player.pause(); setPlaying(false); setBeat(player.beat); return; }
     setStarting(true); setError('');
-    try { await player.play(countIn); setCountingIn(player.countingIn); setPlaying(true); }
+    try { await player.setMetronome(metronome, metronomeMode === 'continuous'); await player.play(countIn); setCountingIn(player.countingIn); setPlaying(true); }
     catch (reason) { setError(`Audio could not start: ${reason instanceof Error ? reason.message : 'please try again'}`); }
     finally { setStarting(false); }
-  }, [player, playing, starting, performance, countIn]);
+  }, [player, playing, starting, performance, countIn, metronome, metronomeMode]);
   const toggleMetronome = useCallback(async () => {
     if (metronomeStarting) return;
     setMetronomeStarting(true);
@@ -330,6 +377,7 @@ export default function App() {
       </aside>
 
       <main className="practice-main">
+        {resumeNeeded && <div className="resume-banner" role="status"><span>Last song: {resumeNeeded}. Reconnect its file to resume.</span><button className="quiet-button" onClick={() => libraryControl.current?.reconnectLastScore()}>Reconnect last song</button></div>}
         {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><X size={17}/></button></div>}
 
         <section className="score-frame" aria-label="Interactive sheet music">
@@ -341,7 +389,7 @@ export default function App() {
           <div className="score-footnote"><span>Click a note to start there.</span><span>{score?.description}</span></div>
         </section>
 
-        <RhythmPanel ref={rhythmControl} visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} clickMode={clickMode} onMicState={setMicrophoneActive}
+        <RhythmPanel ref={rhythmControl} visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} clickMode={clickMode} practiceVoice={practiceVoice} onPracticeVoice={setPracticeVoice} onMicState={setMicrophoneActive}
           prepareCalibration={() => { player.pause(); setPlaying(false); setBeat(player.beat); void player.setMetronome(false); setMetronomeMode('off'); }}
           mutedVoices={effectivelyMuted} muteVoice={voice => {
             const selected = score?.voices.filter(item => voice === 'all' || item.id === voice) ?? [];
@@ -362,7 +410,7 @@ export default function App() {
       </main>
     </div>
 
-    <LibraryPanel ref={libraryControl} visible={libraryVisible} onClose={() => setLibraryVisible(false)} onOpen={openScore} onError={setError}/>
+    <LibraryPanel ref={libraryControl} visible={libraryVisible} onClose={() => setLibraryVisible(false)} onOpen={openScore} onResumeNeeded={setResumeNeeded} onError={setError}/>
 
     {soundSettings && <div className="modal-backdrop" onClick={() => setSoundSettings(false)}><section className="help-modal sound-modal" role="dialog" aria-modal="true" aria-labelledby="sound-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close sound settings" onClick={() => setSoundSettings(false)} autoFocus><X size={20}/></button><div className="eyebrow">PLAYBACK</div><h2 id="sound-title">Sound &amp; metronome</h2>
       <label className="settings-field">Instrument<select aria-label="Playback instrument" disabled={soundLoading} aria-busy={soundLoading} value={instrument} onChange={event => setInstrument(event.target.value as InstrumentId)}>{INSTRUMENTS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>

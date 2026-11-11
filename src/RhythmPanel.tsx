@@ -7,7 +7,7 @@ import { calibrationOffset, emptyStats, estimateBackground, expectedAttacks, Ons
 import type { Performance, Score } from './score';
 
 type Props = { visible: boolean; onHide(): void; player: Player; score: Score | null; performance: Performance | null;
-  playing: boolean; bpm: number; clickMode: ClickMode; onMicState(active: boolean): void; prepareCalibration(): void; mutedVoices: ReadonlySet<string>; muteVoice(voice: string): void };
+  practiceVoice: string; onPracticeVoice(voice: string): void; playing: boolean; bpm: number; clickMode: ClickMode; onMicState(active: boolean): void; prepareCalibration(): void; mutedVoices: ReadonlySet<string>; muteVoice(voice: string): void };
 type Sample = LevelFrame;
 type Dot = Attack & { time: number };
 type Pass = { tracker: RhythmPass; origin: number; lastBeat: number; lastTime: number; endTime?: number };
@@ -23,8 +23,8 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   const [message, setMessage] = useState('');
   const [calibrating, setCalibrating] = useState(false);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [device, setDevice] = useState('');
-  const [voice, setVoice] = useState('melody');
+  const [device, setDevice] = useState(() => { try { return localStorage.getItem('sotto.inputDevice') ?? ''; } catch { return ''; } });
+  const voice = props.practiceVoice;
   const [delay, setDelay] = useState(() => setting('sotto.inputDelay', 0, -50, 600));
   const [gate, setGate] = useState(() => setting('sotto.inputGate', -42, -65, -20));
   const [plotWindow, setPlotWindow] = useState(() => { const saved = setting('sotto.plotWindow', 24, 6, 48); return [6, 12, 24, 48].includes(saved) ? saved : 24; });
@@ -88,6 +88,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   useEffect(() => {
     try { localStorage.setItem('sotto.plotWindow', String(plotWindow)); localStorage.setItem('sotto.lookAhead', String(lookAhead)); localStorage.setItem('sotto.traceBoost', String(traceBoost)); localStorage.setItem('sotto.hideBackground', String(hideBackground)); } catch { /* Optional display preferences. */ }
   }, [plotWindow, lookAhead, traceBoost, hideBackground]);
+  useEffect(() => { try { localStorage.setItem('sotto.inputDevice', device); } catch { /* Optional input preference. */ } }, [device]);
   useEffect(() => {
     input.setFilters(highpass, lowpass);
     if (current.current.enabled) beginBaseline(); else { setBackground(null); baselineCapture.current = null; setLearningBaseline(false); }
@@ -302,7 +303,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
     {message && <p className="rhythm-message" role="status">{message}</p>}
     <details className="rhythm-options"><summary>Input, timing &amp; calibration <ChevronDown size={13}/></summary><div className="rhythm-fields">
       <label className="baseline-option"><input aria-label="Hide learned microphone background" type="checkbox" checked={hideBackground} onChange={event => setHideBackground(event.target.checked)}/>Hide learned background (display only)</label>
-      <label>Practice voice<select aria-label="Rhythm practice voice" value={actualVoice} onChange={event => setVoice(event.target.value)} disabled={calibrating}>{props.score?.voices.map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}<option value="all">All voices</option></select></label>
+      <label>Practice voice<select aria-label="Rhythm practice voice" value={actualVoice} onChange={event => props.onPracticeVoice(event.target.value)} disabled={calibrating}>{props.score?.voices.map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}<option value="all">All voices</option></select></label>
       <button className={`quiet-button ${practiceMuted ? 'mic-enabled' : ''}`} aria-pressed={practiceMuted} onClick={() => props.muteVoice(actualVoice)} disabled={!practiceVoices.length || calibrating}>{practiceMuted ? <VolumeX size={15}/> : <Volume2 size={15}/>}<span>{practiceMuted ? 'Unmute' : 'Mute'} practice voice</span></button><span className="practice-mute-status" role="status">{actualVoice === 'all' ? 'All voices' : practiceVoices[0]?.name}: playback {practiceMuted ? 'muted' : 'on'}. Microphone is independent.</span>
       <label>Microphone<select aria-label="Microphone device" value={device} disabled={busy || calibrating} onChange={event => { setDevice(event.target.value); setDelay(0); if (enabled) void start(event.target.value); }}><option value="">System default</option>{devices.filter(item => item.deviceId).map((item, index) => <option key={item.deviceId} value={item.deviceId}>{item.label || `Input ${index + 1}`}</option>)}</select></label>
       <label>Input offset (ms)<input aria-label="Microphone timing offset" type="number" min="-50" max="600" step="5" value={delay} disabled={calibrating} onChange={event => setDelay(Math.min(600, Math.max(-50, Number(event.target.value))))}/></label>

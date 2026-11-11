@@ -55,3 +55,5 @@
 @media(max-width:650px){.controls-collapsed .score-toolbar{flex-wrap:wrap;row-gap:3px}.controls-collapsed .score-tools{margin-left:auto}.controls-collapsed .compact-metronome{min-width:68px}}
 
 .player-meta .instrument-hint{margin-left:auto}
+
+.resume-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border:1px solid #dce4d1;border-radius:7px;margin-bottom:6px;font-size:11px;background:#f8faf3;color:#60734e}

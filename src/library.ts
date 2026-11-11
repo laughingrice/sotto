@@ -1,5 +1,6 @@
-/** Only references and metadata are persisted. Score contents stay in the
- * selected files (including files in a locally synced OneDrive folder). */
+import type { Score } from './score';
+/** The library index stores references and metadata. A separate single slot
+ * caches the last opened score for resuming when file access is unavailable. */
 export type ReadHandle = {
   kind: 'file'; name: string; getFile(): Promise<File>;
   queryPermission(options: { mode: 'read' }): Promise<PermissionState>;
@@ -57,6 +58,33 @@ export async function saveLibrary(library: Library) {
     });
   } finally { db.close(); }
 }
+export async function loadLastScore(): Promise<{ key: string; score: Score } | null> {
+  const db = await database();
+  try {
+    return await new Promise((resolve, reject) => {
+      const request = db.transaction('library').objectStore('library').get('last-score');
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(request.error);
+    });
+  } finally { db.close(); }
+}
+let scoreWrites = Promise.resolve();
+export function saveLastScore(key: string, score: Score): Promise<void> {
+  // Keep one slot, and serialize writes so a slow save cannot replace a newer song.
+  scoreWrites = scoreWrites.catch(() => {}).then(async () => {
+    const db = await database();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction('library', 'readwrite');
+        transaction.objectStore('library').put({ key, score }, 'last-score');
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error ?? new Error('Last score could not be saved.'));
+      });
+    } finally { db.close(); }
+  });
+  return scoreWrites;
+}
 export function exportLibrary(library: Library): string {
   return JSON.stringify({ format: 'sotto-library', version: 1,
     folders: library.folders.map(({ id, name }) => ({ id, name })),
@@ -85,12 +113,14 @@ export function parseLibrary(text: string): Library {
   if (new Set(folders.map(folder => folder.id)).size !== folders.length || new Set(entries.map(entry => entry.id)).size !== entries.length) throw new Error('Duplicate library identifiers.');
   return { folders, entries };
 }
-export async function readEntry(entry: LibraryEntry, library: Library): Promise<File | null> {
+export async function readEntry(entry: LibraryEntry, library: Library, requestPermission = true): Promise<File | null> {
   const folder = library.folders.find(folder => folder.id === entry.folderId);
   const reference = folder?.handle ?? entry.handle;
   if (!reference) return null;
-  if (await reference.queryPermission({ mode: 'read' }) !== 'granted' &&
-      await reference.requestPermission({ mode: 'read' }) !== 'granted') throw new Error('Read access was not granted. Reconnect the file or folder to try again.');
+  if (await reference.queryPermission({ mode: 'read' }) !== 'granted') {
+    if (!requestPermission) return null;
+    if (await reference.requestPermission({ mode: 'read' }) !== 'granted') throw new Error('Read access was not granted. Reconnect the file or folder to try again.');
+  }
   if (entry.folderId && entry.path && folder?.handle) {
     const parts = entry.path.split('/');
     let parent = folder.handle;

@@ -1,0 +1,36 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { loadPractice, loadPreferences, lastScore, remember, rememberScore, savePractice } from './preferences';
+import type { Score } from './score';
+const score: Score = { format: 'sotto-score', version: 1, title: 'Test', composer: '', subtitle: '', description: '', bpm: 80, beatUnit: 1, beatsPerBar: 4,
+  voices: [{ id: 'melody', name: 'Melody', color: '#000' }], notes: [], pages: ['<svg/>'],
+  bars: [0, 1, 2].map(index => ({ index, label: String(index + 1), start: index * 4, duration: 4 })), sequence: [0, 1, 2] };
+beforeEach(() => {
+  const values = new Map<string, string>();
+  vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) });
+});
+afterEach(() => vi.unstubAllGlobals());
+it('remembers general preferences and the last song without storing score contents', () => {
+  remember('sotto.preferences', { zoom: 150, follow: false, clickVolume: 32, clickMode: 'subdivision', metronomeMode: 'continuous', rhythmVisible: true });
+  expect(loadPreferences()).toEqual({ zoom: 150, follow: false, clickVolume: 32, clickMode: 'subdivision', metronomeMode: 'continuous', rhythmVisible: true });
+  rememberScore('library:abc'); expect(lastScore()).toBe('library:abc');
+  expect(localStorage.getItem('sotto.session')).not.toContain('notes');
+});
+it('keeps practice settings separate per song and fits them to a changed score', () => {
+  const saved = { ...loadPractice('one', score), bpm: 65, beat: 9, loop: true, loopStart: 1, loopEnd: 2, muted: ['melody'], solo: 'melody', volumes: { melody: .4 }, pitchOffset: -12, practiceVoice: 'all' };
+  savePractice('one', saved);
+  expect(loadPractice('one', score)).toEqual(saved);
+  expect(loadPractice('two', score)).toMatchObject({ bpm: 80, beat: 0, loop: false, muted: [], pitchOffset: 0 });
+  const shortened = { ...score, bars: score.bars.slice(0, 1), sequence: [0], voices: [{ id: 'bass', name: 'Bass', color: '#000' }] };
+  expect(loadPractice('one', shortened)).toMatchObject({ beat: 3.999, loopStart: 0, loopEnd: 0, muted: [], solo: null, volumes: {} });
+});
+it('falls back safely for corrupt or unavailable browser storage', () => {
+  localStorage.setItem('sotto.preferences', '{broken');
+  expect(loadPreferences().zoom).toBe(100);
+  remember('sotto.practice.bad', { bpm: 'fast', beat: -100, loopEnd: 999, pitchOffset: 200, muted: ['unknown'], volumes: { melody: -10 } });
+  expect(loadPractice('bad', score)).toMatchObject({ bpm: 80, beat: 0, loopEnd: 2, pitchOffset: 0, muted: [], volumes: { melody: 0 } });
+  remember('sotto.practice.partial', { loopStart: 2 });
+  expect(loadPractice('partial', score)).toMatchObject({ loopStart: 2, loopEnd: 2 });
+  vi.stubGlobal('localStorage', { getItem: () => { throw new Error('Unavailable'); }, setItem: () => { throw new Error('Unavailable'); } });
+  expect(loadPreferences().clickMode).toBe('beat');
+  expect(() => savePractice('one', loadPractice('one', score))).not.toThrow();
+});

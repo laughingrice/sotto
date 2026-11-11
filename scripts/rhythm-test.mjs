@@ -267,8 +267,8 @@ try {
   await page.screenshot({ path: 'test-results/rhythm-phone.png' });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight), 'Phone has no page overflow');
   if (process.env.CHECK_OFFLINE) {
-    await page.context().setOffline(true); await page.reload(); await ready();
-    await page.getByRole('button', { name: 'Rhythm feedback', exact: true }).click();
+    await page.context().setOffline(true); await page.reload(); await page.getByRole('heading', { name: 'Rhythm test', exact: true }).waitFor();
+    if (!await page.locator('.rhythm-panel').isVisible()) await page.getByRole('button', { name: 'Rhythm feedback', exact: true }).click();
     await page.getByRole('button', { name: 'Enable microphone', exact: true }).click();
     await page.getByRole('button', { name: 'Stop microphone', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Stop microphone', exact: true }).click();

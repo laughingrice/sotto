@@ -1,12 +1,13 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { FolderOpen, Star, Trash2, X } from 'lucide-react';
+import { lastScore, rememberScore } from './preferences';
 import { validateScore } from './score';
-import { connectFolder, emptyLibrary, exportLibrary, filePickers, loadLibrary, parseLibrary, readEntry, saveLibrary, scanDirectory,
+import { connectFolder, emptyLibrary, exportLibrary, filePickers, loadLastScore, loadLibrary, parseLibrary, readEntry, saveLibrary, scanDirectory,
   type Library, type LibraryEntry, type LibraryFolder, type ReadHandle } from './library';
 
-export type LibraryControl = { chooseFile(): void };
-export const LibraryPanel = forwardRef<LibraryControl, { visible: boolean; onClose(): void; onOpen(value: unknown): void; onError(message: string): void }>(
-function LibraryPanel({ visible, onClose, onOpen, onError }, ref) {
+export type LibraryControl = { chooseFile(): void; restoreLastScore(isCurrent?: () => boolean): Promise<boolean>; reconnectLastScore(): void };
+export const LibraryPanel = forwardRef<LibraryControl, { visible: boolean; onClose(): void; onOpen(value: unknown, key: string): void; onResumeNeeded(title: string): void; onError(message: string): void }>(
+function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onError }, ref) {
   const [library, setLibrary] = useState<Library>(emptyLibrary);
   const current = useRef(library);
   const ready = useRef<Promise<void>>(Promise.resolve());
@@ -42,14 +43,13 @@ function LibraryPanel({ visible, onClose, onOpen, onError }, ref) {
     const text = error instanceof Error ? error.message : 'The file could not be opened.';
     setMessage(text); onError(text);
   }
-  async function accept(file: File, handle?: ReadHandle, entryId?: string) {
+  async function accept(file: File, handle?: ReadHandle, entryId?: string, isCurrent = () => true) {
     await ready.current;
     const expected = current.current.entries.find(entry => entry.id === entryId);
     if (expected && expected.name !== file.name) throw new Error(`Please select ${expected.name} to reconnect this bookmark. Use Add score for another piece.`);
     if (file.size > 15_000_000) throw new Error('Please use a score bundle smaller than 15 MB.');
     const score: unknown = JSON.parse(await file.text());
     validateScore(score);
-    onOpen(score);
     let existing = current.current.entries.find(entry => entry.id === entryId);
     if (!existing && handle) {
       for (const entry of current.current.entries) {
@@ -61,12 +61,14 @@ function LibraryPanel({ visible, onClose, onOpen, onError }, ref) {
       name: file.name, title: score.title, composer: score.composer, lastOpened: Date.now(),
       ...(handle ? { handle } : {}),
     };
+    if (!isCurrent()) return false;
+    onOpen(score, `library:${entry.id}`);
     sessionFiles.current.set(entry.id, file);
     try { await commit(library => ({ ...library, entries: [...library.entries.filter(item => item.id !== entry.id),
       { ...entry, favorite: library.entries.find(item => item.id === entry.id)?.favorite ?? entry.favorite }] })); }
     catch { setMessage('Score opened, but the bookmark could not be saved. Export your library index before closing.');
       current.current = { ...current.current, entries: [...current.current.entries.filter(item => item.id !== entry.id), entry] }; setLibrary(current.current); }
-    onClose();
+    onClose(); return true;
   }
   async function chooseFile(entryId?: string) {
     reconnectEntry.current = entryId;
@@ -78,7 +80,34 @@ function LibraryPanel({ visible, onClose, onOpen, onError }, ref) {
     } catch (error) { report(error); }
     finally { setBusy(false); reconnectEntry.current = undefined; }
   }
-  useImperativeHandle(ref, () => ({ chooseFile: () => { void chooseFile(); } }));
+  async function restoreLastScore(isCurrent = () => true) {
+    await ready.current;
+    const saved = lastScore();
+    const entry = saved?.startsWith('library:') ? current.current.entries.find(item => item.id === saved.slice(8)) :
+      saved ? undefined : [...current.current.entries].filter(item => item.lastOpened).sort((a, b) => b.lastOpened! - a.lastOpened!)[0];
+    if (entry) {
+      if (!saved) rememberScore(`library:${entry.id}`);
+      try {
+        const file = await readEntry(entry, current.current, false);
+        if (file) return await accept(file, entry.handle, entry.id, isCurrent);
+      } catch { /* Fall back to the one cached song when the source is unavailable. */ }
+    }
+    try {
+      const cached = await loadLastScore();
+      if (isCurrent() && cached && (!saved || cached.key === saved)) { validateScore(cached.score); onOpen(cached.score, cached.key); return true; }
+    } catch { /* Storage can be unavailable or contain an incompatible score. */ }
+    if (isCurrent() && entry) onResumeNeeded(entry.title);
+    return false;
+  }
+  useImperativeHandle(ref, () => ({ chooseFile: () => { void chooseFile(); }, restoreLastScore,
+    reconnectLastScore: () => {
+      const saved = lastScore();
+      const entry = current.current.entries.find(item => `library:${item.id}` === saved);
+      if (!entry) return;
+      if (entry.handle || current.current.folders.find(folder => folder.id === entry.folderId)?.handle) void openEntry(entry);
+      else void chooseFile(entry.id);
+    },
+  }));
   async function openEntry(entry: LibraryEntry) {
     if (!entry.handle && !current.current.folders.find(folder => folder.id === entry.folderId)?.handle) {
       const file = sessionFiles.current.get(entry.id);
@@ -150,8 +179,8 @@ function LibraryPanel({ visible, onClose, onOpen, onError }, ref) {
     {visible && <div className="modal-backdrop" onClick={onClose}><section className="help-modal library-modal" role="dialog" aria-modal="true" aria-labelledby="library-title" onClick={event => event.stopPropagation()}>
       <button className="icon-button modal-close" aria-label="Close library" onClick={onClose} autoFocus><X size={20}/></button>
       <div className="eyebrow">YOUR MUSIC</div><h2 id="library-title">Score library</h2>
-      <p className="settings-note">Keep your scores in a folder of your choice, including a synced OneDrive folder. Only bookmarks and favorites are saved here; score files are never copied into the library.</p>
-      {!filePickers.showDirectoryPicker && <p className="settings-note">This browser requires you to reselect files or reconnect a folder after reopening Sotto. On iPad, choose a score through Files → OneDrive. Chrome/Edge on desktop can remember file and folder access. A picker may call the selection “Upload”; Sotto reads it locally and does not send it anywhere.</p>}
+      <p className="settings-note">Keep your scores in a folder of your choice, including a synced OneDrive folder. The library stores bookmarks and favorites. Only the last opened song is cached for resuming; opening another replaces that copy.</p>
+      {!filePickers.showDirectoryPicker && <p className="settings-note">Your last song can reopen from its cached copy. Other scores may require you to reselect files or reconnect a folder after reopening Sotto. On iPad, choose a score through Files → OneDrive. Chrome/Edge on desktop can remember file and folder access. A picker may call the selection “Upload”; Sotto reads it locally and does not send it anywhere.</p>}
       <div className="library-actions"><button className="quiet-button" disabled={busy} onClick={() => void chooseFile()}><FolderOpen size={16}/> Add score</button><button className="quiet-button" disabled={busy} onClick={() => void chooseFolder()}>Connect folder</button>
         <button className="quiet-button" disabled={busy} onClick={() => {
           const href = URL.createObjectURL(new Blob([exportLibrary(current.current)], { type: 'application/json' }));

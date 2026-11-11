@@ -62,7 +62,7 @@ The production build includes a service worker that caches the app, built-in sco
 - Instrument selection: recorded nylon guitar, piano and violin, plus synthesized marimba, organ and flute. The recordings are bundled with the app, balanced in level, and cached for offline use.
 - Save/open portable `.sotto.json` bundles. Imported SVG is sanitized before rendering.
 - Meter changes use exported bar timing for playback, navigation, highlights, and metronome accents.
-- A persistent library of file/folder bookmarks, favorites, and a portable index; imported score contents are never duplicated into browser storage. Granted folder handles are refreshed when Library opens, with separate Refresh and Reconnect actions.
+- A persistent library of file/folder bookmarks, favorites, and a portable index; the last opened song alone is cached for resuming. Granted folder handles are refreshed when Library opens, with separate Refresh and Reconnect actions.
 - Microphone rhythm preview: a volume trace, expected/detected attack markers, early/late estimates, input offset and optional speaker calibration. No microphone audio is recorded or uploaded.
 
 Keyboard: **Space** play/pause, **←/→** previous/next bar, **R** restart, **M** metronome, **C** hide/show controls. Space and Left/Right remain transport keys after clicking buttons, checkboxes, sliders or score controls. Holding Space does not repeatedly toggle playback. Text-entry fields and open dialogs keep their normal keyboard behavior; modified browser shortcuts are left alone.
@@ -157,7 +157,7 @@ playbackMusic = { \intro \mainSection \development \returnToSegno \codaMusic }
 
 The named voices live inside those shared section/measure variables. `returnToSegno` should reuse the intended original measures and stop at the intended To Coda point; do not re-enter a separate copy of their notes. Capricho Árabe already defines this explicitly: its 45 written measures yield 73 playback measures, including the repeated introduction, both alternate endings, D.S. return and coda. Re-export older bundles and reopen the regenerated file. Keep **Follow repeats & jumps** checked to use that sequence; unchecking it plays each written measure once. The sequence controls playback, highlighting, looping and bar navigation together.
 
-## Library without duplicate score files
+## Library and last-song resume
 
 1. Keep `.sotto.json` files in your preferred folder, such as a locally synced **OneDrive/Scores** folder.
 2. Open **Library → Connect folder**, choose that folder, and open a score from the list. Subfolders are included. **Open score / Add score** can bookmark individual files instead.
@@ -165,9 +165,13 @@ The named voices live inside those shared section/measure variables. `returnToSe
 4. Library automatically scans remembered folder handles when it opens if read permission is already granted. **Refresh** rescans that same handle; it requests permission only when necessary and does not reopen a folder picker. **Reconnect** explicitly chooses a folder again. Opening a linked score reads its current contents from disk, including changes made outside Sotto. Browsers without directory handles still require reselection; the browser may label its local picker “Upload”, but Sotto does not upload the selected files.
 5. Choose **Export index** and save `sotto-library.json` in OneDrive. This small metadata file preserves folder labels, relative paths, favorites, and recents, **not score contents or browser permissions**. Import it on another device, then reconnect each folder. Index imports merge by bookmark ID; exporting/importing is manual, not live synchronization.
 
-Desktop Chrome/Edge can store read-only file/directory handles in IndexedDB; permissions may need granting again. A OneDrive folder must be available through the local file picker (and the selected files downloaded by OneDrive when needed). No OneDrive account integration is required. Safari/iPad and other browsers without these pickers retain metadata only: reselect the score or reconnect a folder after reopening the app. On iPad, select OneDrive through the Files picker; folder selection depends on the browser/provider. Bookmark metadata is local to this browser and site address; export the index for backup or transfer. Clearing browser storage removes the index/handles but never deletes the original files. Bookmarks and permissions are not a backup of the score files themselves.
+Desktop Chrome/Edge can store read-only file/directory handles in IndexedDB; permissions may need granting again. A OneDrive folder must be available through the local file picker (and the selected files downloaded by OneDrive when needed). No OneDrive account integration is required. Safari/iPad and other browsers without these pickers can resume the last cached song; other pieces require reselection or reconnecting their folder. On iPad, select OneDrive through the Files picker; folder selection depends on the browser/provider. Bookmark metadata is local to this browser and site address; export the index for backup or transfer. Clearing browser storage removes the index/handles but never deletes the original files. Bookmarks and permissions are not a backup of the score files themselves.
 
-No imported score JSON is stored in IndexedDB, localStorage, or the service-worker cache. Only the bundled example and app assets are cached for offline use. Linked scores require the original file to remain accessible. Removing a library entry or folder removes its bookmarks only.
+Only **one imported song** is cached in IndexedDB, in a single replaceable slot. Opening another song replaces that copy; the library index remains metadata and references, with no growing collection of cached scores. On startup, Sotto reads the last linked file afresh when read permission is already granted, otherwise it uses the cached copy without a permission prompt. This works offline and on browsers that cannot retain file access. To load edits when access is unavailable, reopen/reconnect the original file. The app, example and instrument assets also remain available through the service-worker cache. Removing a library bookmark leaves the original file untouched.
+
+Sotto remembers general preferences (instrument, zoom, follow score, control visibility, feedback-panel visibility, count-in, metronome mode/pulse/volume, and microphone input/filter/timing/display choices). Each song separately remembers tempo, bar position, repeat order, loop range and enablement, mute/solo/voice volumes, practice voice and playback octave. Settings are checked against the current score when reopening, so shortened scores or changed voice IDs do not leave invalid controls. Playback and microphone input always reopen paused; a saved Continuous metronome mode starts after Play or a metronome click. Rhythm results and microphone audio are not persisted.
+
+These settings and the one-song resume copy are local to this browser and site address. The portable library index does not include practice settings or the cached score. Clearing site storage removes them, but never changes files in OneDrive or another source folder.
 
 ## Instruments, metronome, and SoundFonts
 
@@ -213,6 +217,8 @@ node scripts/loop-scroll-test.mjs
 node scripts/sound-test.mjs
 # File/folder bookmarks, fresh reads, favorites, backup/import, and fallback:
 node scripts/library-test.mjs
+# Last-song caching, saved settings, fresh linked reads and offline resume:
+node scripts/session-test.mjs
 # Focused-control shortcuts, generated microphone input, timing and calibration:
 node scripts/rhythm-test.mjs
 ```
