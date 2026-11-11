@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { clickAccent, clickStep, INSTRUMENTS, isInstrument, metronomePattern } from './sounds';
+import { clickAccent, clickStep, INSTRUMENTS, isInstrument, countInPattern, metronomeGrid, metronomePattern } from './sounds';
 
 describe('metronome pulse and accents', () => {
+  it('shows all notated beats in compound meter and adds any finer audible clicks', () => {
+    const compound = [{ start: 0, end: 3, meter: [6, 8] as [number, number] }];
+    expect(metronomePattern(compound, 1.5, 'beat')).toHaveLength(2);
+    expect(metronomeGrid(compound, 1.5, 'beat').map(click => click.beat)).toEqual([0, .5, 1, 1.5, 2, 2.5]);
+    expect(metronomeGrid(compound, 1.5, 'subdivision')).toHaveLength(6);
+    const mixed = [{ start: 0, end: 3, meter: [3, 4] as [number, number] }, { start: 3, end: 7, meter: [4, 4] as [number, number] }];
+    expect(metronomeGrid(mixed, 1, 'beat').filter(click => click.accent === 'downbeat').map(click => click.beat)).toEqual([0, 3]);
+    expect(metronomeGrid(mixed, 1, 'beat')).toHaveLength(7);
+    expect(metronomeGrid(mixed, 1, 'subdivision')).toHaveLength(14);
+  });
   it('uses two dotted-quarter beats or six eighth-note subdivisions in 6/8', () => {
     expect(clickStep(1.5, 'beat')).toBe(1.5);
     expect(clickStep(1.5, 'subdivision')).toBe(.5);
@@ -35,4 +45,13 @@ describe('synthesized timbres', () => {
     expect(isInstrument('unknown-font')).toBe(false);
     expect(isInstrument(null)).toBe(false);
   });
+});
+
+it('counts a full bar in the starting meter, including meter changes and pickups', () => {
+  const triple = countInPattern({ start: 0, end: 3, meter: [3, 4] }, 4, 1.5);
+  expect(triple.duration).toBe(3);
+  expect(triple.clicks.map(click => click.beat)).toEqual([0, 1, 2]);
+  expect(countInPattern({ start: 3, end: 7, meter: [4, 4] }, 3, 1).clicks).toHaveLength(4);
+  expect(countInPattern({ start: 0, end: .5, meter: [6, 8] }, 3, 1.5).duration).toBe(3);
+  expect(countInPattern({ start: 0, end: 3, meter: [6, 8] }, 3, 1.5).clicks.map(click => click.beat)).toEqual([0, 1.5]);
 });

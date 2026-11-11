@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { calibrationOffset, estimateBackground, expectedAttacks, OnsetDetector, RhythmPass, traceColumns, traceLevel } from './rhythm';
+import { calibrationOffset, estimateBackground, expectedAttacks, OnsetDetector, plotLookAhead, RhythmPass, traceColumns, traceLevel } from './rhythm';
 import { makePerformance, type Score } from './score';
 import { readFileSync } from 'node:fs';
 
 describe('rhythm input and timing', () => {
+  it('keeps look-ahead independent of plot length while reserving history', () => {
+    expect(plotLookAhead(24, 4)).toBe(4);
+    expect(plotLookAhead(48, 4)).toBe(4);
+    expect(plotLookAhead(6, 16)).toBe(4);
+    expect(plotLookAhead(24, 16)).toBe(16);
+    expect(plotLookAhead(24, 0)).toBe(0);
+  });
   it('learns background without brief plucks lifting the floor, and crops it visually', () => {
     const frames = Array.from({ length: 200 }, (_, i) => ({ time: i / 100,
       rms: i % 20 === 0 ? .2 : .005, peak: i % 20 === 0 ? .5 : .015 }));

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, Check, ChevronDown, CircleHelp, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, SlidersHorizontal, Volume2, VolumeX, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, Check, ChevronDown, CircleHelp, Ear, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, SlidersHorizontal, Volume2, VolumeX, X } from 'lucide-react';
 import { Player } from './audio';
-import RhythmPanel from './RhythmPanel';
+import RhythmPanel, { type RhythmControl } from './RhythmPanel';
 import { LibraryPanel, type LibraryControl } from './LibraryPanel';
 import { buildBarHighlights } from './bar-highlight';
 import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, validateScore, type Score } from './score';
@@ -18,7 +18,11 @@ export default function App() {
   const [bpm, setBpm] = useState(44);
   const [repeats, setRepeats] = useState(true);
   const [follow, setFollow] = useState(true);
-  const [metronome, setMetronome] = useState(false);
+  const [countIn, setCountIn] = useState(() => { try { return localStorage.getItem('sotto.countIn') === 'true'; } catch { return false; } });
+  const [countingIn, setCountingIn] = useState(false);
+  const [metronomeMode, setMetronomeMode] = useState<'off' | 'playback' | 'continuous'>('off');
+  const metronome = metronomeMode !== 'off';
+  const metronomeLabel = { off: 'Off', playback: 'Playback', continuous: 'Continuous' }[metronomeMode];
   const [metronomeStarting, setMetronomeStarting] = useState(false);
   const [clickVolume, setClickVolume] = useState(70);
   const [clickMode, setClickMode] = useState<ClickMode>('beat');
@@ -47,6 +51,7 @@ export default function App() {
     try { return localStorage.getItem('sotto.controlsCollapsed') === 'true'; } catch { return false; }
   });
   const libraryControl = useRef<LibraryControl>(null);
+  const rhythmControl = useRef<RhythmControl>(null);
   const scoreRoot = useRef<HTMLDivElement>(null);
   const scrollRoot = useRef<HTMLDivElement>(null);
   const zoomAnchor = useRef<{ x: number; y: number } | null>(null);
@@ -167,7 +172,7 @@ export default function App() {
   useEffect(() => {
     if (!playing) return;
     let frame = 0;
-    const update = () => { setBeat(player.beat); frame = requestAnimationFrame(update); };
+    const update = () => { setCountingIn(player.countingIn); setBeat(player.beat); frame = requestAnimationFrame(update); };
     frame = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frame);
   }, [playing, player]);
@@ -223,17 +228,17 @@ export default function App() {
     if (starting || !performance) return;
     if (playing) { player.pause(); setPlaying(false); setBeat(player.beat); return; }
     setStarting(true); setError('');
-    try { await player.play(); setPlaying(true); }
+    try { await player.play(countIn); setCountingIn(player.countingIn); setPlaying(true); }
     catch (reason) { setError(`Audio could not start: ${reason instanceof Error ? reason.message : 'please try again'}`); }
     finally { setStarting(false); }
-  }, [player, playing, starting, performance]);
+  }, [player, playing, starting, performance, countIn]);
   const toggleMetronome = useCallback(async () => {
     if (metronomeStarting) return;
     setMetronomeStarting(true);
-    try { await player.setMetronome(!metronome); setMetronome(value => !value); }
+    try { const next = metronomeMode === 'off' ? 'playback' : metronomeMode === 'playback' ? 'continuous' : 'off'; await player.setMetronome(next !== 'off', next === 'continuous'); setMetronomeMode(next); }
     catch (reason) { setError(`Metronome could not start: ${reason instanceof Error ? reason.message : 'please try again'}`); }
     finally { setMetronomeStarting(false); }
-  }, [player, metronome, metronomeStarting]);
+  }, [player, metronomeMode, metronomeStarting]);
 
   const seek = useCallback((position: number) => {
     if (!performance) return;
@@ -327,7 +332,7 @@ export default function App() {
         {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><X size={17}/></button></div>}
 
         <section className="score-frame" aria-label="Interactive sheet music">
-          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools"><label className="follow-control"><input type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className={`icon-button rhythm-toggle ${microphoneActive ? 'mic-active' : ''}`} aria-label="Rhythm feedback" aria-expanded={rhythmVisible} title={microphoneActive ? 'Microphone on · rhythm feedback' : 'Microphone rhythm feedback'} onClick={() => setRhythmVisible(value => !value)}><Mic size={16}/></button><button className="icon-button sound-settings-button" aria-label="Sound and metronome settings" title="Instrument and metronome settings" onClick={() => setSoundSettings(true)}><SlidersHorizontal size={16}/></button><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 50} onClick={() => changeZoom(zoom - 10)}><Minus size={15}/></button><button className="zoom-label" aria-label="Fit score to width" title="Fit score to width (100%)" onClick={() => changeZoom(100)}>{zoom}%</button><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 250} onClick={() => changeZoom(zoom + 10)}><Plus size={15}/></button></div></div>
+          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <div className="compact-transport" role="group" aria-label="Compact practice controls"><button className="icon-button" aria-label="Restart" title="Restart (R)" onClick={restart} disabled={!score}><RotateCcw size={15}/></button><button className="icon-button" aria-label="Previous measure" title="Previous measure (←)" onClick={() => stepMeasure(-1)} disabled={!score}><ArrowLeft size={15}/></button><button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button><button className="icon-button" aria-label="Next measure" title="Next measure (→)" onClick={() => stepMeasure(1)} disabled={!score}><ArrowRight size={15}/></button><button className={`icon-button compact-listen ${microphoneActive ? 'mic-active' : ''}`} aria-label={microphoneActive ? 'Stop listening' : 'Start listening'} aria-pressed={microphoneActive} title={microphoneActive ? 'Stop microphone listening' : 'Start microphone rhythm feedback'} onClick={() => { if (!microphoneActive) setRhythmVisible(true); rhythmControl.current?.toggleMicrophone(); }}><Ear size={16}/></button><button className={`compact-metronome ${metronome ? 'enabled' : ''} ${clickPulse && metronome ? 'is-ticking' : ''}`} aria-label="Metronome" aria-pressed={metronome} data-mode={metronomeMode} title={`Metronome: ${metronomeLabel} (M)`} disabled={metronomeStarting} onClick={() => void toggleMetronome()}><AudioLines size={15}/><span>{metronomeLabel}</span></button></div>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? countingIn ? 'Count in…' : 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools"><label className="follow-control" title="Follow score"><input aria-label="Follow score" type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className={`icon-button rhythm-toggle ${microphoneActive ? 'mic-active' : ''}`} aria-label="Rhythm feedback" aria-expanded={rhythmVisible} title={microphoneActive ? 'Microphone on · rhythm feedback' : 'Microphone rhythm feedback'} onClick={() => setRhythmVisible(value => !value)}><Mic size={16}/></button><button className="icon-button sound-settings-button" aria-label="Sound and metronome settings" title="Instrument and metronome settings" onClick={() => setSoundSettings(true)}><SlidersHorizontal size={16}/></button><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 50} onClick={() => changeZoom(zoom - 10)}><Minus size={15}/></button><button className="zoom-label" aria-label="Fit score to width" title="Fit score to width (100%)" onClick={() => changeZoom(100)}>{zoom}%</button><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 250} onClick={() => changeZoom(zoom + 10)}><Plus size={15}/></button></div></div>
           <div className="score-scroller" ref={scrollRoot}><div className="score-pages" ref={scoreRoot} style={{ '--score-zoom': zoom / 100 } as React.CSSProperties} onClick={scoreClick}>
             {!score && <div className="loading-score"><Music2 size={32}/><p>Putting your music on the stand…</p></div>}
             {pages.map((page, index) => <div key={`${score?.title}-${index}`} className="score-page" aria-label={`Score page ${index + 1}`}><span className="page-number">{String(index + 1).padStart(2, '0')}</span><div dangerouslySetInnerHTML={{ __html: page }}/></div>)}
@@ -335,17 +340,22 @@ export default function App() {
           <div className="score-footnote"><span>Click a note to start there.</span><span>{score?.description}</span></div>
         </section>
 
-        <RhythmPanel visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} clickMode={clickMode} onMicState={setMicrophoneActive}
-          prepareCalibration={() => { player.pause(); setPlaying(false); setBeat(player.beat); void player.setMetronome(false); setMetronome(false); }}
-          muteVoice={voice => setMuted(current => new Set([...current, voice]))}/>
+        <RhythmPanel ref={rhythmControl} visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} clickMode={clickMode} onMicState={setMicrophoneActive}
+          prepareCalibration={() => { player.pause(); setPlaying(false); setBeat(player.beat); void player.setMetronome(false); setMetronomeMode('off'); }}
+          mutedVoices={effectivelyMuted} muteVoice={voice => {
+            const selected = score?.voices.filter(item => voice === 'all' || item.id === voice) ?? [];
+            const restore = selected.every(item => effectivelyMuted.has(item.id));
+            setMuted(current => { const next = new Set(current); selected.forEach(item => { if (restore) next.delete(item.id); else next.add(item.id); }); return next; });
+            if (restore && solo && selected.some(item => item.id !== solo)) setSolo(null);
+          }}/>
 
         <section className="player" id="playback-panel" aria-label="Playback controls" hidden={controlsCollapsed}>
           <div className="progress-row"><span>{clockTime(beat, bpm, score?.beatUnit ?? 1.5)}</span><div className="progress-wrap">{loop && performance && <div className="loop-highlight" style={{ left: `${performance.measures[loopStart].start / performance.duration * 100}%`, width: `${(performance.measures[loopEnd].end - performance.measures[loopStart].start) / performance.duration * 100}%` }}/>}<input aria-label="Playback position" type="range" min="0" max={performance?.duration ?? 1} step="0.01" value={beat} style={{ '--progress': `${beat / (performance?.duration || 1) * 100}%` } as React.CSSProperties} onChange={event => seek(Number(event.target.value))}/></div><span>{fullDuration}</span></div>
           <div className="transport-row"><div className="transport-buttons"><button className="icon-button restart-button" aria-label="Restart" title="Restart (R)" onClick={restart} disabled={!score}><RotateCcw size={18}/></button><button className="icon-button" aria-label="Previous measure" title="Previous measure (←)" onClick={() => stepMeasure(-1)} disabled={!score}><ArrowLeft size={18}/></button><button className="play-button" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={23} fill="currentColor"/> : <Play size={23} fill="currentColor"/>}</button><button className="icon-button" aria-label="Next measure" title="Next measure (→)" onClick={() => stepMeasure(1)} disabled={!score}><ArrowRight size={18}/></button><div className="measure-readout"><span>BAR</span><strong>{measure?.label.split(' · ')[0] ?? '1'}<small> / {score?.bars.at(-1)?.label ?? '59'}</small></strong>{measure && measure.occurrence > 1 && <span className="pass-label">pass {measure.occurrence}</span>}</div></div>
             <div className="tempo-control"><label htmlFor="tempo">TEMPO</label><div><button className="icon-button" aria-label="Slower" onClick={() => setBpm(value => Math.max(15, value - 1))}><Minus size={14}/></button><strong>{bpm}<span>BPM</span></strong><button className="icon-button" aria-label="Faster" onClick={() => setBpm(value => Math.min(150, value + 1))}><Plus size={14}/></button></div><input id="tempo" aria-label="Tempo" type="range" min="15" max="150" value={bpm} onChange={event => setBpm(Number(event.target.value))}/><button className="tempo-reset" title="Reset to score tempo" onClick={() => setBpm(score?.bpm ?? 44)}>{Math.round(bpm / (score?.bpm ?? 44) * 100)}%</button></div>
-            <button className={`metronome-button ${metronome ? 'enabled' : ''} ${clickPulse && metronome ? 'is-ticking' : ''}`} data-tick-count={clickCount} data-accent={clickAccent} aria-label="Metronome" aria-pressed={metronome} title="Metronome (M)" disabled={metronomeStarting} onClick={() => void toggleMetronome()}><AudioLines size={19}/><span>Metronome</span><span className="metronome-state">{metronome ? 'ON' : 'OFF'}</span></button>
+            <button className={`metronome-button ${metronome ? 'enabled' : ''} ${clickPulse && metronome ? 'is-ticking' : ''}`} data-tick-count={clickCount} data-accent={clickAccent} aria-label="Metronome" aria-pressed={metronome} data-mode={metronomeMode} title={`Metronome: ${metronomeLabel} (M)`} disabled={metronomeStarting} onClick={() => void toggleMetronome()}><AudioLines size={19}/><span>Metronome</span><span className="metronome-state">{metronomeLabel}</span></button>
           </div>
-        <div className="player-meta"><span><Headphones size={13}/> {INSTRUMENTS.find(item => item.id === instrument)?.name} · playback.</span><span className="keyboard-hint"><kbd>space</kbd> play / pause</span></div>
+        <div className="player-meta"><span className="keyboard-hint"><kbd>space</kbd> play / pause</span><span className="instrument-hint"><Headphones size={13}/> {INSTRUMENTS.find(item => item.id === instrument)?.name} · playback.</span></div>
         </section>
 
       </main>
@@ -360,8 +370,10 @@ export default function App() {
       <p className="settings-note"><a href={`${import.meta.env.BASE_URL}samples/ATTRIBUTION.md`} target="_blank" rel="noopener noreferrer">Recording credits and licenses</a></p>
       <label className="settings-field">Playback octave<select aria-label="Playback octave" value={pitchOffset} onChange={event => setPitchOffset(Number(event.target.value))}><option value={-12}>One octave lower (−12)</option><option value={0}>As exported</option><option value={12}>One octave higher (+12)</option></select></label>
       <p className="settings-note">Use “As exported” when LilyPond already transposes the guitar. An additional −12 would lower it twice. This adjustment lasts until another score is opened.</p>
-      <div className="metronome-setting-heading"><h3>Metronome</h3><button className={`switch ${metronome ? 'on' : ''}`} role="switch" aria-label="Metronome enabled" aria-checked={metronome} disabled={metronomeStarting} onClick={() => void toggleMetronome()}><span/></button><span className={`settings-beat-light ${clickPulse && metronome ? 'lit' : ''}`} data-accent={clickAccent}/></div>
-      <p className="settings-note">Clicks on its own while paused, and follows the score while playing. The first beat of each bar is accented.</p>
+      <div className="metronome-setting-heading"><h3>Metronome</h3><button className="quiet-button" aria-label="Metronome mode" data-mode={metronomeMode} disabled={metronomeStarting} onClick={() => void toggleMetronome()}>{metronomeLabel}</button><span className={`settings-beat-light ${clickPulse && metronome ? 'lit' : ''}`} data-accent={clickAccent}/></div>
+      <p className="settings-note">Cycle Off → Playback → Continuous. Playback clicks only with the score; Continuous also clicks while paused. The first beat of each bar is accented.</p>
+      <label className="settings-field count-in-option"><span>One-bar count-in</span><input aria-label="One-bar count-in" type="checkbox" checked={countIn} onChange={event => { setCountIn(event.target.checked); try { localStorage.setItem('sotto.countIn', String(event.target.checked)); } catch { /* Optional preference. */ } }}/></label>
+      <p className="settings-note">Count one full bar before each Play, using the starting bar’s meter and tempo. Clicks sound even with the metronome off. Pause cancels the count-in.</p>
       <label className="settings-field">Pulse<select aria-label="Metronome pulse" value={clickMode} onChange={event => setClickMode(event.target.value as ClickMode)}><option value="beat">Beat · {Math.round((measure ? measure.end - measure.start : score?.beatsPerBar ?? 3) / (score?.beatUnit ?? 1.5))} clicks per bar</option><option value="subdivision">Subdivision · {Math.round((measure ? measure.end - measure.start : score?.beatsPerBar ?? 3) / clickStep(score?.beatUnit ?? 1.5, 'subdivision'))} clicks per bar</option></select></label>
       <label className="settings-field click-volume-label">Click volume <span>{clickVolume}%</span><input aria-label="Metronome volume" type="range" min="0" max="100" value={clickVolume} onChange={event => setClickVolume(Number(event.target.value))}/></label>
       <button className="primary-button" onClick={() => setSoundSettings(false)}>Back to the music <ArrowRight size={16}/></button>

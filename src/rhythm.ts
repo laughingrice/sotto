@@ -2,6 +2,12 @@ import type { Performance } from './score';
 
 export type LevelFrame = { time: number; rms: number; peak: number };
 export const TRACE_HISTORY_SECONDS = 50;
+export const LOOK_AHEAD_CHOICES = [0, 1, 2, 4, 6, 8, 12, 16, 24, 32, 40];
+export function plotLookAhead(span: number, requested: number) {
+  // Keep at least two seconds of history without losing the user's preference
+  // when temporarily switching to a shorter plot window.
+  return LOOK_AHEAD_CHOICES.filter(seconds => seconds <= Math.min(requested, span - 2)).at(-1) ?? 0;
+}
 
 /** Preserve the loudest short transient in each screen column when zoomed out. */
 export function traceColumns(samples: LevelFrame[], left: number, span: number, width: number) {

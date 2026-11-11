@@ -40,6 +40,11 @@ try {
   await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
   await page.getByRole('slider', { name: 'Tempo', exact: true }).fill('120');
   await page.getByRole('button', { name: 'Metronome', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Metronome', exact: true }).getAttribute('data-mode'), 'playback');
+  await page.waitForTimeout(650);
+  assert.equal(await page.evaluate(() => window.clickEvents.length), 0, 'Playback mode stays silent while paused');
+  await page.getByRole('button', { name: 'Metronome', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Metronome', exact: true }).getAttribute('data-mode'), 'continuous');
   await page.waitForFunction(() => window.clickEvents.length >= 3);
   let events = await page.evaluate(() => window.clickEvents);
   assert.ok(events.length >= 3, 'Standalone metronome schedules audible click buffers');
@@ -60,7 +65,7 @@ try {
   await page.waitForFunction(() => !document.querySelector('[aria-label="Playback instrument"]').disabled);
   assert.equal(await page.getByRole('combobox', { name: 'Playback instrument', exact: true }).locator('option').count(), 6);
   await page.screenshot({ path: 'test-results/sound-settings.png' });
-  await page.getByRole('switch', { name: 'Metronome enabled', exact: true }).click();
+  await page.getByRole('button', { name: 'Metronome mode', exact: true }).click();
   await page.getByRole('button', { name: 'Close sound settings', exact: true }).click();
   await page.waitForTimeout(200);
   const stoppedCount = (await page.evaluate(() => window.clickEvents)).length;
@@ -80,8 +85,16 @@ try {
   await page.waitForTimeout(550);
   await page.getByRole('button', { name: 'Pause playback', exact: true }).click();
   await page.waitForTimeout(500);
-  assert.equal(await page.getByRole('button', { name: 'Metronome', exact: true }).getAttribute('aria-pressed'), 'true', 'Metronome also works while the score is paused');
+  assert.equal(await page.getByRole('button', { name: 'Metronome', exact: true }).getAttribute('data-mode'), 'playback');
+  const pausedClicks = await page.evaluate(() => window.clickEvents.length);
+  await page.waitForTimeout(650);
+  assert.equal(await page.evaluate(() => window.clickEvents.length), pausedClicks, 'Playback mode stops clicks with the score');
+  await page.getByRole('button', { name: 'Hide controls', exact: true }).click();
   await page.getByRole('button', { name: 'Metronome', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Metronome', exact: true }).getAttribute('data-mode'), 'continuous', 'Compact metronome cycles modes');
+  await page.waitForFunction(count => window.clickEvents.length > count, pausedClicks);
+  await page.getByRole('button', { name: 'Metronome', exact: true }).click();
+  await page.getByRole('button', { name: 'Show controls', exact: true }).click();
   await page.getByRole('button', { name: 'Sound and metronome settings', exact: true }).click();
   await page.getByRole('combobox', { name: 'Playback instrument', exact: true }).selectOption('violin');
   await page.waitForFunction(() => !document.querySelector('[aria-label="Playback instrument"]').disabled);
@@ -91,7 +104,8 @@ try {
   await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Sound and metronome settings', exact: true }).click();
   assert.equal(await page.getByRole('combobox', { name: 'Playback instrument', exact: true }).inputValue(), 'violin', 'Recorded violin choice is remembered offline');
-  await page.getByRole('switch', { name: 'Metronome enabled', exact: true }).click();
+  await page.getByRole('button', { name: 'Metronome mode', exact: true }).click();
+  await page.getByRole('button', { name: 'Metronome mode', exact: true }).click();
   await page.waitForTimeout(200);
   assert.ok((await page.evaluate(() => window.clickEvents)).length > 0, 'Metronome works offline');
   await page.getByRole('button', { name: 'Close sound settings', exact: true }).click();

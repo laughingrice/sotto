@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import { RecordingLibrary, isRecordedInstrument } from './recordings';
 import { measureAt, type Performance, type Score } from './score';
-import { clickAccent, clickStep, metronomePattern, type ClickMode, type InstrumentId } from './sounds';
+import { clickAccent, clickStep, countInPattern, metronomePattern, type ClickMode, type InstrumentId } from './sounds';
 
 /** Audio and UI share the Web Audio transport clock, not a JavaScript interval. */
 export class Player {
@@ -17,6 +17,7 @@ export class Player {
   private clickCounter = 0;
   private instrumentId: InstrumentId = 'guitar';
   private metronomeOn = false;
+  private metronomeContinuous = false;
   private clickVolume = .7;
   private clickMode: ClickMode = 'beat';
   private performance?: Performance;
@@ -26,6 +27,9 @@ export class Player {
   private recordings = new RecordingLibrary();
   private rebuildVersion = 0;
   private loopBounds = { enabled: false, start: 0, end: 0 };
+  private countInEnd = -Infinity;
+  private countInBeat = 0;
+  get countingIn() { return Tone.immediate() < this.countInEnd; }
   private captureStart = Infinity;
   private captureEnd = -Infinity;
   onEnded: () => void = () => {};
@@ -33,8 +37,9 @@ export class Player {
   onError: (error: Error) => void = () => {};
   onMetronomeTick: (count: number, accent: string) => void = () => {};
 
-  get beat() { return Number(Tone.getTransport().ticks) / Tone.getTransport().PPQ; }
-  get playing() { return this.initialized && Tone.getTransport().state === 'started'; }
+  get practiceLoop() { return this.loopBounds; }
+  get beat() { if (this.countingIn) return this.countInBeat; return Number(Tone.getTransport().ticks) / Tone.getTransport().PPQ; }
+  get playing() { return this.countingIn || (this.initialized && Tone.getTransport().state === 'started'); }
   clockAt(time: number) {
     return { active: this.initialized && time >= this.captureStart && time < this.captureEnd,
       beat: Tone.getTransport().getTicksAtTime(Math.max(0, time)) / Tone.getTransport().PPQ };
@@ -145,14 +150,23 @@ export class Player {
     }, `${Math.round(this.performance.duration * ppq)}i`);
   }
 
-  async play() {
+  async play(countIn = false) {
     await this.initialize();
     if (!this.performance) return;
     if (!this.instruments.size) await this.makeInstruments();
     if (this.beat >= this.performance.duration - .01) this.seek(0);
-    const now = Tone.now() + .06;
-    this.captureStart = now; this.captureEnd = Infinity;
+    let now = Tone.now() + .06;
     this.stopStandalone();
+    if (countIn) {
+      const measure = measureAt(this.performance, this.beat);
+      const { duration, clicks } = countInPattern(measure, this.score!.beatsPerBar, this.score!.beatUnit);
+      const secondsPerBeat = 60 / Tone.getTransport().bpm.value;
+      for (const click of clicks) this.playAccent(now + click.beat * secondsPerBeat, click.accent, true);
+      this.countInBeat = this.beat;
+      now += duration * secondsPerBeat;
+      this.countInEnd = now;
+    }
+    this.captureStart = now; this.captureEnd = Infinity;
     const beat = this.beat;
     // Resume sustained notes when starting inside a beat or after pausing.
     for (const note of this.performance.sounds) {
@@ -165,8 +179,14 @@ export class Player {
 
   private release() { this.instruments.forEach(instrument => instrument.releaseAll()); }
   pause(standalone = true) {
-    this.captureEnd = Tone.now();
-    Tone.getTransport().pause();
+    this.captureEnd = this.countingIn ? Tone.immediate() : Tone.now();
+    if (this.countingIn) {
+      const beat = this.countInBeat;
+      this.countInEnd = -Infinity;
+      Tone.getTransport().stop(Tone.immediate());
+      Tone.getTransport().ticks = Math.round(beat * Tone.getTransport().PPQ);
+      this.stopStandalone();
+    } else Tone.getTransport().pause();
     if (this.initialized) this.release();
     if (standalone) this.syncStandalone();
   }
@@ -220,8 +240,8 @@ export class Player {
   }
   private get metronomeStep() { return clickStep(this.score?.beatUnit ?? 1.5, this.clickMode); }
   private get clickFrequency() { return Tone.getTransport().bpm.value / (60 * this.metronomeStep); }
-  private playAccent(time: number, accent: 'downbeat' | 'beat' | 'subdivision') {
-    if (!this.metronomeOn || !this.clicks || !this.clickGain) return;
+  private playAccent(time: number, accent: 'downbeat' | 'beat' | 'subdivision', force = false) {
+    if ((!this.metronomeOn && !force) || !this.clicks || !this.clickGain) return;
     // A separate one-shot source for each click avoids reusing a Player's
     // future state timeline when seeking or switching clocks rapidly.
     const source = Tone.getContext().rawContext.createBufferSource();
@@ -257,14 +277,16 @@ export class Player {
   }
   private syncStandalone() {
     if (!this.initialized || !this.standaloneClock) return;
-    if (this.metronomeOn && !this.playing) {
+    if (this.metronomeOn && this.metronomeContinuous && !this.playing) {
       this.standaloneClock.frequency.value = this.clickFrequency;
       if (this.standaloneClock.state !== 'started') this.standaloneClock.start(Tone.now() + .03);
-    } else this.stopStandalone();
+    } else if (!this.countingIn) this.stopStandalone();
   }
-  async setMetronome(enabled: boolean) {
+  async setMetronome(enabled: boolean, continuous = true) {
     if (enabled) await this.initialize();
     this.metronomeOn = enabled;
+    this.metronomeContinuous = continuous;
+    if (!enabled && !this.countingIn) this.stopStandalone();
     this.syncStandalone();
   }
   setMetronomeOptions(volume: number, mode: ClickMode) {
@@ -275,7 +297,7 @@ export class Player {
       this.scheduleMetronome();
       if (this.standaloneClock) this.standaloneClock.frequency.value = this.clickFrequency;
       // A new subdivision begins on an accented beat when practising alone.
-      if (this.metronomeOn && !this.playing) { this.stopStandalone(); this.syncStandalone(); }
+      if (this.metronomeOn && this.metronomeContinuous && !this.playing) { this.stopStandalone(); this.syncStandalone(); }
     }
   }
   dispose() {

@@ -12,6 +12,13 @@ await page.addInitScript(() => {
   // Replace getUserMedia before the app loads: this test never opens a real
   // microphone. All input is generated in the playback AudioContext.
   window.testContexts = [];
+  window.instrumentStarts = []; window.clickStarts = [];
+  window.redGridStyles = { solid: false, dashed: false };
+  const stroke = CanvasRenderingContext2D.prototype.stroke;
+  CanvasRenderingContext2D.prototype.stroke = function (...args) {
+    if (this.strokeStyle === '#b64e4e') window.redGridStyles[this.getLineDash().length ? 'dashed' : 'solid'] = true;
+    return stroke.apply(this, args);
+  };
   window.testFilters = [];
   const createFilter = BaseAudioContext.prototype.createBiquadFilter;
   BaseAudioContext.prototype.createBiquadFilter = function (...args) {
@@ -44,6 +51,8 @@ await page.addInitScript(() => {
   };
   const start = AudioBufferSourceNode.prototype.start;
   AudioBufferSourceNode.prototype.start = function (...args) {
+    if (this.buffer?.duration > .1 && !this.loop) window.instrumentStarts.push(Number(args[0] ?? this.context.currentTime));
+    if (Math.abs((this.buffer?.duration ?? 0) - .035) < .0001) window.clickStarts.push(Number(args[0] ?? this.context.currentTime));
     const destination = window.testMicDestination;
     const instrument = window.injectPerformance && this.buffer?.duration > .1;
     const calibration = window.injectCalibration && Math.abs((this.buffer?.duration ?? 0) - .04) < .0001;
@@ -67,6 +76,21 @@ const controls = page.locator('.rhythm-stats');
 const ready = () => page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
 try {
   await page.goto(process.env.BASE_URL || 'http://localhost:5175/'); await ready();
+  await page.getByRole('button', { name: 'Hide controls', exact: true }).click();
+  const compact = page.getByRole('group', { name: 'Compact practice controls', exact: true });
+  await compact.getByRole('button', { name: 'Next measure', exact: true }).click();
+  assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), '1');
+  await compact.getByRole('button', { name: 'Previous measure', exact: true }).click();
+  assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), '0');
+  await compact.getByRole('button', { name: 'Next measure', exact: true }).click();
+  await compact.getByRole('button', { name: 'Restart', exact: true }).click();
+  assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), '0');
+  await compact.getByRole('button', { name: 'Start listening', exact: true }).click();
+  await compact.getByRole('button', { name: 'Stop listening', exact: true }).waitFor();
+  await compact.getByRole('button', { name: 'Stop listening', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.testMicTrack.readyState), 'ended', 'Compact listening button releases the microphone');
+  await page.getByRole('button', { name: 'Hide rhythm feedback', exact: true }).click();
+  await page.getByRole('button', { name: 'Show controls', exact: true }).click();
   await page.getByRole('button', { name: 'Mute bass', exact: true }).click();
   await page.keyboard.press('Space'); await pause().waitFor();
   assert.equal(await page.getByRole('button', { name: 'Unmute bass', exact: true }).getAttribute('aria-pressed'), 'true', 'Space does not re-click the last mute button');
@@ -117,7 +141,15 @@ try {
   const chart = page.locator('.rhythm-panel canvas');
   assert.equal(await chart.getAttribute('data-metronome-beats'), '32', 'Beat grid uses the same quarter-note pulse as the metronome');
   assert.equal(await chart.getAttribute('data-downbeats'), '8', 'Each synthetic bar has a stronger downbeat');
-  assert.equal(await chart.getAttribute('data-lookahead-seconds'), '8', 'Default plot shows eight seconds ahead');
+  assert.equal(await chart.getAttribute('data-lookahead-seconds'), '4', 'Default plot shows four seconds ahead');
+  const ahead = page.getByRole('combobox', { name: 'Rhythm look ahead', exact: true });
+  await ahead.selectOption('8');
+  assert.equal(await chart.getAttribute('data-window-seconds'), '24', 'Look-ahead changes do not change plot length');
+  await page.getByRole('combobox', { name: 'Rhythm plot window', exact: true }).selectOption('6');
+  assert.equal(await ahead.inputValue(), '4', 'A short window still reserves history');
+  await page.getByRole('combobox', { name: 'Rhythm plot window', exact: true }).selectOption('24');
+  assert.equal(await ahead.inputValue(), '8', 'Longer window restores the separate look-ahead preference');
+  await ahead.selectOption('4');
   await page.waitForFunction(() => document.querySelector('.rhythm-panel canvas').dataset.backgroundReady === 'true');
   assert.ok(Number(await chart.getAttribute('data-background-rms')) > .0001, 'Baseline is measured from the generated background noise');
   await page.getByRole('button', { name: 'Learn microphone baseline', exact: true }).click();
@@ -134,6 +166,7 @@ try {
   await page.getByRole('button', { name: 'Restart', exact: true }).click();
   await play().click();
   await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.onTime) >= 3);
+  assert.deepEqual(await page.evaluate(() => window.redGridStyles), { solid: true, dashed: true }, 'Metronome draws red solid bar starts and red dashed other beats');
   await page.getByRole('checkbox', { name: 'Hide learned microphone background', exact: true }).uncheck();
   assert.ok(Number(await controls.getAttribute('data-on-time')) >= 3, 'Background display adjustment preserves detection results');
   await page.getByRole('checkbox', { name: 'Hide learned microphone background', exact: true }).check();
@@ -148,9 +181,57 @@ try {
   await page.getByRole('combobox', { name: 'Rhythm plot window', exact: true }).selectOption('24');
   await page.getByRole('combobox', { name: 'Microphone trace boost', exact: true }).selectOption('12');
   await page.screenshot({ path: 'test-results/rhythm-desktop.png' });
+  // Muting suppresses actual sampler starts, and the same action restores them.
+  await page.getByRole('button', { name: 'Mute practice voice', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Unmute practice voice', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('button', { name: 'Unmute melody', exact: true }).getAttribute('aria-pressed'), 'true');
+  await page.getByRole('button', { name: 'Restart', exact: true }).click();
+  const mutedStarts = await page.evaluate(() => window.instrumentStarts.length);
+  await play().click(); await page.waitForTimeout(1100); await pause().click();
+  assert.equal(await page.evaluate(() => window.instrumentStarts.length), mutedStarts, 'Practice mute prevents actual instrument attacks');
+  await page.getByRole('button', { name: 'Unmute practice voice', exact: true }).click();
+  await play().click(); await page.waitForTimeout(800); await pause().click();
+  assert.ok(await page.evaluate(() => window.instrumentStarts.length) > mutedStarts, 'Unmute restores actual instrument attacks');
   await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).selectOption('all');
   assert.equal(await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).inputValue(), 'all');
+  await page.getByRole('button', { name: 'Mute practice voice', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Unmute melody', exact: true }).count(), 1, 'All voices selection can mute playback');
+  await page.getByRole('button', { name: 'Unmute practice voice', exact: true }).click();
+  // A 4/4 bar at 120 bpm counts four clicks, with a 2 s gap to the first note.
+  await page.getByRole('button', { name: 'Sound and metronome settings', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'One-bar count-in', exact: true }).check();
+  await page.getByRole('button', { name: 'Back to the music', exact: true }).click();
+  await page.getByRole('button', { name: 'Restart', exact: true }).click();
+  await page.evaluate(() => { window.instrumentStarts = []; window.clickStarts = []; });
+  await play().click(); await page.waitForTimeout(450);
+  assert.equal(await page.evaluate(() => window.instrumentStarts.length), 0, 'Score stays silent during count-in');
+  assert.equal(await page.evaluate(() => window.clickStarts.length), 4, 'One-bar count-in schedules four clicks');
+  await page.waitForFunction(() => window.instrumentStarts.length > 0);
+  const lead = await page.evaluate(() => window.instrumentStarts[0] - window.clickStarts[0]);
+  assert.ok(Math.abs(lead - 2) < .03, `First note starts exactly one bar after the first count (${lead}s)`);
+  await pause().click();
+  await page.getByRole('button', { name: 'Restart', exact: true }).click();
+  await play().click(); await page.waitForTimeout(250); await pause().click();
+  await page.waitForTimeout(200);
+  const cancelledStarts = await page.evaluate(() => window.instrumentStarts.length);
+  await page.waitForTimeout(2200);
+  assert.equal(await page.evaluate(() => window.instrumentStarts.length), cancelledStarts, 'Pause cancels a pending count-in start');
+  await page.getByRole('button', { name: 'Sound and metronome settings', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'One-bar count-in', exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Back to the music', exact: true }).click();
   if (await pause().count()) await pause().click();
+  await page.getByRole('combobox', { name: 'Loop end measure', exact: true }).selectOption('0');
+  await page.getByRole('switch', { name: 'Practice loop', exact: true }).click();
+  await page.getByRole('button', { name: 'Restart', exact: true }).click();
+  await play().click();
+  await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.completedLoops) >= 2);
+  await pause().click(); await page.waitForTimeout(300);
+  const loopReview = { dots: Number(await controls.getAttribute('data-history-dots')), onTime: Number(await controls.getAttribute('data-on-time')) };
+  assert.ok(loopReview.dots >= 8 && loopReview.onTime >= 8, 'Loop review preserves attacks and timing totals from previous passes');
+  await page.waitForTimeout(400);
+  assert.equal(Number(await controls.getAttribute('data-on-time')), loopReview.onTime, 'Paused loop history stays available');
+  await page.screenshot({ path: 'test-results/rhythm-loop-review.png' });
+  await page.getByRole('switch', { name: 'Practice loop', exact: true }).click();
   await page.evaluate(() => { window.injectPerformance = false; window.injectCalibration = true; });
   await page.getByRole('button', { name: 'Calibrate speakers', exact: true }).click();
   await page.getByText(/Speaker\/microphone alignment:/).waitFor();

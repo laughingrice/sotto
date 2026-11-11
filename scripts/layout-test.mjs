@@ -27,6 +27,9 @@ try {
   assert.ok(rhythm.y - scoreWithRhythm.y - scoreWithRhythm.height <= 8 && player.y - rhythm.y - rhythm.height <= 8, 'Frames have small gaps');
   assert.equal(await page.locator('.below-player').count(), 0, 'No separate footer consumes score space');
   assert.equal(await page.locator('.player .player-meta .keyboard-hint').count(), 1, 'Instrument and shortcut text live inside playback controls');
+  const shortcutHint = await page.locator('.player-meta .keyboard-hint').boundingBox();
+  const instrumentHint = await page.locator('.player-meta .instrument-hint').boundingBox();
+  assert.ok(shortcutHint.x < instrumentHint.x, 'Space shortcut sits under the transport, instrument sits on the opposite side');
   await page.screenshot({ path: 'test-results/compact-rhythm-layout.png' });
   await page.getByRole('button', { name: 'Hide rhythm feedback', exact: true }).click();
   await page.getByRole('button', { name: 'Hide controls', exact: true }).click();
@@ -54,6 +57,11 @@ try {
   assert.ok(await page.locator('.score-scroller').evaluate(element => element.scrollWidth <= element.clientWidth + 1 && element.scrollLeft === 0), 'Fit restores full page width with no cropping');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Hide controls', exact: true }).click();
+  const compactControls = page.getByRole('group', { name: 'Compact practice controls', exact: true });
+  for (const label of ['Restart', 'Previous measure', 'Play score', 'Next measure', 'Start listening', 'Metronome']) {
+    const box = await compactControls.getByRole('button', { name: label, exact: true }).boundingBox();
+    assert.ok(box && box.x >= 0 && box.x + box.width <= 390, `${label} stays visible on phone`);
+  }
   const phoneSvg = await page.locator('.score-page svg').first().boundingBox();
   for (let index = 0; index < 5; index++) await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
   assert.ok((await page.locator('.score-page svg').first().boundingBox()).width > phoneSvg.width * 1.4, 'Phone zoom enlarges the notation too');

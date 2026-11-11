@@ -32,3 +32,24 @@ export function metronomePattern(measures: { start: number; end: number }[], bea
     return clicks;
   });
 }
+
+/** Draw every notated beat as well as any finer audible click subdivision. */
+export function metronomeGrid(measures: { start: number; end: number; meter?: [number, number] }[], beatUnit: number, mode: ClickMode) {
+  const clicks = new Map(metronomePattern(measures, beatUnit, mode).map(click => [Math.round(click.beat * 1e6), click]));
+  for (const measure of measures) {
+    const step = measure.meter ? 4 / measure.meter[1] : beatUnit === 1.5 ? .5 : beatUnit;
+    for (let offset = 0; offset < measure.end - measure.start - 1e-6; offset += step) {
+      const beat = measure.start + offset;
+      clicks.set(Math.round(beat * 1e6), { beat, accent: offset === 0 ? 'downbeat' : 'beat' });
+    }
+  }
+  return [...clicks.values()].sort((a, b) => a.beat - b.beat);
+}
+
+/** A complete lead-in bar, using the local meter rather than the score's first meter. */
+export function countInPattern(measure: { start: number; end: number; meter?: [number, number] } | undefined, beatsPerBar: number, beatUnit: number) {
+  const meter = measure?.meter;
+  const duration = meter ? meter[0] * 4 / meter[1] : measure ? measure.end - measure.start : beatsPerBar;
+  const pulse = meter ? (meter[1] === 8 && meter[0] >= 6 && meter[0] % 3 === 0 ? 1.5 : 4 / meter[1]) : beatUnit;
+  return { duration, clicks: metronomePattern([{ start: 0, end: duration }], pulse, 'beat') };
+}
