@@ -1,11 +1,15 @@
 import * as Tone from 'tone';
 import { RecordingLibrary, isRecordedInstrument } from './recordings';
-import { measureAt, type Performance, type Score } from './score';
+import { measureAt, playbackMidi, type Performance, type Score } from './score';
+import { RecordedDrumKit } from './drum-kit';
 import { clickAccent, clickStep, countInPattern, metronomePattern, type ClickMode, type InstrumentId } from './sounds';
 
 /** Audio and UI share the Web Audio transport clock, not a JavaScript interval. */
+type Sound = Tone.Sampler | Tone.PolySynth<Tone.Synth> | RecordedDrumKit;
 export class Player {
-  private instruments = new Map<string, Tone.Sampler | Tone.PolySynth<Tone.Synth>>();
+  private instruments = new Map<string, Sound>();
+  private loadedInstruments = new Map<string, InstrumentId>();
+  private voiceInstruments: Record<string, InstrumentId> = {};
   private muted = new Set<string>();
   private volumes = new Map<string, number>();
   private clicks?: Record<'downbeat' | 'beat' | 'subdivision', AudioBuffer>;
@@ -71,49 +75,46 @@ export class Player {
   }
 
   private async makeInstruments(instrument: InstrumentId = this.instrumentId) {
-    if (!this.score || !this.master) return;
+    if (!this.score || !this.master) return [] as string[];
     const version = ++this.rebuildVersion;
     const voices = this.score.voices;
-    const next = new Map<string, Tone.Sampler | Tone.PolySynth<Tone.Synth>>();
+    const desired = new Map(voices.map(voice => [voice.id, this.voiceInstruments[voice.id] ?? (voice.percussion ? 'drums' : instrument)]));
+    const next = new Map<string, Sound>(), created: Sound[] = [], changed: string[] = [];
     this.onSoundLoading(true);
     try {
-      if (isRecordedInstrument(instrument)) {
-        const buffers = await this.recordings.load(instrument, Tone.getContext().rawContext);
-        if (version !== this.rebuildVersion) return;
-        for (const voice of voices) {
-          next.set(voice.id, new Tone.Sampler({
-            urls: buffers,
-            attack: instrument === 'violin' ? .025 : .002,
-            release: instrument === 'violin' ? .18 : .16,
-            curve: 'exponential',
-          }).connect(this.master));
+      const banks = new Map(await Promise.all([...new Set(desired.values())].filter(isRecordedInstrument).map(async id =>
+        [id, await this.recordings.load(id, Tone.getContext().rawContext)] as const)));
+      if (version !== this.rebuildVersion) return [];
+      for (const voice of voices) {
+        const id = desired.get(voice.id)!;
+        const previous = this.instruments.get(voice.id);
+        if (previous && this.loadedInstruments.get(voice.id) === id) { next.set(voice.id, previous); continue; }
+        let sound: Sound;
+        if (id === 'drums') sound = new RecordedDrumKit(banks.get('drums')!, this.master);
+        else if (isRecordedInstrument(id)) sound = new Tone.Sampler({ urls: banks.get(id)!,
+          attack: id === 'violin' ? .025 : .002, release: id === 'violin' ? .18 : .16, curve: 'exponential' }).connect(this.master);
+        else {
+          const profiles = {
+            marimba: { partials: [1, 0, .12, .55, 0, 0, 0, 0, .08], attack: .001, decay: .45, sustain: 0, release: .12 },
+            organ: { partials: [1, .25, .5, .12, .18, .08], attack: .012, decay: .03, sustain: .8, release: .08 },
+            flute: { partials: [1, .13, .04, .015], attack: .06, decay: .1, sustain: .75, release: .13 },
+          };
+          const profile = profiles[id];
+          sound = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'custom', partials: profile.partials },
+            envelope: { attack: profile.attack, decay: profile.decay, sustain: profile.sustain, release: profile.release } }).connect(this.master);
         }
-      } else {
-        const profiles = {
-          marimba: { partials: [1, 0, .12, .55, 0, 0, 0, 0, .08], attack: .001, decay: .45, sustain: 0, release: .12 },
-          organ: { partials: [1, .25, .5, .12, .18, .08], attack: .012, decay: .03, sustain: .8, release: .08 },
-          flute: { partials: [1, .13, .04, .015], attack: .06, decay: .1, sustain: .75, release: .13 },
-        };
-        const profile = profiles[instrument];
-        for (const voice of voices) {
-          next.set(voice.id, new Tone.PolySynth(Tone.Synth, {
-            oscillator: { type: 'custom', partials: profile.partials },
-            envelope: { attack: profile.attack, decay: profile.decay, sustain: profile.sustain, release: profile.release },
-          }).connect(this.master));
-        }
+        created.push(sound); changed.push(voice.id); next.set(voice.id, sound);
       }
-      // Keep the previous instrument available until every new sample is ready.
-      this.release();
-      this.instruments.forEach(previous => previous.dispose());
-      this.instruments = next;
-      this.instrumentId = instrument;
+      // Keep unchanged parts (especially ringing drums) running while changing another sound.
+      this.instruments.forEach((previous, voice) => { if (next.get(voice) !== previous) { previous.releaseAll(); previous.dispose(); } });
+      this.instruments = next; this.loadedInstruments = desired; this.instrumentId = instrument;
       voices.forEach(voice => this.applyVolume(voice.id));
-    } catch (error) {
-      next.forEach(sound => sound.dispose());
-      throw error;
-    } finally {
-      if (version === this.rebuildVersion) this.onSoundLoading(false);
-    }
+      return changed;
+    } catch (error) { created.forEach(sound => sound.dispose()); throw error; }
+    finally { if (version === this.rebuildVersion) this.onSoundLoading(false); }
+  }
+  private noteMidi(note: import('./score').ScoreNote) {
+    return this.loadedInstruments.get(note.voice) === 'drums' ? note.midi : playbackMidi(note, this.pitchOffset);
   }
 
   load(score: Score, performance: Performance) {
@@ -136,7 +137,7 @@ export class Player {
       transport.schedule(time => {
         if (!this.muted.has(note.voice)) {
           this.instruments.get(note.voice)?.triggerAttackRelease(
-            Tone.Frequency(note.midi + this.pitchOffset, 'midi').toNote(),
+            Tone.Frequency(this.noteMidi(note), 'midi').toNote(),
             Math.max(.025, ((this.loopBounds.enabled ? Math.min(note.end, this.loopBounds.end) : note.end) - note.start) * 60 / transport.bpm.value), time, .72);
         }
       }, `${Math.round(note.start * ppq)}i`);
@@ -153,7 +154,7 @@ export class Player {
   async play(countIn = false) {
     await this.initialize();
     if (!this.performance) return;
-    if (!this.instruments.size) await this.makeInstruments();
+    if (this.score?.voices.some(voice => !this.instruments.has(voice.id) || this.loadedInstruments.get(voice.id) !== (this.voiceInstruments[voice.id] ?? (voice.percussion ? 'drums' : this.instrumentId)))) await this.makeInstruments();
     if (this.beat >= this.performance.duration - .01) this.seek(0);
     let now = Tone.now() + .06;
     this.stopStandalone();
@@ -170,8 +171,8 @@ export class Player {
     const beat = this.beat;
     // Resume sustained notes when starting inside a beat or after pausing.
     for (const note of this.performance.sounds) {
-      if (note.start < beat - .001 && note.end > beat && !this.muted.has(note.voice)) {
-        this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(note.midi + this.pitchOffset, 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, now, .65);
+      if (this.loadedInstruments.get(note.voice) !== 'drums' && !note.percussion && note.start < beat - .001 && note.end > beat && !this.muted.has(note.voice)) {
+        this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(this.noteMidi(note), 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, now, .65);
       }
     }
     Tone.getTransport().start(now);
@@ -211,7 +212,7 @@ export class Player {
   }
   private applyVolume(voice: string) {
     const instrument = this.instruments.get(voice);
-    const level = { guitar: -8, piano: -8, violin: -10, marimba: -14, organ: -18, flute: -15 }[this.instrumentId];
+    const level = { guitar: -8, piano: -8, violin: -10, 'bass-electric': -8, drums: -6, marimba: -14, organ: -18, flute: -15 }[this.loadedInstruments.get(voice) ?? this.instrumentId];
     if (instrument) instrument.volume.value = this.muted.has(voice) ? -Infinity : level + 20 * Math.log10(Math.max(.001, this.volumes.get(voice) ?? 1));
   }
   mute(voice: string, muted: boolean) {
@@ -224,16 +225,17 @@ export class Player {
     this.pitchOffset = semitones;
     if (this.initialized) this.release();
   }
-  async setInstrument(instrument: InstrumentId) {
-    if (this.instrumentId === instrument) return;
+  async setInstrument(instrument: InstrumentId) { await this.setInstruments(instrument, this.voiceInstruments); }
+  async setInstruments(instrument: InstrumentId, voices: Record<string, InstrumentId>) {
+    if (this.instrumentId === instrument && JSON.stringify(voices) === JSON.stringify(this.voiceInstruments)) return;
+    this.voiceInstruments = { ...voices };
     if (!this.initialized) { this.instrumentId = instrument; return; }
-    await this.makeInstruments(instrument);
-    // Revoice held notes after loading, without seeking or restarting the clock.
+    const changed = await this.makeInstruments(instrument);
     if (this.playing && this.performance) {
       const beat = this.beat;
       for (const note of this.performance.sounds) {
-        if (note.start < beat && note.end > beat && !this.muted.has(note.voice)) {
-          this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(note.midi + this.pitchOffset, 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, Tone.now(), .65);
+        if (changed.includes(note.voice) && this.loadedInstruments.get(note.voice) !== 'drums' && !note.percussion && note.start < beat && note.end > beat && !this.muted.has(note.voice)) {
+          this.instruments.get(note.voice)?.triggerAttackRelease(Tone.Frequency(this.noteMidi(note), 'midi').toNote(), (note.end - beat) * 60 / Tone.getTransport().bpm.value, Tone.now(), .65);
         }
       }
     }

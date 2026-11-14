@@ -1,10 +1,10 @@
 import { makePerformance, type Score } from './score';
-import type { ClickMode } from './sounds';
+import { isInstrument, type ClickMode, type InstrumentId } from './sounds';
 
 export type MetronomeMode = 'off' | 'playback' | 'continuous';
 export type Preferences = { zoom: number; follow: boolean; clickVolume: number; clickMode: ClickMode; metronomeMode: MetronomeMode; rhythmVisible: boolean };
 export type PracticeSettings = { bpm: number; beat: number; repeats: boolean; loop: boolean; loopStart: number; loopEnd: number;
-  muted: string[]; solo: string | null; volumes: Record<string, number>; pitchOffset: number; practiceVoice: string };
+  muted: string[]; solo: string | null; volumes: Record<string, number>; pitchOffset: number; practiceVoice: string; instruments?: Record<string, InstrumentId> };
 const read = (key: string): Record<string, unknown> => {
   try { const value: unknown = JSON.parse(localStorage.getItem(key) ?? '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; } catch { return {}; }
 };
@@ -34,6 +34,7 @@ export function loadPractice(key: string, score: Score): PracticeSettings {
   const beat = number(value.beat, 0, 0, Math.max(0, performance.duration - .001));
   return { bpm: number(value.bpm, score.bpm, 15, 300), beat: loop ? Math.max(performance.measures[loopStart].start, Math.min(beat, performance.measures[loopEnd].end - .001)) : beat,
     repeats, loop, loopStart, loopEnd, muted: Array.isArray(value.muted) ? value.muted.filter(voice) : [], solo: voice(value.solo) ? value.solo : null, volumes,
+    ...(value.instruments && typeof value.instruments === 'object' ? { instruments: Object.fromEntries(Object.entries(value.instruments).filter(([id, instrument]) => voice(id) && isInstrument(instrument))) as Record<string, InstrumentId> } : {}),
     pitchOffset: value.pitchOffset === -12 || value.pitchOffset === 12 ? value.pitchOffset : 0,
     practiceVoice: value.practiceVoice === 'all' || voice(value.practiceVoice) ? value.practiceVoice : score.voices.find(item => item.id === 'melody')?.id ?? score.voices[0]?.id ?? 'all' };
 }
@@ -41,7 +42,7 @@ export function savePractice(key: string, value: PracticeSettings) { remember(`s
 
 // Portable preferences intentionally omit input device IDs and route-specific latency.
 const portableOptions: Record<string, (value: string) => boolean> = {
-  'sotto.instrument': value => ['guitar', 'piano', 'violin', 'marimba', 'organ', 'flute'].includes(value),
+  'sotto.instrument': isInstrument,
   ...Object.fromEntries(['countIn', 'controlsCollapsed', 'hideBackground'].map(key => [`sotto.${key}`, (value: string) => value === 'true' || value === 'false'])),
   ...Object.fromEntries(Object.entries({ inputGate: [-65, -20], rhythmTolerance: [25, 150], plotWindow: [6, 48], lookAhead: [0, 40], traceBoost: [0, 36], highpass: [0, 150], lowpass: [0, 8000] })
     .map(([key, [min, max]]) => [`sotto.${key}`, (value: string) => value.trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max])),
@@ -93,6 +94,13 @@ export function parsePreferences(value: unknown, songKeys: string[]): PortablePr
     if (item.solo !== undefined) { if (item.solo !== null && !id(item.solo)) throw invalid(); saved.solo = item.solo; }
     if (item.practiceVoice !== undefined) { if (!id(item.practiceVoice)) throw invalid(); saved.practiceVoice = item.practiceVoice; }
     if (item.pitchOffset !== undefined) { if (![-12, 0, 12].includes(item.pitchOffset as number)) throw invalid(); saved.pitchOffset = item.pitchOffset; }
+    if (item.instruments !== undefined) {
+      if (!record(item.instruments) || Object.keys(item.instruments).length > 1000) throw invalid();
+      saved.instruments = Object.fromEntries(Object.entries(item.instruments).map(([voice, instrument]) => {
+        if (!id(voice) || !isInstrument(instrument)) throw invalid();
+        return [voice, instrument];
+      }));
+    }
     if (item.volumes !== undefined) {
       if (!record(item.volumes) || Object.keys(item.volumes).length > 1000) throw invalid();
       saved.volumes = Object.fromEntries(Object.entries(item.volumes).map(([voice, level]) => {

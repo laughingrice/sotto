@@ -17,7 +17,9 @@ The upstream library credits these original sources:
 - Piano and violin: **VSCO / Versilian Studios Community Edition**:
   http://vis.versilstudios.net/vsco-community.html
 
-Sotto selected 29 recordings and renamed their containing directories. The MP3
+Electric bass recordings are credited upstream to **Karoryfer Samples**.
+
+Sotto selected 38 melodic recordings and renamed their containing directories. The MP3
 files are otherwise unchanged. During playback, Sotto adjusts gain, applies
 attack/release envelopes, and repitches the nearest recording when necessary.
 The selection, sizes, and SHA-256 hashes are listed in [manifest.json](manifest.json).
@@ -26,3 +28,23 @@ No endorsement by the recording creators is implied.
 Refresh this subset using `python3 scripts/fetch-samples.py` from the repository.
 The application serves its own bundled files and does not contact the upstream
 sample host during playback.
+
+## Acoustic drums
+
+Sotto also includes 11 single-hit recordings from **Virtuosity Drums**, by
+**Versilian Studios and Karoryfer Samples**, recorded at Virtuosity Musical
+Instruments in Boston. The library is released under **CC0 1.0 Universal**.
+
+- Project: https://github.com/sfzinstruments/virtuosity_drums
+- Publisher: https://versilian-studios.com/virtuosity-drums/
+- Revision: `9f04cf9a734527edfbb0a4eee1f674e45bbf71bc`
+- License: [DRUMS-LICENSE.txt](DRUMS-LICENSE.txt)
+
+Selected recordings cover kick, snare, sidestick, closed/open/pedal hi-hat,
+high/low toms, crash, ride and ride bell. Sotto uses the mid microphone except
+for the kick, which uses its close microphone. These FLAC originals were
+converted to mono 44.1 kHz, 128 kbps MP3; no synthetic drum sounds are used.
+Source paths, output sizes and SHA-256 hashes are recorded in `manifest.json`.
+The deliberately small kit uses one velocity layer and one take per sound;
+it does not reproduce the full library's articulations or round robins.
+`ffmpeg` is required only when rebuilding the drum subset with the fetch script.

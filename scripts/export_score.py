@@ -101,6 +101,8 @@ def voice_labels(notes):
         label = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', label).replace('_', ' ').replace('-', ' ')
         label = label[:1].upper() + label[1:]
         voices.append(dict(id=identity, name=label, color=colors[index % len(colors)]))
+        if any(note.get('percussion') for note in notes if note['voice'] == identity):
+            voices[-1]['percussion'] = True
     return voices
 
 
@@ -112,7 +114,7 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
     text = source.read_text()
     if '\\layout {' not in text:
         raise ValueError('The score needs an explicit \\layout { } block to install the exporter.')
-    text = text.replace('\\layout {', '\\layout {\n  \\context { \\Score \\consists #practice-timing-engraver }\n  \\context { \\Voice \\consists #practice-engraver }', 1)
+    text = text.replace('\\layout {', '\\layout {\n  \\context { \\Score \\consists #practice-timing-engraver }\n  \\context { \\Voice \\consists #practice-engraver }\n  \\context { \\DrumVoice \\consists #practice-engraver }', 1)
     text = '\\include "' + str(ROOT / 'scripts/practice-map.ily') + '"\n' + text + '\n#(practice-export-playback)\n'
     with tempfile.TemporaryDirectory(prefix='sotto-export-') as temp:
         folder = Path(temp)
@@ -125,10 +127,13 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
         pages = [path.read_text() for path in svg_paths]
         notes = []
         for line in (folder / 'events.tsv').read_text().splitlines():
-            identity, voice, beat, grace, pitch, duration, bar, tie = line.split('\t')
+            identity, voice, beat, grace, pitch, duration, bar, percussion, tie = line.split('\t')
+            is_drum = percussion == '1'
             notes.append(dict(id=identity, voice=voice or 'voice', beat=float(beat),
-                              grace=float(grace), midi=round(float(pitch)) + transpose,
+                              grace=float(grace), midi=round(float(pitch)) + (0 if is_drum else transpose),
                               duration=float(duration), bar=int(bar), tie=tie == '1'))
+            if is_drum:
+                notes[-1]['percussion'] = True
         bars = read_measures((folder / 'measures.tsv').read_text())
         played_bars = read_measures((folder / 'played-measures.tsv').read_text())
         written_events = (folder / 'written-events.tsv').read_text()

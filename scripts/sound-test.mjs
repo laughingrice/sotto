@@ -41,6 +41,7 @@ try {
   await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
   await page.getByRole('slider', { name: 'Tempo', exact: true }).fill('120');
   await page.getByRole('button', { name: 'Metronome', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Metronome"]').dataset.mode === 'playback');
   assert.equal(await page.getByRole('button', { name: 'Metronome', exact: true }).getAttribute('data-mode'), 'playback');
   await page.waitForTimeout(650);
   assert.equal(await page.evaluate(() => window.clickEvents.length), 0, 'Playback mode stays silent while paused');
@@ -64,7 +65,7 @@ try {
   await page.getByRole('combobox', { name: 'Playback instrument', exact: true }).selectOption('piano');
   await page.getByRole('combobox', { name: 'Playback instrument', exact: true }).waitFor({ state: 'visible' });
   await page.waitForFunction(() => !document.querySelector('[aria-label="Playback instrument"]').disabled);
-  assert.equal(await page.getByRole('combobox', { name: 'Playback instrument', exact: true }).locator('option').count(), 6);
+  assert.equal(await page.getByRole('combobox', { name: 'Playback instrument', exact: true }).locator('option').count(), 8);
   await page.screenshot({ path: 'test-results/sound-settings.png' });
   await page.getByRole('button', { name: 'Metronome mode', exact: true }).click();
   await page.getByRole('button', { name: 'Close sound settings', exact: true }).click();
@@ -115,7 +116,7 @@ try {
   await page.waitForFunction(() => window.instrumentEvents.length > 0);
   assert.ok((await page.evaluate(() => window.instrumentEvents)).some(event => event.rms > .01), 'Recorded violin is decoded and played while offline');
   assert.deepEqual(errors, []);
-  console.log('PASS: audible accented standalone clicks, audio-clock tempo, subdivisions, volume UI, all six instruments, live switching, and offline metronome/preferences.');
+  console.log('PASS: audible accented standalone clicks, audio-clock tempo, subdivisions, volume UI, instrument choices, live switching, and offline metronome/preferences.');
 } catch (error) {
   console.log('Browser errors:', errors);
   console.log('Click events:', await page.evaluate(() => window.clickEvents));

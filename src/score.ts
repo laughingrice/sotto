@@ -1,5 +1,5 @@
-export type Voice = { id: string; name: string; color: string };
-export type ScoreNote = { id: string; voice: string; beat: number; grace: number; midi: number; duration: number; bar: number; tie: boolean; measure?: number };
+export type Voice = { id: string; name: string; color: string; instrument?: string; midiInstrument?: string; percussion?: boolean };
+export type ScoreNote = { id: string; voice: string; beat: number; grace: number; midi: number; duration: number; bar: number; tie: boolean; measure?: number; percussion?: boolean };
 export type ScoreBar = { index: number; label: string; start?: number; duration?: number; meter?: [number, number] };
 export type Score = {
   format: 'sotto-score'; version: 1; title: string; composer: string; subtitle: string;
@@ -10,6 +10,10 @@ export type Score = {
 export type PerformanceNote = ScoreNote & { start: number; end: number };
 export type Measure = { index: number; written: number; label: string; occurrence: number; start: number; end: number; meter?: [number, number] };
 export type Performance = { notes: PerformanceNote[]; sounds: PerformanceNote[]; measures: Measure[]; duration: number };
+
+export function playbackMidi(note: ScoreNote, pitchOffset: number): number {
+  return note.midi + (note.percussion ? 0 : pitchOffset);
+}
 
 export function barTiming(score: Score, index: number) {
   const bar = score.bars[index];
@@ -82,6 +86,7 @@ export function validateScore(value: unknown): asserts value is Score {
       !Array.isArray(score.bars) || !score.bars.length || !Array.isArray(score.sequence) || !score.sequence.length ||
       !Number.isFinite(score.beatsPerBar) || score.beatsPerBar <= 0 || !Number.isFinite(score.beatUnit) || score.beatUnit <= 0 ||
       !Number.isFinite(score.bpm) || score.bpm < 15 || score.bpm > 300 ||
+      score.voices.some(v => (v.percussion !== undefined && typeof v.percussion !== 'boolean') || (v.instrument !== undefined && typeof v.instrument !== 'string') || (v.midiInstrument !== undefined && typeof v.midiInstrument !== 'string')) ||
       score.bars.some((bar, index) => !bar || bar.index !== index || typeof bar.label !== 'string' ||
         (bar.start !== undefined && (!Number.isFinite(bar.start) || bar.start < 0 || Math.abs(bar.start - (index ? barTiming(score, index - 1).start + barTiming(score, index - 1).duration : 0)) > 1e-5)) ||
         (bar.duration !== undefined && (!Number.isFinite(bar.duration) || bar.duration <= 0)) ||
@@ -89,6 +94,7 @@ export function validateScore(value: unknown): asserts value is Score {
         ((bar.start === undefined) !== (score.bars[0].start === undefined)) ||
         (bar.meter !== undefined && (!Array.isArray(bar.meter) || bar.meter.length !== 2 || bar.meter.some(n => !Number.isInteger(n) || n <= 0)))) ||
       score.notes.some(n => !Number.isFinite(n.beat) || !Number.isFinite(n.grace) || !Number.isFinite(n.duration) || n.duration <= 0 || !Number.isFinite(n.midi) || n.midi < 0 || n.midi > 127 || typeof n.id !== 'string' || !score.voices.some(v => v.id === n.voice) ||
+        (n.percussion !== undefined && typeof n.percussion !== 'boolean') ||
         (n.measure !== undefined && (!Number.isInteger(n.measure) || n.measure < 0 || n.measure >= score.bars.length || n.beat < barTiming(score, n.measure).start - 1e-5 || n.beat >= barTiming(score, n.measure).start + barTiming(score, n.measure).duration - 1e-5))) ||
       score.sequence.some(index => !Number.isInteger(index) || index < 0 || index >= score.bars.length) ||
       score.pages.some(page => typeof page !== 'string' || !page.includes('<svg'))) {

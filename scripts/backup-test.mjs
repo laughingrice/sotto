@@ -18,6 +18,7 @@ await mkdir('test-results', { recursive: true });
 try {
   await source.goto(base); await heading(source, 'Julia Florida');
   await source.locator('[data-score-input]').setInputFiles(file); await heading(source, fixture.title);
+  await source.getByRole('combobox', { name: 'Melody instrument', exact: true }).selectOption('flute');
   await slider(source, 'Tempo').fill('62'); await button(source, 'Mute bass').click(); await slider(source, 'Melody volume').fill('55');
   await select(source, 'Loop start measure').selectOption('3'); await select(source, 'Loop end measure').selectOption('5');
   await source.getByRole('switch', { name: 'Practice loop', exact: true }).click(); await slider(source, 'Playback position').fill('12');
@@ -42,6 +43,7 @@ try {
   const chooser = target.waitForEvent('filechooser');
   await target.locator('.library-entry').filter({ has: button(target, `Favorite ${fixture.title}`) }).locator('.library-open').click();
   await (await chooser).setFiles(file); await heading(target, fixture.title);
+  assert.equal(await target.getByRole('combobox', { name: 'Melody instrument', exact: true }).inputValue(), 'flute', 'Per-part sound is restored on another computer');
   assert.equal(await slider(target, 'Tempo').inputValue(), '62'); assert.equal(await slider(target, 'Playback position').inputValue(), '12');
   assert.equal(await slider(target, 'Melody volume').inputValue(), '55'); assert.equal(await button(target, 'Unmute bass').getAttribute('aria-pressed'), 'true');
   assert.equal(await select(target, 'Loop start measure').inputValue(), '3'); assert.equal(await select(target, 'Loop end measure').inputValue(), '5');

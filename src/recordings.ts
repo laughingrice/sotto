@@ -1,6 +1,6 @@
-export type RecordedInstrument = 'guitar' | 'piano' | 'violin';
+export type RecordedInstrument = 'guitar' | 'piano' | 'violin' | 'bass-electric' | 'drums';
 export function isRecordedInstrument(value: string): value is RecordedInstrument {
-  return value === 'guitar' || value === 'piano' || value === 'violin';
+  return value === 'guitar' || value === 'piano' || value === 'violin' || value === 'bass-electric' || value === 'drums';
 }
 
 type Manifest = { banks: Record<RecordedInstrument, Record<string, string>> };
@@ -29,7 +29,7 @@ export class RecordingLibrary {
       const response = await fetch(`${base}${path}`);
       if (!response.ok) throw new Error(`Could not load the ${instrument} recording for ${note}.`);
       const buffer = await context.decodeAudioData(await response.arrayBuffer());
-      balanceRecording(buffer);
+      if (instrument !== 'drums') balanceRecording(buffer);
       return [note, buffer] as const;
     }));
     return Object.fromEntries(entries);

@@ -2,6 +2,8 @@ export const INSTRUMENTS = [
   { id: 'guitar', name: 'Nylon guitar · recorded' },
   { id: 'piano', name: 'Piano · recorded' },
   { id: 'violin', name: 'Violin · recorded' },
+  { id: 'bass-electric', name: 'Electric bass · recorded' },
+  { id: 'drums', name: 'Acoustic drums · recorded' },
   { id: 'marimba', name: 'Marimba' },
   { id: 'organ', name: 'Organ' },
   { id: 'flute', name: 'Flute' },
@@ -39,4 +41,23 @@ export function countInPattern(measure: { start: number; end: number; meter?: [n
   const duration = meter ? meter[0] * 4 / meter[1] : measure ? measure.end - measure.start : beatsPerBar;
   const pulse = meter ? (meter[1] === 8 && meter[0] >= 6 && meter[0] % 3 === 0 ? 1.5 : 4 / meter[1]) : beatUnit;
   return { duration, clicks: metronomePattern([{ start: 0, end: duration }], pulse, 'beat') };
+}
+
+type NamedVoice = { id: string; name: string; percussion?: boolean; instrument?: string; midiInstrument?: string };
+export function inferInstrument(voice: NamedVoice, context?: { title?: string; subtitle?: string; voices: NamedVoice[] }): InstrumentId | undefined {
+  const explicit = voice.instrument ?? voice.midiInstrument;
+  if (isInstrument(explicit)) return explicit;
+  const name = `${explicit ?? ''} ${voice.id} ${voice.name}`.toLowerCase().replace(/[_-]/g, ' ');
+  if (voice.percussion || /\b(drums?|drumset|drumkit|percussion|hihat|hi hat|snare|kick)\b/.test(name)) return 'drums';
+  if (/\bviolin/.test(name)) return 'violin';
+  if (/\b(bass guitar|electric bass|slap bass|finger(?:ed)? bass)\b/.test(name)) return 'bass-electric';
+  const bassContext = context?.voices.some(item => item.percussion || /drum|percussion/i.test(`${item.id} ${item.name}`)) || /bass/i.test(`${context?.title ?? ''} ${context?.subtitle ?? ''}`);
+  if (bassContext && /\bbass\b/.test(name) && !/clarinet|bassoon/.test(name)) return 'bass-electric';
+  if (/\b(piano|keyboard)\b/.test(name)) return 'piano';
+  if (/\bguitar\b/.test(name)) return 'guitar';
+  for (const item of ['marimba', 'organ', 'flute'] as const) if (name.includes(item)) return item;
+  return undefined;
+}
+export function voiceInstrument(voice: NamedVoice, fallback: InstrumentId, overrides: Record<string, InstrumentId>, context?: { title?: string; subtitle?: string; voices: NamedVoice[] }): InstrumentId {
+  return (isInstrument(overrides[voice.id]) ? overrides[voice.id] : undefined) ?? inferInstrument(voice, context) ?? fallback;
 }

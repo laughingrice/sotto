@@ -1,6 +1,6 @@
 const BASE = new URL('./', self.location.href);
 const CACHE_PREFIX = `sotto:${BASE.pathname}:`;
-const CACHE = `${CACHE_PREFIX}v0.3.4`;
+const CACHE = `${CACHE_PREFIX}v0.3.5`;
 const localUrl = path => new URL(path, BASE).href;
 self.addEventListener('install', event => {
   event.waitUntil((async () => {

@@ -1,0 +1,72 @@
+import { chromium } from '@playwright/test';
+import assert from 'node:assert/strict';
+import { readFile, mkdir } from 'node:fs/promises';
+const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
+const scorePath = arg('--score') || 'scores/slap-bass-bible/slap-bass-bible.sotto.json';
+const text = await readFile(scorePath, 'utf8'), score = JSON.parse(text);
+const browser = await chromium.launch({ headless: true, executablePath: arg('--chrome') || process.env.CHROME_PATH });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const errors = []; page.on('pageerror', error => errors.push(error.message));
+await page.addInitScript(() => {
+  localStorage.setItem('sotto.countIn', 'false');
+  window.hits = []; const urls = new WeakMap(), decoded = new WeakMap();
+  const arrayBuffer = Response.prototype.arrayBuffer;
+  Response.prototype.arrayBuffer = async function (...args) { const bytes = await arrayBuffer.apply(this, args); urls.set(bytes, this.url); return bytes; };
+  const decode = BaseAudioContext.prototype.decodeAudioData;
+  BaseAudioContext.prototype.decodeAudioData = function (bytes, ...args) {
+    const url = urls.get(bytes); return decode.call(this, bytes, ...args).then(buffer => { decoded.set(buffer, url); return buffer; });
+  };
+  const start = AudioBufferSourceNode.prototype.start;
+  AudioBufferSourceNode.prototype.start = function (...args) {
+    const url = decoded.get(this.buffer); if (url) window.hits.push({ url, rate: this.playbackRate.value, time: args[0] });
+    return start.apply(this, args);
+  };
+});
+const button = name => page.getByRole('button', { name, exact: true });
+const select = name => page.getByRole('combobox', { name, exact: true });
+const reset = () => page.evaluate(() => { window.hits = []; });
+const hits = () => page.evaluate(() => window.hits);
+const ready = async () => page.waitForFunction(() => [...document.querySelectorAll('.voice-instrument select')].every(select => !select.disabled));
+await mkdir('test-results', { recursive: true });
+try {
+  await page.goto(process.env.BASE_URL || 'http://localhost:4177/sotto/');
+  await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
+  await page.locator('[data-score-input]').setInputFiles({ name: 'bass-drums.sotto.json', mimeType: 'application/json', buffer: Buffer.from(text) });
+  await page.getByRole('heading', { name: score.title, exact: true }).waitFor(); await ready();
+  assert.ok((await select('Bass instrument').locator('option:checked').innerText()).includes('Electric bass'));
+  assert.ok((await select('Drums instrument').locator('option:checked').innerText()).includes('Acoustic drums'));
+  await page.getByRole('slider', { name: 'Tempo', exact: true }).fill('120');
+  await page.getByRole('switch', { name: 'Practice loop', exact: true }).click();
+  await button('Play score').click(); await button('Pause playback').waitFor(); await page.waitForTimeout(1000);
+  let events = await hits();
+  assert.ok(events.some(hit => hit.url.includes('/bass-electric/')), 'Bass uses real recorded bass samples');
+  assert.ok(events.some(hit => hit.url.includes('/drums/')), 'Drums use recorded acoustic hits');
+  assert.ok(events.filter(hit => hit.url.includes('/drums/')).every(hit => hit.rate === 1), 'Drum samples are never pitched');
+  await button('Mute bass').click(); await page.waitForTimeout(250); await reset(); await page.waitForTimeout(850);
+  events = await hits(); assert.ok(events.filter(hit => hit.url.includes('/drums/')).length >= 2, 'Drum accompaniment keeps playing with the bass muted');
+  assert.equal(events.filter(hit => hit.url.includes('/bass-electric/')).length, 0, 'Practice bass is silent');
+  await button('Sound and metronome settings').click(); await select('Playback octave').selectOption('12'); await button('Back to the music').click();
+  await reset(); await page.waitForTimeout(600); assert.ok((await hits()).filter(hit => hit.url.includes('/drums/')).every(hit => hit.rate === 1));
+  await button('Unmute bass').click(); await page.waitForTimeout(600);
+  await select('Bass instrument').selectOption('piano'); await ready(); await reset(); await page.waitForTimeout(700);
+  events = await hits(); assert.ok(events.some(hit => hit.url.includes('/piano/')), 'Manual per-part override takes effect');
+  assert.ok(events.some(hit => hit.url.includes('/drums/')), 'Changing bass sound retains drum accompaniment');
+  assert.equal(await button('Pause playback').count(), 1, 'Instrument changes keep transport running');
+  await button('Pause playback').click();
+  await select('Bass instrument').selectOption('bass-electric'); await ready(); await select('Drums instrument').selectOption('drums'); await ready();
+  await button('Sound and metronome settings').click(); await select('Playback octave').selectOption('0'); await button('Back to the music').click();
+  await page.waitForTimeout(600);
+  await button('Score library').click();
+  const [download] = await Promise.all([page.waitForEvent('download'), button('Export backup').click()]);
+  const backup = JSON.parse(await readFile(await download.path(), 'utf8'));
+  assert.ok(Object.values(backup.settings.songs).some(song => song.instruments?.bass === 'bass-electric' && song.instruments?.drums === 'drums'), 'Backups include each part’s instrument');
+  await button('Close library').click(); await page.screenshot({ path: 'test-results/bass-drums-parts.png' });
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => true)); await page.context().setOffline(true); await page.reload();
+  await page.getByRole('heading', { name: score.title, exact: true }).waitFor(); await ready();
+  assert.equal(await select('Bass instrument').inputValue(), 'bass-electric'); assert.equal(await select('Drums instrument').inputValue(), 'drums');
+  await button('Restart').click(); await button('Play score').click(); await button('Pause playback').waitFor(); await page.waitForTimeout(850);
+  events = await hits(); assert.ok(events.some(hit => hit.url.includes('/bass-electric/')) && events.some(hit => hit.url.includes('/drums/')), 'Both sample banks work offline');
+  await button('Pause playback').click(); assert.deepEqual(errors, []);
+  console.log('PASS: bass/drum inference, recorded audio, bass muting with drum accompaniment, per-part overrides, unpitched drums, live switching, backup and offline resume.');
+} catch (error) { await page.screenshot({ path: 'test-results/part-instruments-failure.png' }); throw error; }
+finally { await browser.close(); }

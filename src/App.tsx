@@ -7,7 +7,7 @@ import RhythmPanel, { type RhythmControl } from './RhythmPanel';
 import { LibraryPanel, type LibraryControl } from './LibraryPanel';
 import { buildBarHighlights } from './bar-highlight';
 import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, loopDisplayBeat, validateScore, type Score } from './score';
-import { INSTRUMENTS, clickStep, isInstrument, type ClickMode, type InstrumentId } from './sounds';
+import { INSTRUMENTS, clickStep, isInstrument, voiceInstrument, type ClickMode, type InstrumentId } from './sounds';
 
 const DEFAULT_SCORE = `${import.meta.env.BASE_URL}scores/julia-florida.sotto.json`;
 
@@ -44,6 +44,8 @@ export default function App() {
   const [instrument, setInstrument] = useState<InstrumentId>(() => {
     try { const saved = localStorage.getItem('sotto.instrument'); return isInstrument(saved) ? saved : 'guitar'; } catch { return 'guitar'; }
   });
+  const [partInstruments, setPartInstruments] = useState<Record<string, InstrumentId>>({});
+  const readyParts = useRef<Record<string, InstrumentId>>({});
   const [muted, setMuted] = useState<Set<string>>(new Set());
   const [solo, setSolo] = useState<string | null>(null);
   const [volumes, setVolumes] = useState<Record<string, number>>({});
@@ -77,6 +79,7 @@ export default function App() {
   const displayBeat = loop && performance ? loopDisplayBeat(beat, performance.measures[loopStart]?.start ?? 0, performance.measures[loopEnd]?.end ?? performance.duration) : beat;
   const measure = performance ? measureAt(performance, displayBeat) : null;
   const active = useMemo(() => performance ? activeNotes(performance, displayBeat) : [], [performance, displayBeat]);
+  const resolvedInstruments = useMemo(() => Object.fromEntries(score?.voices.map(voice => [voice.id, voiceInstrument(voice, instrument, partInstruments, score)]) ?? []), [score, instrument, partInstruments]);
   const effectivelyMuted = useMemo(() => new Set(score?.voices.filter(voice => muted.has(voice.id) || (solo !== null && solo !== voice.id)).map(voice => voice.id)), [score, muted, solo]);
   useEffect(() => {
     try { localStorage.setItem('sotto.controlsCollapsed', String(controlsCollapsed)); } catch { /* Storage can be unavailable in private browsing. */ }
@@ -123,7 +126,7 @@ export default function App() {
     pendingRestore.current = { score: value, settings };
     player.pause(); setPlaying(false);
     setRepeats(settings.repeats); setLoop(settings.loop); setLoopStart(settings.loopStart); setLoopEnd(settings.loopEnd);
-    setMuted(new Set(settings.muted)); setSolo(settings.solo); setVolumes(settings.volumes); setPracticeVoice(settings.practiceVoice);
+    setMuted(new Set(settings.muted)); setSolo(settings.solo); setVolumes(settings.volumes); setPracticeVoice(settings.practiceVoice); setPartInstruments(settings.instruments ?? {});
     setBeat(settings.beat); setBpm(settings.bpm); setScore(value); setScoreKey(key); setPitchOffset(settings.pitchOffset); setError(''); if (persist) setResumeNeeded('');
     if (persist) { rememberScore(key); void saveLastScore(key, value).catch(() => setError('Song opened, but its resume copy could not be saved. Your original file is unchanged.')); }
     lastFollowed.current = -1;
@@ -160,8 +163,8 @@ export default function App() {
   }, [zoom, follow, clickVolume, clickMode, metronomeMode, rhythmVisible]);
   useEffect(() => {
     if (!score) return;
-    latestPractice.current = { key: scoreKey, settings: { bpm, beat: displayBeat, repeats, loop, loopStart, loopEnd, muted: [...muted], solo, volumes, pitchOffset, practiceVoice } };
-  }, [score, scoreKey, bpm, displayBeat, repeats, loop, loopStart, loopEnd, muted, solo, volumes, pitchOffset, practiceVoice]);
+    latestPractice.current = { key: scoreKey, settings: { bpm, beat: displayBeat, repeats, loop, loopStart, loopEnd, muted: [...muted], solo, volumes, pitchOffset, practiceVoice, instruments: partInstruments } };
+  }, [score, scoreKey, bpm, displayBeat, repeats, loop, loopStart, loopEnd, muted, solo, volumes, pitchOffset, practiceVoice, partInstruments]);
   useEffect(() => {
     let previous: string | undefined;
     const flush = () => {
@@ -185,17 +188,17 @@ export default function App() {
   useEffect(() => {
     let current = true;
     setSoundLoading(true);
-    void player.setInstrument(instrument).then(() => {
+    void player.setInstruments(instrument, resolvedInstruments).then(() => {
       if (!current) return;
-      readyInstrument.current = instrument;
+      readyInstrument.current = instrument; readyParts.current = partInstruments;
       try { localStorage.setItem('sotto.instrument', instrument); } catch { /* Optional preference. */ }
     }).catch(error => {
       if (!current) return;
       setError(`Sound could not be loaded: ${error.message}`);
-      setInstrument(readyInstrument.current);
+      setInstrument(readyInstrument.current); setPartInstruments(readyParts.current);
     }).finally(() => { if (current) setSoundLoading(false); });
     return () => { current = false; };
-  }, [player, instrument]);
+  }, [player, instrument, resolvedInstruments, partInstruments]);
   useEffect(() => player.setMetronomeOptions(clickVolume / 100, clickMode), [player, clickVolume, clickMode]);
   useEffect(() => {
     let timer = 0;
@@ -362,6 +365,7 @@ export default function App() {
           <p className="section-description">Make room for the part you’re playing.</p>
           <div className="voice-list">{score?.voices.map(voice => <div className={`voice-card ${effectivelyMuted.has(voice.id) ? 'is-muted' : ''}`} key={voice.id} style={{ '--voice-color': voice.color } as React.CSSProperties}>
             <div className="voice-heading"><span className="voice-dot"/><strong>{voice.name}</strong><button className={`solo-button ${solo === voice.id ? 'selected' : ''}`} aria-pressed={solo === voice.id} aria-label={`Solo ${voice.name.toLowerCase()}`} onClick={() => setSolo(current => current === voice.id ? null : voice.id)}>Solo</button><button className="voice-mute" aria-label={`${muted.has(voice.id) ? 'Unmute' : 'Mute'} ${voice.name.toLowerCase()}`} aria-pressed={muted.has(voice.id)} onClick={() => setMuted(current => { const next = new Set(current); if (next.has(voice.id)) next.delete(voice.id); else next.add(voice.id); return next; })}>{effectivelyMuted.has(voice.id) ? <VolumeX size={17}/> : <Volume2 size={17}/>}</button></div>
+            <label className="voice-instrument">Sound<select aria-label={`${voice.name} instrument`} value={partInstruments[voice.id] ?? 'auto'} disabled={soundLoading} onChange={event => setPartInstruments(current => { const next = { ...current }; if (isInstrument(event.target.value)) next[voice.id] = event.target.value; else delete next[voice.id]; return next; })}><option value="auto">Auto · {INSTRUMENTS.find(item => item.id === resolvedInstruments[voice.id])?.name}</option>{INSTRUMENTS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             <input aria-label={`${voice.name} volume`} className="voice-slider" type="range" min="0" max="100" value={Math.round((volumes[voice.id] ?? 1) * 100)} onChange={event => setVolumes(current => ({ ...current, [voice.id]: Number(event.target.value) / 100 }))}/>
           </div>)}</div>
           {(solo || muted.size > 0) && <button className="text-button restore-voices" onClick={() => { setSolo(null); setMuted(new Set()); }}>Restore all voices</button>}
@@ -406,7 +410,7 @@ export default function App() {
             <div className="tempo-control"><label htmlFor="tempo">TEMPO</label><div><button className="icon-button" aria-label="Slower" onClick={() => setBpm(value => Math.max(15, value - 1))}><Minus size={14}/></button><strong>{bpm}<span>BPM</span></strong><button className="icon-button" aria-label="Faster" onClick={() => setBpm(value => Math.min(maxTempo, value + 1))}><Plus size={14}/></button></div><input id="tempo" aria-label="Tempo" type="range" min="15" max={maxTempo} value={bpm} onChange={event => setBpm(Number(event.target.value))}/><button className="tempo-reset" title="Reset to score tempo" onClick={() => setBpm(score?.bpm ?? 44)}>{Math.round(bpm / (score?.bpm ?? 44) * 100)}%</button></div>
             <button className={`metronome-button ${metronome ? 'enabled' : ''} ${clickPulse && metronome ? 'is-ticking' : ''}`} data-tick-count={clickCount} data-accent={clickAccent} aria-label="Metronome" aria-pressed={metronome} data-mode={metronomeMode} title={`Metronome: ${metronomeLabel} (M)`} disabled={metronomeStarting} onClick={() => void toggleMetronome()}><AudioLines size={19}/><span>Metronome</span><span className="metronome-state">{metronomeLabel}</span></button>
           </div>
-        <div className="player-meta"><span className="keyboard-hint"><kbd>space</kbd> play / pause</span><span className="instrument-hint"><Headphones size={13}/> {INSTRUMENTS.find(item => item.id === instrument)?.name} · playback.</span></div>
+        <div className="player-meta"><span className="keyboard-hint"><kbd>space</kbd> play / pause</span><span className="instrument-hint"><Headphones size={13}/> {new Set(Object.values(resolvedInstruments)).size > 1 ? 'Mixed instruments · per voice' : INSTRUMENTS.find(item => item.id === Object.values(resolvedInstruments)[0])?.name ?? INSTRUMENTS.find(item => item.id === instrument)?.name} · playback.</span></div>
         </section>
 
       </main>
@@ -426,8 +430,8 @@ export default function App() {
       }} onError={setError}/>
 
     {soundSettings && <div className="modal-backdrop" onClick={() => setSoundSettings(false)}><section className="help-modal sound-modal" role="dialog" aria-modal="true" aria-labelledby="sound-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close sound settings" onClick={() => setSoundSettings(false)} autoFocus><X size={20}/></button><div className="eyebrow">PLAYBACK</div><h2 id="sound-title">Sound &amp; metronome</h2>
-      <label className="settings-field">Instrument<select aria-label="Playback instrument" disabled={soundLoading} aria-busy={soundLoading} value={instrument} onChange={event => setInstrument(event.target.value as InstrumentId)}>{INSTRUMENTS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <p className="settings-note">Nylon guitar, piano and violin use recorded instruments. Marimba, organ and flute are synthesized. All are bundled for offline playback. Changing the instrument changes the sound for all voices, keeping the score’s pitches.</p>
+      <label className="settings-field">Default instrument<select aria-label="Playback instrument" disabled={soundLoading} aria-busy={soundLoading} value={instrument} onChange={event => setInstrument(event.target.value as InstrumentId)}>{INSTRUMENTS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <p className="settings-note">Nylon guitar, piano, violin, electric bass and acoustic drums use recorded instruments. Marimba, organ and flute are synthesized. All are bundled for offline playback. This is the default for parts without an identified instrument. Each voice has its own Sound selector; Auto uses its instrument/name when recognized. Mute the bass part to practice with the drums.</p>
       {soundLoading && <p className="settings-note" role="status">Loading instrument recordings…</p>}
       <p className="settings-note"><a href={`${import.meta.env.BASE_URL}samples/ATTRIBUTION.md`} target="_blank" rel="noopener noreferrer">Recording credits and licenses</a></p>
       <label className="settings-field">Playback octave<select aria-label="Playback octave" value={pitchOffset} onChange={event => setPitchOffset(Number(event.target.value))}><option value={-12}>One octave lower (−12)</option><option value={0}>As exported</option><option value={12}>One octave higher (+12)</option></select></label>

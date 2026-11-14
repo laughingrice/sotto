@@ -112,7 +112,7 @@ python3 scripts/export_score.py my-score.ly \
 | `--beats-per-bar` | Deprecated and ignored. Actual bar starts, durations, and time signatures come from LilyPond’s Timing context, including meter changes and pickups. |
 | `--beat-unit` | Tempo pulse in quarter-note units: 1 for a quarter, 1.5 for a dotted quarter. This also sets the metronome beat. |
 | `--bpm` | Number of those pulses per minute. |
-| `--transpose` | Additional semitone offset **after** LilyPond’s `\transpose`. Defaults to 0 for imported pieces. Use -12 only when the exported pitches are still in the written guitar octave. |
+| `--transpose` | Additional semitone offset **after** LilyPond’s `\transpose` and `\transposition` instrument metadata. Percussion is never shifted. Defaults to 0 for imported pieces. Use -12 only when the exported pitches are still in the written guitar octave. |
 
 The export contains SVG score pages, notehead identities, note timings, voices, ties, bar numbers, and playback metadata in one portable file. No separate PDF, MIDI, or audio file is needed. Playback instrument selection changes the timbre. Sound settings also offer a temporary playback-octave adjustment for older bundles.
 
@@ -145,7 +145,7 @@ The browser caches the built-in bundle for offline use; the cache is not the ori
 
 To publish a different built-in score for everyone, commit its `.ly` source under `scores/` and its bundle under `public/scores/`, then change `DEFAULT_SCORE` in `src/App.tsx` to that bundle's URL, using `import.meta.env.BASE_URL` as the prefix. Push to `main`; GitHub Actions rebuilds and deploys. Simply adding a file to the repo does not list it in the app: the personal Library lists files/folders you choose, rather than scanning the deployed repository.
 
-The exporter requires a single engraved score, an explicit `\layout { }` block, and named voices for meaningful part controls. It reads actual measure timing from LilyPond, including changing meters, silent measures, pickups, and a final cadenza. The exporter unfolds structured repeats (including nested repeats and alternate endings). If there is a MIDI score, it uses that score’s music for playback order; otherwise it unfolds the engraved score. Printed and MIDI versions must share named voices and underlying measure definitions so source locations can link them reliably. Ambiguous mappings fail explicitly. Tempo maps and `\transposition` instrument metadata still need a more general importer. Julia Florida retains its existing explicit navigation map. Export only LilyPond files you trust, since the compiler executes Scheme.
+The exporter requires a single engraved score, an explicit `\layout { }` block, and named voices for meaningful part controls. It reads actual measure timing from LilyPond, including changing meters, silent measures, pickups, and a final cadenza. The exporter unfolds structured repeats (including nested repeats and alternate endings). If there is a MIDI score, it uses that score’s music for playback order; otherwise it unfolds the engraved score. Printed and MIDI versions must share named voices and underlying measure definitions so source locations can link them reliably. Ambiguous mappings fail explicitly. Tempo maps still need a more general importer. Instrument `\transposition` metadata is applied to exported sounding pitches. Drum noteheads use LilyPond’s General MIDI drum mapping (or a custom `drumPitchTable`), retain a separate voice, and play through the bundled recorded acoustic drum kit. Per-voice instrument selectors can override automatic name/metadata detection; octave changes apply to pitched notes without changing percussion keys. Julia Florida retains its existing explicit navigation map. Export only LilyPond files you trust, since the compiler executes Scheme.
 
 ### Repeats, D.S. and coda
 
@@ -180,12 +180,12 @@ These settings and the one-song resume copy are local to this browser and site a
 
 Open **Sound and metronome settings** (the sliders icon above the score) to select an instrument or configure the click.
 
-- The six instruments work offline: **recorded nylon guitar, piano and violin**, plus **synthesized marimba, organ and flute**. Instrument choice is remembered on this browser and changes all voices together; mute/solo/volume remain independent. Switching waits for recordings to finish loading and keeps the previous sound available until then. The pitches stay unchanged; notes outside a recording bank’s range use pitch-shifted samples.
+- Eight choices work offline: **recorded nylon guitar, piano, violin, electric bass and acoustic drums**, plus **synthesized marimba, organ and flute**. Each voice has a **Sound** selector. **Auto** recognizes instrument names/IDs and optional `instrument`/`midiInstrument` metadata; a bass part alongside drums is treated as bass guitar, while Julia Florida’s bass register keeps the default guitar sound. The global instrument is the fallback for unrecognized parts. Explicit per-part choices, mute/solo and volume are saved per song and included in portable backups. Switching waits for recordings to finish loading and keeps the previous sound available until then. The pitches stay unchanged; notes outside a recording bank’s range use pitch-shifted samples.
 - Toggle the **Metronome** button, or use **M**. It cycles **Off → Playback → Continuous**. Playback clicks only with the score; Continuous also clicks while paused. Clicks share the notes’ audio clock. The same mode button remains visible with controls hidden. Enable the separate **One-bar count-in** option to count before each Play, even with continuous clicks off.
 - The first click of each bar is stronger/higher. **Beat** gives two dotted-quarter clicks per bar in 6/8; **Subdivision** gives six eighth-note clicks. In 4/4, these give four/eight clicks respectively.
 - **Click volume** is independent of voice volumes and muting. A visible pulse follows the click.
 
-Nylon guitar, piano and violin now use Tone.js samplers with actual recordings, rather than generated waveforms. There is currently **no `.sf2`/`.sf3` SoundFont loader or SoundFont selection menu**. Those files require a SoundFont engine rather than just changing the synthesizer preset. A General MIDI SoundFont would allow its available instrument programs (typically the 128 GM programs and percussion), subject to what the font includes. Candidate engine: [SpessaSynth](https://github.com/spessasus/spessasynth_lib). Imported SoundFonts would remain on-device; network sample libraries would need explicit download/cache behavior.
+The melodic recorded choices use Tone.js samplers. Acoustic drums use recorded one-shots mapped to General MIDI keys, with no repitching, duration truncation or octave shift, plus open-hi-hat choking. The kit covers kick, snare/sidestick, hi-hats, toms, crash and ride/bell; unsupported percussion keys are silent. Choose **Electric bass** for the bass part and **Acoustic drums** for the accompanying part, then mute the bass to practice with the drums. There is currently **no `.sf2`/`.sf3` SoundFont loader or SoundFont selection menu**. Those files require a SoundFont engine rather than just changing the synthesizer preset. A General MIDI SoundFont would allow its available instrument programs (typically the 128 GM programs and percussion), subject to what the font includes. Candidate engine: [SpessaSynth](https://github.com/spessasus/spessasynth_lib). Imported SoundFonts would remain on-device; network sample libraries would need explicit download/cache behavior.
 
 ## Microphone rhythm feedback (preview)
 
@@ -218,6 +218,8 @@ node scripts/layout-test.mjs
 node scripts/loop-scroll-test.mjs
 # Actual click scheduling, accents, subdivisions, instruments and offline audio:
 node scripts/sound-test.mjs
+# Bass/drum identification, per-part recordings, muting, backups and offline playback:
+node scripts/part-instruments-test.mjs --score path/to/bass-and-drums.sotto.json
 # File/folder bookmarks, fresh reads, favorites, backup/import, and fallback:
 node scripts/library-test.mjs
 # Arbitrary folder depth, filename-only scans, nested search and opening one file:
@@ -239,7 +241,7 @@ The browser checks use Playwright Chromium (`npx playwright install chromium`); 
 Next work, in practical order:
 
 1. **Library refinements:** automatic/shared backup synchronization and optional direct cloud integration; the initial reference-based library and portable library/settings backup are available now.
-2. **SoundFonts and per-voice instruments:** load an SF2/SF3 font locally and select its presets; allow violin melody over guitar accompaniment. Retain the bundled recordings and lightweight synths.
+2. **SoundFonts and richer kits:** load an SF2/SF3 font locally and select its presets; expand drum articulations/velocity layers. Per-voice recorded instruments are implemented. Retain the bundled recordings and lightweight synths.
 3. **More general import:** derive tempo and instrument transposition automatically, support tempo changes, and simplify preparation. Measure timing, meter changes, structured repeats and explicit LilyPond MIDI playback order are already derived during export; Julia Florida retains its explicit jump map.
 4. **Improve microphone rhythm feedback:** validate the preview on actual guitar and iPad/Safari hardware, improve detection of overlapping/legato attacks, and refine device-specific latency calibration. The level trace, onset matching, manual offset and speaker alignment are implemented.
 5. **Pitch feedback and following:** start with single-note melody/bass practice, then overlapping guitar notes/chords and following a freely varying tempo.
@@ -248,12 +250,12 @@ Current limits: fixed tempo and pulse unit for imported scores; grace notes use 
 
 ## Recording credits and maintenance
 
-The 29 MP3 recordings (about 6.4 MB total) come from [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments), assembled/edited by Nicholaus P. Brosowsky and distributed under **CC BY 3.0**. Upstream credits quartertone/Freesound for nylon guitar and VSCO/Versilian Studios for piano and violin. Full attribution, source revision, original notices, and file hashes are under [public/samples](public/samples/ATTRIBUTION.md); credits are also linked from the sound settings. The app serves these files from its own deployment, with no third-party sample requests during playback.
+The melodic banks contain 38 original MP3 recordings from [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments), assembled/edited by Nicholaus P. Brosowsky and distributed under **CC BY 3.0**. Upstream credits quartertone/Freesound for nylon guitar, Karoryfer for electric bass, and VSCO/Versilian Studios for piano and violin. Another 11 acoustic drum hits come from [Virtuosity Drums](https://versilian-studios.com/virtuosity-drums/) under **CC0 1.0**; these FLAC recordings were converted to mono MP3. The 49 bundled files total about 10.4 MB. Full attribution, source revision, original notices, and file hashes are under [public/samples](public/samples/ATTRIBUTION.md); credits are also linked from the sound settings. The app serves these files from its own deployment, with no third-party sample requests during playback.
 
-Refresh the pinned, unchanged source recordings only when needed:
+Refresh the pinned sample subsets only when needed (`ffmpeg` is required to rebuild the converted drum files):
 
 ```sh
 python3 scripts/fetch-samples.py
 ```
 
-A normal checkout/build already includes them. The service worker precaches all three banks so an instrument first selected offline can still load. Runtime gain matching balances the sampled instruments; attack/release envelopes and pitch interpolation are applied during playback.
+A normal checkout/build already includes them. The service worker precaches all five banks so an instrument first selected offline can still load. Runtime gain matching balances the sampled instruments; attack/release envelopes and pitch interpolation are applied during playback.

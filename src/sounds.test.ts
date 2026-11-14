@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clickAccent, clickStep, INSTRUMENTS, isInstrument, countInPattern, metronomePattern } from './sounds';
+import { inferInstrument, voiceInstrument, clickAccent, clickStep, INSTRUMENTS, isInstrument, countInPattern, metronomePattern } from './sounds';
 
 describe('metronome pulse and accents', () => {
   it('plots the selected pulse in compound meter and keeps bar starts accented', () => {
@@ -39,7 +39,7 @@ describe('metronome pulse and accents', () => {
 });
 describe('synthesized timbres', () => {
   it('offers six validated choices, including recorded violin and rejects arbitrary preferences', () => {
-    expect(INSTRUMENTS).toHaveLength(6);
+    expect(INSTRUMENTS).toHaveLength(8);
     for (const instrument of INSTRUMENTS) expect(isInstrument(instrument.id)).toBe(true);
     expect(isInstrument('unknown-font')).toBe(false);
     expect(isInstrument(null)).toBe(false);
@@ -53,4 +53,14 @@ it('counts a full bar in the starting meter, including meter changes and pickups
   expect(countInPattern({ start: 3, end: 7, meter: [4, 4] }, 3, 1).clicks).toHaveLength(4);
   expect(countInPattern({ start: 0, end: .5, meter: [6, 8] }, 3, 1.5).duration).toBe(3);
   expect(countInPattern({ start: 0, end: 3, meter: [6, 8] }, 3, 1.5).clicks.map(click => click.beat)).toEqual([0, 1.5]);
+});
+
+it('infers the bass/drum duo while preserving a guitar score’s bass register', () => {
+  const bass = { id: 'bass', name: 'Bass' }, drums = { id: 'drums', name: 'Drums', percussion: true };
+  const duo = { title: 'Slap Bass Bible', voices: [bass, drums] };
+  expect(inferInstrument(bass, duo)).toBe('bass-electric'); expect(inferInstrument(drums, duo)).toBe('drums');
+  expect(inferInstrument(bass, { title: 'Julia Florida', voices: [bass, { id: 'melody', name: 'Melody' }] })).toBeUndefined();
+  expect(inferInstrument({ id: 'violinIvoice', name: 'Violin I' })).toBe('violin');
+  expect(inferInstrument({ id: 'track1', name: 'Part 1', instrument: 'electric bass (finger)' })).toBe('bass-electric');
+  expect(voiceInstrument(bass, 'guitar', { bass: 'piano' }, duo)).toBe('piano');
 });

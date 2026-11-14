@@ -18,6 +18,20 @@
    (if (number? moment) (* 4.0 moment)
      (* 4.0 (/ (ly:moment-main-numerator moment)
                (ly:moment-main-denominator moment)))))
+% Drum note events carry drum-type instead of pitch. Use the same mapping as
+% LilyPond's MIDI performer, including a score's custom drumPitchTable.
+#(define (practice-midi-pitch context event)
+   (let* ((drum (ly:event-property event 'drum-type))
+          (pitch (if (symbol? drum)
+                     (hashq-ref (ly:context-property context 'drumPitchTable
+                                  (alist->hash-table midiDrumPitches)) drum)
+                     (ly:event-property event 'pitch)))
+          (transposition (ly:context-property context 'instrumentTransposition)))
+     (if (not (ly:pitch? pitch))
+         (ly:error "Sotto cannot resolve MIDI pitch for note ~a" drum))
+     (+ 60 (ly:pitch-semitones pitch)
+        (if (and (not (symbol? drum)) (ly:pitch? transposition))
+            (ly:pitch-semitones transposition) 0))))
 % Read Timing after its translators have advanced, including silent bars,
 % pickups and changes of meter. Keep the final moment to end the last bar.
 #(define (practice-write-timing context port)
@@ -59,7 +73,7 @@
          (acknowledgers
            ((note-head-interface engraver grob source-engraver)
              (let* ((event (ly:grob-property grob 'cause))
-                    (pitch (ly:event-property event 'pitch))
+                    (percussion (symbol? (ly:event-property event 'drum-type)))
                     (duration (ly:event-property event 'duration))
                     (moment (ly:context-current-moment context))
                     (score (ly:context-find context 'Score))
@@ -73,8 +87,9 @@
                  `((id . ,id) (class . "score-note") (data-voice . ,voice)))
                (set! pending (cons
                  (list id voice (practice-beats moment) grace
-                   (+ 60 (ly:pitch-semitones pitch))
-                   (practice-beats (ly:duration->moment duration)) bar)
+                   (practice-midi-pitch context event)
+                   (practice-beats (ly:duration->moment duration)) bar
+                   (if percussion 1 0))
                  pending)))))
          ((stop-translation-timestep engraver)
            (for-each
@@ -104,6 +119,7 @@
 practiceMidi = \midi {
   \context { \Score \consists #practice-timing-performer }
   \context { \Voice \consists #practice-event-performer }
+  \context { \DrumVoice \consists #practice-event-performer }
 }
 #(define (practice-export-playback)
    (let* ((midi-scores (filter (lambda (score)

@@ -36,6 +36,39 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(bundle['notes'][0]['midi'], 76)  # E5, with no guitar octave shift.
         self.assertTrue(all(note['id'] in ''.join(bundle['pages']) for note in bundle['notes']))
 
+    def test_bass_transposition_and_native_drum_voice_export_together(self):
+        bundle = self.export(r'''
+\score { \new StaffGroup <<
+  \new Staff { \clef bass \transposition c
+    \new Voice = "bass" { \repeat volta 2 { e4 e'4 d4 d'4 | } } }
+  \new DrumStaff { \new DrumVoice = "drums" \drummode {
+    \repeat volta 2 { <bd hh>8 hh sn hh bd hh sn hho | } } }
+>> \layout { } \midi { } }
+''')
+        bass = [note for note in bundle['notes'] if note['voice'] == 'bass']
+        drums = [note for note in bundle['notes'] if note['voice'] == 'drums']
+        self.assertEqual([note['midi'] for note in bass], [40, 52, 38, 50])
+        self.assertEqual([note['midi'] for note in drums], [36, 42, 42, 38, 42, 36, 42, 38, 46])
+        self.assertTrue(all(note.get('percussion') is True for note in drums))
+        self.assertTrue(all('percussion' not in note for note in bass))
+        self.assertEqual(bundle['voices'][1]['percussion'], True)
+        self.assertEqual(bundle['sequence'], [0, 0])
+        self.assertTrue(all(note['id'] in ''.join(bundle['pages']) for note in drums))
+
+    def test_custom_drum_mapping_and_global_transpose_leave_percussion_unshifted(self):
+        with tempfile.TemporaryDirectory(prefix='sotto-drums-') as temp:
+            source = Path(temp) / 'fixture.ly'
+            source.write_text(r'''\version "2.26.0"
+\score { \new StaffGroup <<
+  \new Staff { \new Voice = "melody" { c'1 } }
+  \new DrumStaff \with {
+    drumPitchTable = #(alist->hash-table `((bassdrum . ,(ly:make-pitch -3 6 0))))
+  } { \new DrumVoice = "drums" \drummode { bd1 } }
+>> \layout { } }
+''')
+            bundle = compile_score(source, 'Fixture', '', Path(temp) / 'out.json', False, transpose=-12)
+            self.assertEqual({note['voice']: note['midi'] for note in bundle['notes']}, {'melody': 48, 'drums': 35})
+
     def test_repeats_alternate_endings_and_silent_measures_without_midi_block(self):
         bundle = self.export(r'''
 \score {

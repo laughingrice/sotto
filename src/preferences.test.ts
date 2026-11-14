@@ -68,3 +68,13 @@ it('enables count-in by default and preserves an explicit off preference', () =>
   localStorage.setItem('sotto.countIn', 'false'); expect(loadCountIn()).toBe(false);
   localStorage.setItem('sotto.countIn', 'true'); expect(loadCountIn()).toBe(true);
 });
+
+it('persists and ports per-part instruments while discarding unknown parts and instruments', () => {
+  const saved = { ...loadPractice('library:one', score), instruments: { melody: 'bass-electric' as const } };
+  savePractice('library:one', saved);
+  expect(loadPractice('library:one', score).instruments).toEqual({ melody: 'bass-electric' });
+  const backup = exportPreferences(['library:one']);
+  expect(parsePreferences(backup, ['library:one'])?.songs['library:one'].instruments).toEqual({ melody: 'bass-electric' });
+  remember('sotto.practice.library:one', { instruments: { melody: 'bad', unknown: 'drums' } });
+  expect(loadPractice('library:one', score).instruments).toEqual({});
+});

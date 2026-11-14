@@ -2,6 +2,12 @@
   "source": "https://github.com/nbrosowsky/tonejs-instruments",
   "revision": "622c2f1c32c8cfce4158ddc3eb26e518ddef37e5",
   "license": "CC-BY-3.0",
+  "drumSource": {
+    "url": "https://github.com/sfzinstruments/virtuosity_drums",
+    "revision": "9f04cf9a734527edfbb0a4eee1f674e45bbf71bc",
+    "license": "CC0-1.0",
+    "conversion": "Mono 44.1 kHz 128 kbps MP3"
+  },
   "banks": {
     "guitar": {
       "D2": "guitar/D2.mp3",
@@ -25,6 +31,17 @@
       "F#5": "piano/Fs5.mp3",
       "C6": "piano/C6.mp3"
     },
+    "bass-electric": {
+      "C#1": "bass-electric/Cs1.mp3",
+      "E1": "bass-electric/E1.mp3",
+      "G1": "bass-electric/G1.mp3",
+      "A#1": "bass-electric/As1.mp3",
+      "E2": "bass-electric/E2.mp3",
+      "G2": "bass-electric/G2.mp3",
+      "A#2": "bass-electric/As2.mp3",
+      "E3": "bass-electric/E3.mp3",
+      "E4": "bass-electric/E4.mp3"
+    },
     "violin": {
       "A3": "violin/A3.mp3",
       "C4": "violin/C4.mp3",
@@ -37,9 +54,133 @@
       "A5": "violin/A5.mp3",
       "C6": "violin/C6.mp3",
       "E6": "violin/E6.mp3"
+    },
+    "drums": {
+      "kick": "drums/kick.mp3",
+      "snare": "drums/snare.mp3",
+      "sidestick": "drums/sidestick.mp3",
+      "hihat-closed": "drums/hihat-closed.mp3",
+      "hihat-open": "drums/hihat-open.mp3",
+      "hihat-pedal": "drums/hihat-pedal.mp3",
+      "tom-high": "drums/tom-high.mp3",
+      "tom-low": "drums/tom-low.mp3",
+      "crash": "drums/crash.mp3",
+      "ride": "drums/ride.mp3",
+      "ride-bell": "drums/ride-bell.mp3"
     }
   },
   "files": [
+    {
+      "path": "bass-electric/As1.mp3",
+      "bytes": 405680,
+      "sha256": "45bdecf48711f9f0455b2256d1b1b3bfa41a1950d70eab64ef2a28da6c2e605b"
+    },
+    {
+      "path": "bass-electric/As2.mp3",
+      "bytes": 316162,
+      "sha256": "c6f79e3e05bad4e41e2858b3acbd3edbee4e399529a7a97b9ade411080eac4b4"
+    },
+    {
+      "path": "bass-electric/Cs1.mp3",
+      "bytes": 450752,
+      "sha256": "3c7dc5f53979a45faa710133cda695f3d68fa7b79b80f42b6a15c8bb3f6526b8"
+    },
+    {
+      "path": "bass-electric/E1.mp3",
+      "bytes": 450752,
+      "sha256": "41fd91721398a47c6afa030feb324a1cd981ffac7da9bd313b775ad4f7b1a24c"
+    },
+    {
+      "path": "bass-electric/E2.mp3",
+      "bytes": 316162,
+      "sha256": "6a3c12185068beb22fc3225e1f2216f1f7440f4ba32a97dc8476c068df8307e8"
+    },
+    {
+      "path": "bass-electric/E3.mp3",
+      "bytes": 248554,
+      "sha256": "489482662d6fe265fb306f0acbad35ad775c699c7d7ae5485c3b3f583234d4a7"
+    },
+    {
+      "path": "bass-electric/E4.mp3",
+      "bytes": 181572,
+      "sha256": "59cdf868d2707b91946996e505b7311c6091c22b97aa170f316aa4156280d19d"
+    },
+    {
+      "path": "bass-electric/G1.mp3",
+      "bytes": 428216,
+      "sha256": "fd14e6e099056b6f0ff4433ef1d86358bffe7916f90c7ed2c6a7e2b0b4186cc6"
+    },
+    {
+      "path": "bass-electric/G2.mp3",
+      "bytes": 316162,
+      "sha256": "b5990f64a7094c946b0e88a47280649bab1ea0bff8f1ae1c420a97c1c2996cd2"
+    },
+    {
+      "path": "drums/crash.mp3",
+      "bytes": 226994,
+      "sha256": "d608f3f03fd21157274d15b1a4d922a39334ea61c0d067fe37428ab4a064a0a5",
+      "source": "Samples/mid/crash/mid_crash_crash_vl3_rr1.flac"
+    },
+    {
+      "path": "drums/hihat-closed.mp3",
+      "bytes": 12163,
+      "sha256": "78b53298f42d7931b3dd20749bd5fcfea6e506bde7181adc3e5961fae327251f",
+      "source": "Samples/mid/hh/mid_hh_closed_vl3_rr1.flac"
+    },
+    {
+      "path": "drums/hihat-open.mp3",
+      "bytes": 154270,
+      "sha256": "ab58a0297210357ce42920ffd068cd0a51d69cc6048992ef0c8ba72022a3e81b",
+      "source": "Samples/mid/hh/mid_hh_open_vl3_rr1.flac"
+    },
+    {
+      "path": "drums/hihat-pedal.mp3",
+      "bytes": 38077,
+      "sha256": "b8155530b4dafcc2e602ffb88a18a28dd312827846bf8b92521cf63c1f6fd6d1",
+      "source": "Samples/mid/hh/mid_hh_pedal_vl3_rr1.flac"
+    },
+    {
+      "path": "drums/kick.mp3",
+      "bytes": 38913,
+      "sha256": "49d6b8346aa6a13f77e3897a2addd9e4a94eb63e78b83093eeb29f1657de5588",
+      "source": "Samples/kickmic/kick/kickmic_kick_snon_vl4_rr1.flac"
+    },
+    {
+      "path": "drums/ride-bell.mp3",
+      "bytes": 114981,
+      "sha256": "9ad8b78d2d4068cc8ebefd8c138f1b29ded28a172fb584396fe78e6ab54b9439",
+      "source": "Samples/mid/ride/mid_ride_bell_vl3_rr1.flac"
+    },
+    {
+      "path": "drums/ride.mp3",
+      "bytes": 125430,
+      "sha256": "e3eb5946caa031a87673da219f95ebb83ce857b081b7319a8fce69fd4278471d",
+      "source": "Samples/mid/ride/mid_ride_ride_vl3_rr1.flac"
+    },
+    {
+      "path": "drums/sidestick.mp3",
+      "bytes": 43928,
+      "sha256": "924e2f7f3b4a1c8aafe2fa29ad6a4e3e6d3e9107cebc4f982b8b160b2cc5cdbf",
+      "source": "Samples/mid/snare/mid_snare_crossstick_vl8.flac"
+    },
+    {
+      "path": "drums/snare.mp3",
+      "bytes": 30554,
+      "sha256": "88c687205e193be23b8db508b5ea8830f43d15f8a41247064fbdada50aec3318",
+      "source": "Samples/mid/snare/mid_snare_center_vl8.flac"
+    },
+    {
+      "path": "drums/tom-high.mp3",
+      "bytes": 32643,
+      "sha256": "961a05235598fe192df281b5309d030271ca1ff6d60f55a16d771773dbc2391f",
+      "source": "Samples/mid/htom/mid_htom_center_vl8.flac"
+    },
+    {
+      "path": "drums/tom-low.mp3",
+      "bytes": 79037,
+      "sha256": "85d67b748ab6dcc52a3413fbe4738722b107665946301d8e99e78ad2feadfd8a",
+      "source": "Samples/mid/ltom/mid_ltom_center_vl8.flac"
+    },
     {
       "path": "guitar/A2.mp3",
       "bytes": 126484,
