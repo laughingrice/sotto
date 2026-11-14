@@ -14,6 +14,7 @@ const resourceErrors = [];
 page.on('pageerror', error => { errors.push(error.message); console.log(error.stack); });
 page.on('requestfailed', request => resourceErrors.push([request.url(), request.failure()?.errorText]));
 await page.addInitScript(() => {
+  localStorage.setItem('sotto.countIn', 'false');
   window.audioStarts = 0;
   const original = AudioBufferSourceNode.prototype.start;
   AudioBufferSourceNode.prototype.start = function (...args) { if (this.buffer?.length > 100) window.audioStarts++; return original.apply(this, args); };
@@ -67,6 +68,12 @@ try {
   await page.getByRole('button', { name: 'Previous measure', exact: true }).click();
   await page.getByRole('button', { name: 'Faster', exact: true }).click();
   assert.equal(await page.getByRole('slider', { name: 'Tempo', exact: true }).inputValue(), '45');
+  await page.getByTitle('Reset to score tempo').click();
+  await page.getByRole('slider', { name: 'Tempo', exact: true }).fill('220');
+  await page.getByRole('button', { name: 'Faster', exact: true }).click();
+  assert.equal(await page.getByRole('slider', { name: 'Tempo', exact: true }).inputValue(), '220', 'Tempo can reach 220 BPM');
+  await page.getByRole('button', { name: 'Slower', exact: true }).click();
+  assert.equal(await page.getByRole('slider', { name: 'Tempo', exact: true }).inputValue(), '219');
   await page.getByTitle('Reset to score tempo').click();
   await page.getByRole('button', { name: 'Metronome', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Metronome', exact: true }).getAttribute('aria-pressed'), 'true');

@@ -11,6 +11,7 @@ const read = (key: string): Record<string, unknown> => {
 const number = (value: unknown, fallback: number, min: number, max: number) => Math.min(max, Math.max(min, typeof value === 'number' && Number.isFinite(value) ? value : fallback));
 const boolean = (value: unknown, fallback: boolean) => typeof value === 'boolean' ? value : fallback;
 export function remember(key: string, value: unknown) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Storage is optional. */ } }
+export function loadCountIn(): boolean { try { return localStorage.getItem('sotto.countIn') !== 'false'; } catch { return true; } }
 export function lastScore(): string | null { const value = read('sotto.session'); return typeof value.score === 'string' ? value.score : null; }
 export function rememberScore(score: string) { remember('sotto.session', { score }); }
 export function loadPreferences(): Preferences {

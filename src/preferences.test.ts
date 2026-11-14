@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { loadPractice, loadPreferences, lastScore, remember, rememberScore, savePractice, exportPreferences, importPreferences, parsePreferences } from './preferences';
+import { loadPractice, loadPreferences, loadCountIn, lastScore, remember, rememberScore, savePractice, exportPreferences, importPreferences, parsePreferences } from './preferences';
 import type { Score } from './score';
 const score: Score = { format: 'sotto-score', version: 1, title: 'Test', composer: '', subtitle: '', description: '', bpm: 80, beatUnit: 1, beatsPerBar: 4,
   voices: [{ id: 'melody', name: 'Melody', color: '#000' }], notes: [], pages: ['<svg/>'],
@@ -61,4 +61,10 @@ it('accepts older indexes and validates the whole backup before importing settin
   expect(() => parsePreferences({ ...backup, songs: { 'builtin:julia-florida': { volumes: { melody: 200 } } } }, [])).toThrow();
   expect(() => parsePreferences({ ...backup, general: { ...backup.general, clickMode: ['beat'] } }, [])).toThrow();
   expect(loadPreferences().zoom).toBe(100);
+});
+
+it('enables count-in by default and preserves an explicit off preference', () => {
+  expect(loadCountIn()).toBe(true);
+  localStorage.setItem('sotto.countIn', 'false'); expect(loadCountIn()).toBe(false);
+  localStorage.setItem('sotto.countIn', 'true'); expect(loadCountIn()).toBe(true);
 });

@@ -9,6 +9,7 @@ page.setDefaultTimeout(10000);
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 await page.addInitScript(() => {
+  localStorage.setItem('sotto.countIn', 'false');
   window.clickEvents = []; window.instrumentEvents = []; window.oscillatorStarts = 0;
   const sourceStart = AudioBufferSourceNode.prototype.start;
   AudioBufferSourceNode.prototype.start = function (...args) {

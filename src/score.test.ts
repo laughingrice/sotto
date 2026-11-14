@@ -87,3 +87,12 @@ it('keeps loop display inside the selected bars until the clock wraps', () => {
   expect(loopDisplayBeat(start - .01, start, end)).toBe(start);
   expect(measureAt(performance, end).index).toBe(4); // Normal following still advances.
 });
+
+it('displays an old duplicated opening pickup as bar zero without renumbering full bars', () => {
+  const pickup: Score = { ...score, beatsPerBar: 4, bars: [
+    { index: 0, label: '1', start: 0, duration: .5, meter: [4, 4] },
+    { index: 1, label: '1', start: .5, duration: 4, meter: [4, 4] },
+    { index: 2, label: '2', start: 4.5, duration: 4, meter: [4, 4] },
+  ], sequence: [0, 1, 2], notes: [] };
+  expect(makePerformance(pickup).measures.map(bar => bar.label)).toEqual(['0', '1', '2']);
+});

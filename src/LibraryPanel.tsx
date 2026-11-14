@@ -2,8 +2,8 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import { FolderOpen, Star, Trash2, X } from 'lucide-react';
 import { lastScore, rememberScore, exportPreferences, importPreferences, parsePreferences } from './preferences';
 import { validateScore } from './score';
-import { connectFolder, emptyLibrary, exportLibrary, filePickers, loadLastScore, loadLibrary, parseLibrary, readEntry, saveLibrary, scanDirectory,
-  type Library, type LibraryEntry, type LibraryFolder, type ReadHandle } from './library';
+import { connectFolder, emptyLibrary, exportLibrary, filePickers, folderMetadata, readScoreMetadata, loadLastScore, loadLibrary, parseLibrary, readEntry, saveLibrary, scanDirectory,
+  type Library, type ScoreMetadata, type LibraryEntry, type LibraryFolder, type ReadHandle } from './library';
 
 export type LibraryControl = { chooseFile(): void; restoreLastScore(isCurrent?: () => boolean): Promise<boolean>; reconnectLastScore(): void };
 export const LibraryPanel = forwardRef<LibraryControl, { visible: boolean; onClose(): void; onOpen(value: unknown, key: string): void; onResumeNeeded(title: string): void; onBeforeBackup(): void; onSettingsImported(): void; onError(message: string): void }>(
@@ -58,7 +58,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     }
     if (!existing && !handle) existing = current.current.entries.find(entry => !entry.folderId && !entry.handle && entry.name === file.name);
     const entry: LibraryEntry = { ...(existing ?? { id: crypto.randomUUID(), favorite: false }),
-      name: file.name, title: score.title, composer: score.composer, lastOpened: Date.now(),
+      name: file.name, title: score.title, composer: score.composer, fileSize: file.size, modified: file.lastModified, lastOpened: Date.now(),
       ...(handle ? { handle } : {}),
     };
     if (!isCurrent()) return false;
@@ -132,7 +132,8 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       await ready.current;
       const folder = { id: id ?? crypto.randomUUID(), name: handle.name, handle };
       const paths = await scanDirectory(handle);
-      await commit(library => connectFolder(library, folder, paths));
+      const metadata = await folderMetadata(handle, paths, current.current, folder.id);
+      await commit(library => connectFolder(library, folder, paths, metadata));
     } catch (error) { report(error); }
     finally { setBusy(false); reconnectFolder.current = undefined; }
   }
@@ -145,10 +146,11 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
         if (await folder.handle.requestPermission({ mode: 'read' }) !== 'granted') throw new Error('Folder access needs permission. Use Reconnect to choose the folder again.');
       }
       const paths = await scanDirectory(folder.handle);
+      const metadata = await folderMetadata(folder.handle, paths, current.current, folder.id);
       await commit(library => {
         const connected = library.folders.find(item => item.id === folder.id);
         // A completed scan must not resurrect a removed or reconnected folder.
-        return connected && connected.handle === folder.handle ? connectFolder(library, connected, paths) : library;
+        return connected && connected.handle === folder.handle ? connectFolder(library, connected, paths, metadata) : library;
       });
       if (request) setMessage(`Refreshed ${folder.name}.`);
     } catch (error) { report(error); }
@@ -208,8 +210,10 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
           await ready.current;
           const folder = { id: reconnectFolder.current ?? crypto.randomUUID(), name: files[0].webkitRelativePath.split('/')[0] || 'Scores' };
           const paths = files.map(file => file.webkitRelativePath.split('/').slice(1).join('/') || file.name);
+          const metadata: Record<string, ScoreMetadata> = {};
+          for (let i = 0; i < files.length; i++) { const value = await readScoreMetadata(files[i]); if (value) metadata[paths[i]] = value; }
           await commit(library => {
-            const next = connectFolder(library, folder, paths);
+            const next = connectFolder(library, folder, paths, metadata);
             files.forEach((file, i) => { const entry = next.entries.find(entry => entry.folderId === folder.id && entry.path === paths[i])!; sessionFiles.current.set(entry.id, file); });
             return next;
           });

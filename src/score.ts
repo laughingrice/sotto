@@ -25,6 +25,10 @@ export function noteMeasure(score: Score, note: ScoreNote): number {
 
 export function makePerformance(score: Score, repeats = true): Performance {
   const sequence = repeats ? score.sequence : score.bars.map(bar => bar.index);
+  const first = barTiming(score, 0), meter = score.bars[0].meter;
+  // Older exports labeled both the pickup and first full measure as 1.
+  const pickup = score.bars[0].label === '1' && score.bars[1]?.label === '1' &&
+    first.duration < (meter ? meter[0] * 4 / meter[1] : score.beatsPerBar) - 1e-6;
   const occurrences = new Map<number, number>();
   let position = 0;
   const measures: Measure[] = sequence.map((written, index) => {
@@ -32,7 +36,7 @@ export function makePerformance(score: Score, repeats = true): Performance {
     occurrences.set(written, occurrence);
     const start = position;
     position += barTiming(score, written).duration;
-    return { index, written, label: score.bars[written].label, occurrence,
+    return { index, written, label: pickup && written === 0 ? '0' : score.bars[written].label, occurrence,
       start, end: position, meter: score.bars[written].meter };
   });
   const notes = measures.flatMap(measure => score.notes

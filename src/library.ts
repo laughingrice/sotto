@@ -19,7 +19,7 @@ export type DirectoryHandle = {
 export type LibraryEntry = {
   id: string; name: string; title: string; composer: string;
   folderId?: string; path?: string; favorite: boolean; lastOpened?: number;
-  handle?: ReadHandle;
+  handle?: ReadHandle; fileSize?: number; modified?: number;
 };
 export type LibraryFolder = { id: string; name: string; handle?: DirectoryHandle };
 export type Library = { entries: LibraryEntry[]; folders: LibraryFolder[] };
@@ -140,13 +140,43 @@ export async function scanDirectory(handle: DirectoryHandle, prefix = ''): Promi
   }
   return paths;
 }
-export function connectFolder(library: Library, folder: LibraryFolder, paths: string[]): Library {
-  const entries = [...library.entries];
+export type ScoreMetadata = { title: string; composer: string; fileSize: number; modified: number };
+export async function readScoreMetadata(file: File): Promise<ScoreMetadata | null> {
+  if (file.size > 15_000_000) return null;
+  try {
+    const value = JSON.parse(await file.text());
+    if (value?.format !== 'sotto-score' || value.version !== 1 || typeof value.title !== 'string' || typeof value.composer !== 'string') return null;
+    return { title: value.title, composer: value.composer, fileSize: file.size, modified: file.lastModified };
+  } catch { return null; }
+}
+export async function folderMetadata(handle: DirectoryHandle, paths: string[], library: Library, folderId: string): Promise<Record<string, ScoreMetadata>> {
+  const existing = new Map(library.entries.filter(entry => entry.folderId === folderId).map(entry => [entry.path, entry]));
+  const metadata: Record<string, ScoreMetadata> = {};
+  // Read one score at a time and retain only its metadata. Unchanged files do
+  // not need their JSON read again on subsequent library refreshes.
   for (const path of paths) {
-    if (entries.some(entry => entry.folderId === folder.id && entry.path === path)) continue;
+    try {
+      const parts = path.split('/'); let parent = handle;
+      for (const part of parts.slice(0, -1)) parent = await parent.getDirectoryHandle(part);
+      const file = await (await parent.getFileHandle(parts.at(-1)!)).getFile();
+      const previous = existing.get(path);
+      if (previous?.fileSize === file.size && previous.modified === file.lastModified) continue;
+      const value = await readScoreMetadata(file); if (value) metadata[path] = value;
+    } catch { /* A file may disappear or be unavailable during a folder scan. */ }
+  }
+  return metadata;
+}
+export function connectFolder(library: Library, folder: LibraryFolder, paths: string[], metadata: Record<string, ScoreMetadata> = {}): Library {
+  const entries = [...library.entries];
+  const indexes = new Map(entries.flatMap((entry, index) => entry.folderId === folder.id ? [[entry.path, index] as const] : []));
+  for (const path of paths) {
+    const existing = indexes.get(path), details = metadata[path];
+    if (existing !== undefined) { if (details) entries[existing] = { ...entries[existing], ...details }; continue; }
     const name = path.split('/').at(-1)!;
-    entries.push({ id: crypto.randomUUID(), name, title: name.replace(/\.sotto\.json$/, '').replaceAll('-', ' '),
-      composer: '', folderId: folder.id, path, favorite: false });
+    indexes.set(path, entries.length);
+    entries.push({ id: crypto.randomUUID(), name, title: details?.title ?? name.replace(/\.sotto\.json$/, '').replaceAll('-', ' '),
+      composer: details?.composer ?? '', folderId: folder.id, path, favorite: false,
+      ...(details ? { fileSize: details.fileSize, modified: details.modified } : {}) });
   }
   return { entries, folders: [...library.folders.filter(item => item.id !== folder.id), folder] };
 }

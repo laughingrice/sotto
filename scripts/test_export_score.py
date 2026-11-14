@@ -1,5 +1,7 @@
 """Integration checks for the LilyPond timing exporter. Requires LilyPond."""
 import tempfile
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 from export_score import compile_score
@@ -11,6 +13,28 @@ class ExportTests(unittest.TestCase):
             source = Path(temp) / 'fixture.ly'
             source.write_text('\\version "2.26.0"\n' + music)
             return compile_score(source, 'Fixture', '', Path(temp) / 'out.json', False)
+
+    def test_custom_export_requires_a_source_instead_of_relabeling_julia(self):
+        result = subprocess.run([sys.executable, str(Path(__file__).with_name('export_score.py')), '--title', 'Spring', '--output', 'spring.sotto.json'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Provide the .ly source path', result.stderr)
+
+    def test_two_named_violin_parts_export_separately_in_score_order(self):
+        bundle = self.export(r'''
+\score { \new StaffGroup <<
+  \new Staff { \new Voice = "violinIvoice" { \time 4/4 \partial 8 e''8 | \repeat volta 2 { gis''1 | a''1 | } } }
+  \new Staff { \new Voice = "violinIIvoice" { \time 4/4 \partial 8 e''8 | \repeat volta 2 { e''1 | fis''1 | } } }
+>> \layout { } }
+''')
+        self.assertEqual([voice['name'] for voice in bundle['voices']], ['Violin I', 'Violin II'])
+        self.assertEqual([voice['id'] for voice in bundle['voices']], ['violinIvoice', 'violinIIvoice'])
+        self.assertEqual(len({voice['color'] for voice in bundle['voices']}), 2)
+        self.assertEqual(len(bundle['notes']), 6)
+        self.assertEqual(bundle['sequence'], [0, 1, 2, 1, 2])
+        self.assertEqual(bundle['bars'][0]['duration'], .5)
+        self.assertEqual([bar['label'] for bar in bundle['bars']], ['0', '1', '2'])
+        self.assertEqual(bundle['notes'][0]['midi'], 76)  # E5, with no guitar octave shift.
+        self.assertTrue(all(note['id'] in ''.join(bundle['pages']) for note in bundle['notes']))
 
     def test_repeats_alternate_endings_and_silent_measures_without_midi_block(self):
         bundle = self.export(r'''

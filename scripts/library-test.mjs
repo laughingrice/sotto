@@ -37,10 +37,10 @@ try {
     window.showDirectoryPicker = async () => { throw new Error('Refresh opened the picker'); };
     const root = await navigator.storage.getDirectory(); const directory = await root.getDirectoryHandle('OneDrive test Scores');
     const file = await directory.getFileHandle('added.sotto.json', { create: true });
-    const writer = await file.createWritable(); await writer.write(JSON.stringify(fixture)); await writer.close();
+    const writer = await file.createWritable(); await writer.write(JSON.stringify({ ...fixture, title: 'Added score' })); await writer.close();
   }, fixture);
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await page.getByRole('button', { name: 'Favorite added', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Favorite Added score', exact: true }).waitFor();
   // IDB contains references, not File/Blob objects or the SVG/notes payload.
   const stored = await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => { const request = indexedDB.open('sotto-library'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
@@ -54,15 +54,15 @@ try {
   assert.ok(index.length < 5000 && !index.includes('handle') && !index.includes('<svg'));
   assert.equal(JSON.parse(index).entries.filter(entry => entry.favorite).length, 1);
   await page.reload(); await page.getByRole('heading', { name: 'Library fixture', exact: true }).waitFor(); await openLibrary();
-  assert.equal(await page.getByRole('button', { name: 'Favorite Library fixture', exact: true }).getAttribute('aria-pressed'), 'true', 'Favorites persist across reloads');
+  assert.equal(await page.locator('.favorite-button.selected').getAttribute('aria-pressed'), 'true', 'Favorites persist across reloads');
   // The next panel open refreshes silently when permission is already granted.
   await page.keyboard.press('Escape');
   await page.evaluate(async fixture => {
     const root = await navigator.storage.getDirectory(); const directory = await root.getDirectoryHandle('OneDrive test Scores');
     const file = await directory.getFileHandle('automatic.sotto.json', { create: true });
-    const writer = await file.createWritable(); await writer.write(JSON.stringify(fixture)); await writer.close();
+    const writer = await file.createWritable(); await writer.write(JSON.stringify({ ...fixture, title: 'Automatic score' })); await writer.close();
   }, fixture);
-  await openLibrary(); await page.getByRole('button', { name: 'Favorite automatic', exact: true }).waitFor();
+  await openLibrary(); await page.getByRole('button', { name: 'Favorite Automatic score', exact: true }).waitFor();
 
   // A file changed by another application is read afresh, rather than from
   // a saved JSON/Blob snapshot.
@@ -71,11 +71,11 @@ try {
     const file = await directory.getFileHandle('fixture.sotto.json'); const writer = await file.createWritable();
     fixture.title = 'Updated on disk'; await writer.write(JSON.stringify(fixture)); await writer.close();
   }, fixture);
-  await page.locator('.library-entry').filter({ has: page.getByRole('button', { name: 'Favorite Library fixture', exact: true }) }).locator('.library-open').click();
+  await page.locator('.library-entry').filter({ has: page.locator('.favorite-button.selected') }).locator('.library-open').click();
   await page.getByRole('heading', { name: 'Updated on disk', exact: true }).waitFor();
   await openLibrary();
-  await page.getByRole('button', { name: 'Remove Updated on disk bookmark', exact: true }).click();
-  await page.waitForFunction(() => !document.querySelector('.library-entry')?.textContent.includes('Updated on disk'));
+  await page.locator('.library-entry').filter({ has: page.locator('.favorite-button.selected') }).getByRole('button', { name: 'Remove Updated on disk bookmark', exact: true }).click();
+  await page.locator('.favorite-button.selected').waitFor({ state: 'hidden' });
   assert.ok(await page.evaluate(async () => (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('OneDrive test Scores')).getFileHandle('fixture.sotto.json')).getFile().then(file => file.size > 0)), 'Removing bookmarks leaves the file intact');
   await page.keyboard.press('Escape');
 
@@ -91,6 +91,17 @@ try {
   await (await chooserPromise).setFiles({ name: 'fallback.sotto.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...fixture, title: 'Fallback score' })) });
   await page.getByRole('heading', { name: 'Fallback score', exact: true }).waitFor();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  // The fallback folder picker also reads metadata before opening a score.
+  await openLibrary();
+  await page.evaluate(fixture => {
+    const file = new File([JSON.stringify({ ...fixture, title: 'Spring for two violins', composer: 'Vivaldi' })], 'spring.sotto.json');
+    Object.defineProperty(file, 'webkitRelativePath', { value: 'Fallback scores/spring.sotto.json' });
+    const transfer = new DataTransfer(); transfer.items.add(file);
+    const input = document.querySelector('[aria-label="Connect score folder"]'); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, fixture);
+  const spring = page.locator('.library-entry').filter({ has: page.getByRole('button', { name: 'Favorite Spring for two violins', exact: true }) });
+  await spring.waitFor(); assert.ok((await spring.innerText()).includes('Vivaldi'), 'Fallback reconnect reads title and composer before opening the piece');
+  await page.keyboard.press('Escape');
   // Hold an automatic directory scan across an index import. The later scan
   // must merge into the imported metadata instead of overwriting favorites.
   await page.evaluate(() => {

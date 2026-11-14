@@ -4,6 +4,7 @@ import { mkdir } from 'node:fs/promises';
 const chromeArgument = process.argv.indexOf('--chrome');
 const browser = await chromium.launch({ headless: true, executablePath: chromeArgument >= 0 ? process.argv[chromeArgument + 1] : process.env.CHROME_PATH });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+await page.addInitScript(() => localStorage.setItem('sotto.countIn', 'false'));
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 await mkdir('test-results', { recursive: true });

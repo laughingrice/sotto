@@ -34,6 +34,8 @@ def read_measures(rows):
             start = cadenza_start
         else:
             cadenza_start = None
+        if start == 0 and position < 0 and label == '1':
+            label = '0'  # An opening pickup precedes the first full bar.
         # Cadenza timing remains in the current measure; its actual end is
         # provided by the final score moment instead of the nominal meter.
         boundaries.setdefault(start, dict(label=label, meter=[int(numerator), int(denominator)]))
@@ -90,6 +92,18 @@ def playback_sequence(bars, played_bars, written_events, played_events):
     return sequence
 
 
+def voice_labels(notes):
+    """Keep score order, preserve roman numerals, and distinguish parts by color."""
+    colors = ['#31745e', '#657db1', '#b47734', '#8b648e', '#a45b57']
+    voices = []
+    for index, identity in enumerate(dict.fromkeys(note['voice'] for note in notes)):
+        label = re.sub(r'(?i)(?:[ _-]?voice)$', '', identity) or identity
+        label = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', label).replace('_', ' ').replace('-', ' ')
+        label = label[:1].upper() + label[1:]
+        voices.append(dict(id=identity, name=label, color=colors[index % len(colors)]))
+    return voices
+
+
 def compile_score(source: Path, title: str, composer: str, output: Path, julia: bool,
                   beats_per_bar=None, beat_unit=None, bpm=None, transpose=None):
     beat_unit = beat_unit if beat_unit is not None else (1.5 if julia else 1)
@@ -140,7 +154,7 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
                   beatsPerBar=beats_per_bar, beatUnit=beat_unit, bpm=bpm,
                   voices=[dict(id=v, name=name, color=color) for v, name, color in
                           [('melody', 'Melody', '#31745e'), ('middle', 'Inner voice', '#b47734'), ('bass', 'Bass', '#657db1')]] if julia else
-                          [dict(id=v, name=v.title(), color='#31745e') for v in sorted({n['voice'] for n in notes})],
+                          voice_labels(notes),
                   notes=notes, pages=pages, bars=bars, sequence=sequence,
                   description='Drop D tuning · sounds one octave below the written score' if julia else
                               f'LilyPond playback order · pitch offset {transpose:+d} semitones')
@@ -152,7 +166,7 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('source', nargs='?', type=Path, default=DEFAULT_SOURCE)
+    parser.add_argument('source', nargs='?', type=Path, help='Source .ly file; omit only to rebuild the built-in Julia Florida example.')
     parser.add_argument('--title')
     parser.add_argument('--composer')
     parser.add_argument('--beats-per-bar', type=float, help='Deprecated: measure boundaries are read from LilyPond Timing.')
@@ -161,6 +175,10 @@ if __name__ == '__main__':
     parser.add_argument('--transpose', type=int, help='Additional semitone offset after LilyPond transposition (default 0, built-in Julia -12). Do not lower already transposed guitar pitches twice.')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
+    if args.source is None:
+        if any(value is not None for value in (args.title, args.composer, args.output, args.beats_per_bar, args.beat_unit, args.bpm, args.transpose)):
+            parser.error('Provide the .ly source path when exporting a custom score. Omitting the source exports Julia Florida; changing the title or output does not change the music.')
+        args.source = DEFAULT_SOURCE
     julia = args.source.resolve() == DEFAULT_SOURCE.resolve()
     output = args.output or (ROOT / 'public/scores/julia-florida.sotto.json' if julia else args.source.with_suffix('.sotto.json'))
     try:

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { connectFolder, emptyLibrary, exportLibrary, parseLibrary, type Library } from './library';
+import { describe, expect, it, vi } from 'vitest';
+import { connectFolder, emptyLibrary, exportLibrary, parseLibrary, readScoreMetadata, folderMetadata, type DirectoryHandle, type Library } from './library';
 
 describe('portable reference library', () => {
   it('exports metadata and favorites without score contents or access handles', () => {
@@ -35,4 +35,20 @@ describe('portable reference library', () => {
     expect(parseLibrary(JSON.stringify(value)).entries).toHaveLength(1);
     expect(() => parseLibrary('{"format":"sotto-score"}')).toThrow();
   });
+});
+
+it('loads titles and composers when connecting a folder, while preserving bookmarks and favorites', async () => {
+  const folder = { id: 'f', name: 'Scores' };
+  const file = new File([JSON.stringify({ format: 'sotto-score', version: 1, title: 'Spring for two violins', composer: 'Vivaldi', pages: ['large score'] })], 'spring.sotto.json', { lastModified: 100 });
+  const metadata = await readScoreMetadata(file);
+  expect(metadata).toEqual({ title: 'Spring for two violins', composer: 'Vivaldi', fileSize: file.size, modified: 100 });
+  const first = connectFolder(emptyLibrary(), folder, [file.name]); first.entries[0].favorite = true;
+  const refreshed = connectFolder(first, folder, [file.name], { [file.name]: metadata! });
+  expect(refreshed.entries[0]).toMatchObject({ id: first.entries[0].id, favorite: true, title: 'Spring for two violins', composer: 'Vivaldi' });
+  expect(JSON.stringify(refreshed)).not.toContain('large score');
+  const text = vi.spyOn(file, 'text');
+  const handle = { getFileHandle: async () => ({ getFile: async () => file }) } as unknown as DirectoryHandle;
+  expect(await folderMetadata(handle, [file.name], refreshed, folder.id)).toEqual({});
+  expect(text).not.toHaveBeenCalled();
+  expect(await readScoreMetadata(new File(['invalid JSON'], 'invalid.sotto.json'))).toBeNull();
 });

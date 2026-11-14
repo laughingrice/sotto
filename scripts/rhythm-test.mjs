@@ -9,6 +9,7 @@ const errors = [], uploads = [];
 page.on('pageerror', error => { errors.push(error.message); console.log(error.stack); });
 page.on('request', request => { if (request.method() === 'POST') uploads.push(request.url()); });
 await page.addInitScript(() => {
+  localStorage.setItem('sotto.countIn', 'false');
   // Replace getUserMedia before the app loads: this test never opens a real
   // microphone. All input is generated in the playback AudioContext.
   window.testContexts = [];
