@@ -140,43 +140,45 @@ export async function scanDirectory(handle: DirectoryHandle, prefix = ''): Promi
   }
   return paths;
 }
-export type ScoreMetadata = { title: string; composer: string; fileSize: number; modified: number };
-export async function readScoreMetadata(file: File): Promise<ScoreMetadata | null> {
-  if (file.size > 15_000_000) return null;
-  try {
-    const value = JSON.parse(await file.text());
-    if (value?.format !== 'sotto-score' || value.version !== 1 || typeof value.title !== 'string' || typeof value.composer !== 'string') return null;
-    return { title: value.title, composer: value.composer, fileSize: file.size, modified: file.lastModified };
-  } catch { return null; }
-}
-export async function folderMetadata(handle: DirectoryHandle, paths: string[], library: Library, folderId: string): Promise<Record<string, ScoreMetadata>> {
-  const existing = new Map(library.entries.filter(entry => entry.folderId === folderId).map(entry => [entry.path, entry]));
-  const metadata: Record<string, ScoreMetadata> = {};
-  // Read one score at a time and retain only its metadata. Unchanged files do
-  // not need their JSON read again on subsequent library refreshes.
-  for (const path of paths) {
-    try {
-      const parts = path.split('/'); let parent = handle;
-      for (const part of parts.slice(0, -1)) parent = await parent.getDirectoryHandle(part);
-      const file = await (await parent.getFileHandle(parts.at(-1)!)).getFile();
-      const previous = existing.get(path);
-      if (previous?.fileSize === file.size && previous.modified === file.lastModified) continue;
-      const value = await readScoreMetadata(file); if (value) metadata[path] = value;
-    } catch { /* A file may disappear or be unavailable during a folder scan. */ }
-  }
-  return metadata;
-}
-export function connectFolder(library: Library, folder: LibraryFolder, paths: string[], metadata: Record<string, ScoreMetadata> = {}): Library {
+export function connectFolder(library: Library, folder: LibraryFolder, paths: string[]): Library {
   const entries = [...library.entries];
-  const indexes = new Map(entries.flatMap((entry, index) => entry.folderId === folder.id ? [[entry.path, index] as const] : []));
+  const existing = new Set(entries.filter(entry => entry.folderId === folder.id).map(entry => entry.path));
   for (const path of paths) {
-    const existing = indexes.get(path), details = metadata[path];
-    if (existing !== undefined) { if (details) entries[existing] = { ...entries[existing], ...details }; continue; }
+    if (existing.has(path)) continue;
+    existing.add(path);
     const name = path.split('/').at(-1)!;
-    indexes.set(path, entries.length);
-    entries.push({ id: crypto.randomUUID(), name, title: details?.title ?? name.replace(/\.sotto\.json$/, '').replaceAll('-', ' '),
-      composer: details?.composer ?? '', folderId: folder.id, path, favorite: false,
-      ...(details ? { fileSize: details.fileSize, modified: details.modified } : {}) });
+    entries.push({ id: crypto.randomUUID(), name, title: name.replace(/\.sotto\.json$/, '').replaceAll('-', ' '),
+      composer: '', folderId: folder.id, path, favorite: false });
   }
   return { entries, folders: [...library.folders.filter(item => item.id !== folder.id), folder] };
+}
+export type LibraryDirectory = { id: string; name: string; path: string; depth: number; count: number; entries: LibraryEntry[]; children: LibraryDirectory[] };
+export function directoryTree(entries: LibraryEntry[], folders: LibraryFolder[]): { directories: LibraryDirectory[]; loose: LibraryEntry[] } {
+  const roots = new Map<string, LibraryDirectory>(), nodes = new Map<string, LibraryDirectory>();
+  const names = new Map(folders.map(folder => [folder.id, folder.name]));
+  const loose: LibraryEntry[] = [];
+  for (const entry of entries) {
+    if (!entry.folderId || !names.has(entry.folderId)) { loose.push(entry); continue; }
+    const folderId = entry.folderId;
+    let parent = roots.get(folderId);
+    if (!parent) {
+      parent = { id: JSON.stringify([folderId]), name: names.get(folderId)!, path: '', depth: 0, count: 0, entries: [], children: [] };
+      roots.set(folderId, parent);
+    }
+    parent.count++;
+    const parts = (entry.path ?? entry.name).split('/').slice(0, -1);
+    for (let i = 0; i < parts.length; i++) {
+      const id = JSON.stringify([folderId, ...parts.slice(0, i + 1)]);
+      let node = nodes.get(id);
+      if (!node) {
+        node = { id, name: parts[i], path: parts.slice(0, i + 1).join('/'), depth: i + 1, count: 0, entries: [], children: [] };
+        nodes.set(id, node); parent.children.push(node);
+      }
+      node.count++; parent = node;
+    }
+    parent.entries.push(entry);
+  }
+  const sort = (nodes: LibraryDirectory[]) => { nodes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })); nodes.forEach(node => sort(node.children)); };
+  const directories = [...roots.values()]; sort(directories);
+  return { directories, loose };
 }

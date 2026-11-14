@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { connectFolder, emptyLibrary, exportLibrary, parseLibrary, readScoreMetadata, folderMetadata, type DirectoryHandle, type Library } from './library';
+import { connectFolder, emptyLibrary, exportLibrary, parseLibrary, scanDirectory, directoryTree, readEntry, type DirectoryHandle, type Library } from './library';
 
 describe('portable reference library', () => {
   it('exports metadata and favorites without score contents or access handles', () => {
@@ -37,18 +37,44 @@ describe('portable reference library', () => {
   });
 });
 
-it('loads titles and composers when connecting a folder, while preserving bookmarks and favorites', async () => {
+it('enumerates arbitrarily nested score paths without touching score files', async () => {
+  const getFile = vi.fn(async () => { throw new Error('A scan must not open a file'); });
+  const leaf = { name: 'piece.sotto.json', kind: 'file', getFile };
+  const directory = (name: string, children: unknown[]) => ({ kind: 'directory', name, async *values() { yield* children; } });
+  const root = directory('Scores', [directory('Violin', [directory('Vivaldi', [directory('Book 1', [directory('Spring', [directory('Movements', [leaf])])])])])]) as unknown as DirectoryHandle;
+  const paths = await scanDirectory(root);
+  expect(paths).toEqual(['Violin/Vivaldi/Book 1/Spring/Movements/piece.sotto.json']);
+  expect(getFile).not.toHaveBeenCalled();
+  const library = connectFolder(emptyLibrary(), { id: 'f', name: 'Scores', handle: root }, paths);
+  const tree = directoryTree(library.entries, library.folders);
+  let node = tree.directories[0];
+  for (const name of ['Scores', 'Violin', 'Vivaldi', 'Book 1', 'Spring', 'Movements']) {
+    expect(node.name).toBe(name); expect(node.count).toBe(1);
+    if (node.children.length) node = node.children[0];
+  }
+  expect(node.entries[0].title).toBe('piece');
+  expect(node.entries[0].composer).toBe('');
+  expect(tree.loose).toEqual([]);
+});
+it('preserves learned metadata and favorites when refreshing filenames', () => {
   const folder = { id: 'f', name: 'Scores' };
-  const file = new File([JSON.stringify({ format: 'sotto-score', version: 1, title: 'Spring for two violins', composer: 'Vivaldi', pages: ['large score'] })], 'spring.sotto.json', { lastModified: 100 });
-  const metadata = await readScoreMetadata(file);
-  expect(metadata).toEqual({ title: 'Spring for two violins', composer: 'Vivaldi', fileSize: file.size, modified: 100 });
-  const first = connectFolder(emptyLibrary(), folder, [file.name]); first.entries[0].favorite = true;
-  const refreshed = connectFolder(first, folder, [file.name], { [file.name]: metadata! });
-  expect(refreshed.entries[0]).toMatchObject({ id: first.entries[0].id, favorite: true, title: 'Spring for two violins', composer: 'Vivaldi' });
-  expect(JSON.stringify(refreshed)).not.toContain('large score');
-  const text = vi.spyOn(file, 'text');
-  const handle = { getFileHandle: async () => ({ getFile: async () => file }) } as unknown as DirectoryHandle;
-  expect(await folderMetadata(handle, [file.name], refreshed, folder.id)).toEqual({});
-  expect(text).not.toHaveBeenCalled();
-  expect(await readScoreMetadata(new File(['invalid JSON'], 'invalid.sotto.json'))).toBeNull();
+  const first = connectFolder(emptyLibrary(), folder, ['Violin/Vivaldi/spring.sotto.json']);
+  Object.assign(first.entries[0], { title: 'Spring for two violins', composer: 'Vivaldi', favorite: true, lastOpened: 123 });
+  const refreshed = connectFolder(first, folder, ['Violin/Vivaldi/spring.sotto.json', 'Guitar/Tarrega/marieta.sotto.json']);
+  expect(refreshed.entries[0]).toEqual(first.entries[0]);
+  expect(refreshed.entries[1]).toMatchObject({ title: 'marieta', composer: '' });
+  const backup = parseLibrary(exportLibrary(refreshed));
+  expect(backup.entries[0].path).toBe('Violin/Vivaldi/spring.sotto.json');
+  expect(directoryTree(backup.entries, backup.folders).directories[0].count).toBe(2);
+});
+it('opens the selected nested file through its full relative path', async () => {
+  const file = new File(['score'], 'piece.sotto.json');
+  const getFile = vi.fn(async () => file);
+  const getDirectoryHandle = vi.fn(async (_name: string) => handle);
+  const handle = { queryPermission: async () => 'granted', getDirectoryHandle,
+    getFileHandle: async () => ({ getFile }) } as unknown as DirectoryHandle;
+  const library = connectFolder(emptyLibrary(), { id: 'f', name: 'Scores', handle }, ['Violin/Vivaldi/Book/Pieces/piece.sotto.json']);
+  expect(await readEntry(library.entries[0], library)).toBe(file);
+  expect(getDirectoryHandle.mock.calls.map(call => call[0])).toEqual(['Violin', 'Vivaldi', 'Book', 'Pieces']);
+  expect(getFile).toHaveBeenCalledOnce();
 });

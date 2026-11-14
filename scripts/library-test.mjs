@@ -40,7 +40,7 @@ try {
     const writer = await file.createWritable(); await writer.write(JSON.stringify({ ...fixture, title: 'Added score' })); await writer.close();
   }, fixture);
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await page.getByRole('button', { name: 'Favorite Added score', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Favorite added', exact: true }).waitFor();
   // IDB contains references, not File/Blob objects or the SVG/notes payload.
   const stored = await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => { const request = indexedDB.open('sotto-library'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
@@ -62,7 +62,7 @@ try {
     const file = await directory.getFileHandle('automatic.sotto.json', { create: true });
     const writer = await file.createWritable(); await writer.write(JSON.stringify({ ...fixture, title: 'Automatic score' })); await writer.close();
   }, fixture);
-  await openLibrary(); await page.getByRole('button', { name: 'Favorite Automatic score', exact: true }).waitFor();
+  await openLibrary(); await page.getByRole('button', { name: 'Favorite automatic', exact: true }).waitFor();
 
   // A file changed by another application is read afresh, rather than from
   // a saved JSON/Blob snapshot.
@@ -91,7 +91,7 @@ try {
   await (await chooserPromise).setFiles({ name: 'fallback.sotto.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ ...fixture, title: 'Fallback score' })) });
   await page.getByRole('heading', { name: 'Fallback score', exact: true }).waitFor();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
-  // The fallback folder picker also reads metadata before opening a score.
+  // The fallback folder picker lists filenames without reading score contents.
   await openLibrary();
   await page.evaluate(fixture => {
     const file = new File([JSON.stringify({ ...fixture, title: 'Spring for two violins', composer: 'Vivaldi' })], 'spring.sotto.json');
@@ -99,8 +99,8 @@ try {
     const transfer = new DataTransfer(); transfer.items.add(file);
     const input = document.querySelector('[aria-label="Connect score folder"]'); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true }));
   }, fixture);
-  const spring = page.locator('.library-entry').filter({ has: page.getByRole('button', { name: 'Favorite Spring for two violins', exact: true }) });
-  await spring.waitFor(); assert.ok((await spring.innerText()).includes('Vivaldi'), 'Fallback reconnect reads title and composer before opening the piece');
+  const spring = page.locator('.library-entry').filter({ has: page.getByRole('button', { name: 'Favorite spring', exact: true }) });
+  await spring.waitFor(); assert.ok(!(await spring.innerText()).includes('Vivaldi'), 'Fallback reconnect does not read composer metadata');
   await page.keyboard.press('Escape');
   // Hold an automatic directory scan across an index import. The later scan
   // must merge into the imported metadata instead of overwriting favorites.

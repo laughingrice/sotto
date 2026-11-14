@@ -1,9 +1,9 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { FolderOpen, Star, Trash2, X } from 'lucide-react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
+import { ChevronRight, FolderOpen, Star, Trash2, X } from 'lucide-react';
 import { lastScore, rememberScore, exportPreferences, importPreferences, parsePreferences } from './preferences';
 import { validateScore } from './score';
-import { connectFolder, emptyLibrary, exportLibrary, filePickers, folderMetadata, readScoreMetadata, loadLastScore, loadLibrary, parseLibrary, readEntry, saveLibrary, scanDirectory,
-  type Library, type ScoreMetadata, type LibraryEntry, type LibraryFolder, type ReadHandle } from './library';
+import { connectFolder, emptyLibrary, exportLibrary, filePickers, directoryTree, loadLastScore, loadLibrary, parseLibrary, readEntry, saveLibrary, scanDirectory,
+  type Library, type LibraryDirectory, type LibraryEntry, type LibraryFolder, type ReadHandle } from './library';
 
 export type LibraryControl = { chooseFile(): void; restoreLastScore(isCurrent?: () => boolean): Promise<boolean>; reconnectLastScore(): void };
 export const LibraryPanel = forwardRef<LibraryControl, { visible: boolean; onClose(): void; onOpen(value: unknown, key: string): void; onResumeNeeded(title: string): void; onBeforeBackup(): void; onSettingsImported(): void; onError(message: string): void }>(
@@ -16,6 +16,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
   const [message, setMessage] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [search, setSearch] = useState('');
+  const [expandedDirectories, setExpandedDirectories] = useState<Record<string, boolean>>({});
   const input = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const indexInput = useRef<HTMLInputElement>(null);
@@ -132,8 +133,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       await ready.current;
       const folder = { id: id ?? crypto.randomUUID(), name: handle.name, handle };
       const paths = await scanDirectory(handle);
-      const metadata = await folderMetadata(handle, paths, current.current, folder.id);
-      await commit(library => connectFolder(library, folder, paths, metadata));
+      await commit(library => connectFolder(library, folder, paths));
     } catch (error) { report(error); }
     finally { setBusy(false); reconnectFolder.current = undefined; }
   }
@@ -146,11 +146,10 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
         if (await folder.handle.requestPermission({ mode: 'read' }) !== 'granted') throw new Error('Folder access needs permission. Use Reconnect to choose the folder again.');
       }
       const paths = await scanDirectory(folder.handle);
-      const metadata = await folderMetadata(folder.handle, paths, current.current, folder.id);
       await commit(library => {
         const connected = library.folders.find(item => item.id === folder.id);
         // A completed scan must not resurrect a removed or reconnected folder.
-        return connected && connected.handle === folder.handle ? connectFolder(library, connected, paths, metadata) : library;
+        return connected && connected.handle === folder.handle ? connectFolder(library, connected, paths) : library;
       });
       if (request) setMessage(`Refreshed ${folder.name}.`);
     } catch (error) { report(error); }
@@ -169,9 +168,29 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     });
     return () => { cancelled = true; };
   }, [visible]);
+  const folderNames = new Map(library.folders.map(folder => [folder.id, folder.name]));
   const entries = library.entries.filter(entry => (!favoritesOnly || entry.favorite) &&
-    `${entry.title} ${entry.composer} ${entry.path ?? entry.name}`.toLowerCase().includes(search.toLowerCase()))
+    `${entry.title} ${entry.composer} ${folderNames.get(entry.folderId ?? '') ?? ''} ${entry.path ?? entry.name}`.toLowerCase().includes(search.trim().toLowerCase()))
     .sort((a, b) => Number(b.favorite) - Number(a.favorite) || (b.lastOpened ?? 0) - (a.lastOpened ?? 0) || a.title.localeCompare(b.title));
+  const tree = directoryTree(entries, library.folders);
+  const filtering = !!search.trim() || favoritesOnly;
+  const renderEntry = (entry: LibraryEntry) => <div className="library-entry" key={entry.id}>
+        <button className="library-open" disabled={busy} onClick={() => void openEntry(entry)}><strong>{entry.title}</strong><span>{entry.composer}</span><small>{folderNames.get(entry.folderId ?? '')}{entry.folderId ? '/' : ''}{entry.path ?? entry.name}</small></button>
+        <button className={`icon-button favorite-button ${entry.favorite ? 'selected' : ''}`} disabled={busy} aria-label={`Favorite ${entry.title}`} aria-pressed={entry.favorite} onClick={() => void change(library => ({ ...library, entries: library.entries.map(item => item.id === entry.id ? { ...item, favorite: !item.favorite } : item) }))}><Star size={17} fill={entry.favorite ? 'currentColor' : 'none'}/></button>
+        <button className="icon-button" disabled={busy} aria-label={`Remove ${entry.title} bookmark`} onClick={() => void change(library => ({ ...library, entries: library.entries.filter(item => item.id !== entry.id) }))}><Trash2 size={16}/></button>
+      </div>;
+  const renderDirectory = (directory: LibraryDirectory): ReactNode => {
+    const expanded = filtering || (expandedDirectories[directory.id] ?? directory.depth === 0);
+    return <details className="library-directory" key={directory.id} open={expanded}
+    onToggle={event => {
+      if (filtering) return;
+      const open = event.currentTarget.open;
+      setExpandedDirectories(previous => previous[directory.id] === open ? previous : { ...previous, [directory.id]: open });
+    }}>
+    <summary data-directory-path={directory.path} title={directory.path || directory.name}><ChevronRight size={14}/><FolderOpen size={16}/><span>{directory.name}</span><small>{directory.count}</small></summary>
+    {expanded && <div className="library-directory-children">{directory.children.map(renderDirectory)}{directory.entries.map(renderEntry)}</div>}
+  </details>;
+  };
   async function change(update: (library: Library) => Library) { try { await commit(update); } catch (error) { report(error); } }
   return <>
     <input ref={input} data-score-input aria-label="Open score file" type="file" accept=".json,.sotto.json" className="visually-hidden" onChange={event => {
@@ -181,8 +200,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     {visible && <div className="modal-backdrop" onClick={onClose}><section className="help-modal library-modal" role="dialog" aria-modal="true" aria-labelledby="library-title" onClick={event => event.stopPropagation()}>
       <button className="icon-button modal-close" aria-label="Close library" onClick={onClose} autoFocus><X size={20}/></button>
       <div className="eyebrow">YOUR MUSIC</div><h2 id="library-title">Score library</h2>
-      <p className="settings-note">Keep your scores in a folder of your choice, including a synced OneDrive folder. The library stores bookmarks and favorites. Only the last opened song is cached for resuming; opening another replaces that copy.</p>
-      {!filePickers.showDirectoryPicker && <p className="settings-note">Your last song can reopen from its cached copy. Other scores may require you to reselect files or reconnect a folder after reopening Sotto. On iPad, choose a score through Files → OneDrive. Chrome/Edge on desktop can remember file and folder access. A picker may call the selection “Upload”; Sotto reads it locally and does not send it anywhere.</p>}
+      <p className="settings-note">Browse folders at any depth. Scans list filenames; titles and composers are learned when you open a score.</p>
       <div className="library-actions"><button className="quiet-button" disabled={busy} onClick={() => void chooseFile()}><FolderOpen size={16}/> Add score</button><button className="quiet-button" disabled={busy} onClick={() => void chooseFolder()}>Connect folder</button>
         <button className="quiet-button" disabled={busy} onClick={() => {
           onBeforeBackup();
@@ -190,18 +208,19 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
           const href = URL.createObjectURL(new Blob([exportLibrary(current.current, settings)], { type: 'application/json' }));
           const link = document.createElement('a'); link.href = href; link.download = 'sotto-library.json'; link.click(); setTimeout(() => URL.revokeObjectURL(href), 1000);
         }}>Export backup</button><button className="quiet-button" disabled={busy} onClick={() => indexInput.current?.click()}>Import backup</button></div>
-      <p className="settings-note">Save a backup to OneDrive to transfer favorites, library references, general preferences and per-song practice settings. Import on the other device, then reconnect the folders. Cached sheet music and microphone device/calibration are excluded. Import merges songs and replaces saved settings for matching songs.</p>
+      <p className="settings-note">Backups include library references and practice settings, not sheet music.</p>
       {message && <p className="library-message" role="status">{message}</p>}
       {busy && <p role="status">Reading files…</p>}
       <div className="library-filters"><input aria-label="Search library" placeholder="Find a score…" value={search} onChange={event => setSearch(event.target.value)}/><label className="checkbox-row"><input type="checkbox" checked={favoritesOnly} onChange={event => setFavoritesOnly(event.target.checked)}/>Favorites</label></div>
-      <div className="library-list">{entries.map(entry => <div className="library-entry" key={entry.id}>
-        <button className="library-open" disabled={busy} onClick={() => void openEntry(entry)}><strong>{entry.title}</strong><span>{entry.composer}</span><small>{library.folders.find(folder => folder.id === entry.folderId)?.name}{entry.folderId ? '/' : ''}{entry.path ?? entry.name}</small></button>
-        <button className={`icon-button favorite-button ${entry.favorite ? 'selected' : ''}`} disabled={busy} aria-label={`Favorite ${entry.title}`} aria-pressed={entry.favorite} onClick={() => void change(library => ({ ...library, entries: library.entries.map(item => item.id === entry.id ? { ...item, favorite: !item.favorite } : item) }))}><Star size={17} fill={entry.favorite ? 'currentColor' : 'none'}/></button>
-        <button className="icon-button" disabled={busy} aria-label={`Remove ${entry.title} bookmark`} onClick={() => void change(library => ({ ...library, entries: library.entries.filter(item => item.id !== entry.id) }))}><Trash2 size={16}/></button>
-      </div>)}{!entries.length && <p className="settings-note">{library.entries.length ? 'No matching scores.' : 'Add a score or connect a folder containing .sotto.json files.'}</p>}</div>
-      {!!library.folders.length && <h3>Folders</h3>}
+      <div className="library-list">{tree.loose.map(renderEntry)}{tree.directories.map(renderDirectory)}{!entries.length && <p className="settings-note">{library.entries.length ? 'No matching scores.' : 'Add a score or connect a folder containing .sotto.json files.'}</p>}</div>
+      {!!library.folders.length && <h3>Connected folders</h3>}
       {library.folders.map(folder => <div className="library-folder" key={folder.id}><span><FolderOpen size={16}/> {folder.name}</span>{folder.handle && <button className="text-button" disabled={busy} onClick={() => void refreshFolder(folder)}>Refresh</button>}<button className="text-button" disabled={busy} onClick={() => void chooseFolder(folder.id)}>Reconnect</button><button className="icon-button" disabled={busy} aria-label={`Remove ${folder.name} folder bookmark`} onClick={() => void change(library => ({ entries: library.entries.filter(entry => entry.folderId !== folder.id), folders: library.folders.filter(item => item.id !== folder.id) }))}><Trash2 size={16}/></button></div>)}
+      <details className="library-help"><summary>Library storage &amp; backups</summary>
+      <p className="settings-note">Keep your scores in a folder of your choice, including a synced OneDrive folder. Browse nested folders at any depth. Scans list filenames without opening score files; titles and composers are remembered when you open a piece. The library stores bookmarks and favorites. Only the last opened song is cached for resuming; opening another replaces that copy.</p>
+      {!filePickers.showDirectoryPicker && <p className="settings-note">Your last song can reopen from its cached copy. Other scores may require you to reselect files or reconnect a folder after reopening Sotto. On iPad, choose a score through Files → OneDrive. Chrome/Edge on desktop can remember file and folder access. A picker may call the selection “Upload”; Sotto reads it locally and does not send it anywhere.</p>}
+      <p className="settings-note">Save a backup to OneDrive to transfer favorites, library references, general preferences and per-song practice settings. Import on the other device, then reconnect the folders. Cached sheet music and microphone device/calibration are excluded. Import merges songs and replaces saved settings for matching songs.</p>
       <p className="settings-note">Removing a bookmark leaves the original file untouched. Reconnecting uses the selected folder’s relative paths. File access may need permission again; bookmarks do not sync automatically.</p>
+      </details>
       <input ref={folderInput} type="file" className="visually-hidden" aria-label="Connect score folder" {...{ webkitdirectory: '', directory: '' }} multiple onChange={event => {
         const files = Array.from(event.target.files ?? []).filter(file => file.name.endsWith('.sotto.json')); event.target.value = '';
         if (!files.length) { setMessage('No .sotto.json files were selected.'); return; }
@@ -210,10 +229,8 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
           await ready.current;
           const folder = { id: reconnectFolder.current ?? crypto.randomUUID(), name: files[0].webkitRelativePath.split('/')[0] || 'Scores' };
           const paths = files.map(file => file.webkitRelativePath.split('/').slice(1).join('/') || file.name);
-          const metadata: Record<string, ScoreMetadata> = {};
-          for (let i = 0; i < files.length; i++) { const value = await readScoreMetadata(files[i]); if (value) metadata[paths[i]] = value; }
           await commit(library => {
-            const next = connectFolder(library, folder, paths, metadata);
+            const next = connectFolder(library, folder, paths);
             files.forEach((file, i) => { const entry = next.entries.find(entry => entry.folderId === folder.id && entry.path === paths[i])!; sessionFiles.current.set(entry.id, file); });
             return next;
           });
