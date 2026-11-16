@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, Check, ChevronDown, CircleHelp, Ear, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, SlidersHorizontal, Volume2, VolumeX, X } from 'lucide-react';
 import { Player } from './audio';
+import HelpPage, { isHelpLocation } from './HelpPage';
 import { loadPreferences, loadPractice, loadCountIn, remember, rememberScore, savePractice, type PracticeSettings, type MetronomeMode } from './preferences';
 import { saveLastScore } from './library';
 import RhythmPanel, { type RhythmControl } from './RhythmPanel';
@@ -53,7 +54,7 @@ export default function App() {
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(3);
   const [zoom, setZoom] = useState(preferences.zoom);
-  const [help, setHelp] = useState(false);
+  const [help, setHelp] = useState(isHelpLocation);
   const [rhythmVisible, setRhythmVisible] = useState(preferences.rhythmVisible);
   const [microphoneActive, setMicrophoneActive] = useState(false);
   const [libraryVisible, setLibraryVisible] = useState(false);
@@ -85,6 +86,21 @@ export default function App() {
     try { localStorage.setItem('sotto.controlsCollapsed', String(controlsCollapsed)); } catch { /* Storage can be unavailable in private browsing. */ }
     lastFollowed.current = -1;
   }, [controlsCollapsed]);
+
+  const openHelp = () => {
+    if (!isHelpLocation()) window.history.pushState({ sottoHelp: true }, '', '#help');
+    setHelp(true);
+  };
+  const closeHelp = useCallback(() => {
+    setHelp(false);
+    if (window.history.state?.sottoHelp) window.history.back();
+    else window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, []);
+  useEffect(() => {
+    const navigate = () => setHelp(isHelpLocation());
+    window.addEventListener('hashchange', navigate); window.addEventListener('popstate', navigate);
+    return () => { window.removeEventListener('hashchange', navigate); window.removeEventListener('popstate', navigate); };
+  }, []);
 
   const changeZoom = (next: number) => {
     const scroller = scrollRoot.current;
@@ -307,7 +323,7 @@ export default function App() {
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if (help || soundSettings || libraryVisible) { if (event.key === 'Escape') { setHelp(false); setSoundSettings(false); setLibraryVisible(false); } return; }
+      if (help || soundSettings || libraryVisible) { if (event.key === 'Escape') { event.preventDefault(); if (help) closeHelp(); setSoundSettings(false); setLibraryVisible(false); } return; }
       if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
       const target = event.target as HTMLElement;
       if (target.isContentEditable || target.closest('textarea,[contenteditable=true],input:not([type=range]):not([type=checkbox]):not([type=button])')) return;
@@ -325,7 +341,7 @@ export default function App() {
       if (event.key.toLowerCase() === 'c') setControlsCollapsed(value => !value);
     };
     document.addEventListener('keydown', keydown, true); return () => document.removeEventListener('keydown', keydown, true);
-  }, [togglePlay, stepMeasure, restart, help, soundSettings, libraryVisible, toggleMetronome]);
+  }, [togglePlay, stepMeasure, restart, help, soundSettings, libraryVisible, toggleMetronome, closeHelp]);
 
   const scoreClick = (event: React.MouseEvent) => {
     const element = (event.target as Element).closest('.score-note');
@@ -351,7 +367,7 @@ export default function App() {
     <header className="app-header">
       <a className="brand" href={import.meta.env.BASE_URL} aria-label="Sotto home"><span className="brand-symbol"><Music2 size={24}/></span><span>sotto<span className="brand-dot">.</span></span></a>
       <span className="header-divider"/><span className="header-caption">A little practice, every day.</span>
-      <div className="header-actions"><span className="version">v0.3</span><button className="quiet-button open-button" aria-label="Open score" title="Open score" onClick={() => libraryControl.current?.chooseFile()}><FolderOpen size={17}/><span>Open score</span></button><button className="quiet-button library-button" aria-label="Score library" title="Score library" onClick={() => setLibraryVisible(true)}><BookOpen size={17}/><span>Library</span></button><button className="quiet-button save-button" aria-label="Save score" title="Save score" onClick={downloadBundle} disabled={!score}><ArrowDownToLine size={17}/><span>Save score</span></button><button className="quiet-button controls-toggle" aria-label={controlsCollapsed ? 'Show controls' : 'Hide controls'} aria-expanded={!controlsCollapsed} aria-controls="practice-settings playback-panel" title={`${controlsCollapsed ? 'Show' : 'Hide'} controls (C)`} onClick={() => setControlsCollapsed(value => !value)}>{controlsCollapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}<span>{controlsCollapsed ? 'Show controls' : 'Hide controls'}</span></button><button className="icon-button" aria-label="Help and keyboard shortcuts" onClick={() => setHelp(true)}><CircleHelp size={20}/></button></div>
+      <div className="header-actions"><span className="version">v0.3</span><button className="quiet-button open-button" aria-label="Open score" title="Open score" onClick={() => libraryControl.current?.chooseFile()}><FolderOpen size={17}/><span>Open score</span></button><button className="quiet-button library-button" aria-label="Score library" title="Score library" onClick={() => setLibraryVisible(true)}><BookOpen size={17}/><span>Library</span></button><button className="quiet-button save-button" aria-label="Save score" title="Save score" onClick={downloadBundle} disabled={!score}><ArrowDownToLine size={17}/><span>Save score</span></button><button className="quiet-button controls-toggle" aria-label={controlsCollapsed ? 'Show controls' : 'Hide controls'} aria-expanded={!controlsCollapsed} aria-controls="practice-settings playback-panel" title={`${controlsCollapsed ? 'Show' : 'Hide'} controls (C)`} onClick={() => setControlsCollapsed(value => !value)}>{controlsCollapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}<span>{controlsCollapsed ? 'Show controls' : 'Hide controls'}</span></button><button className="icon-button" aria-label="Help and keyboard shortcuts" title="Help and practice guide" onClick={openHelp}><CircleHelp size={20}/></button></div>
 
     </header>
 
@@ -445,6 +461,6 @@ export default function App() {
       <button className="primary-button" onClick={() => setSoundSettings(false)}>Back to the music <ArrowRight size={16}/></button>
     </section></div>}
 
-    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={event => event.stopPropagation()}><button className="icon-button modal-close" aria-label="Close help" onClick={() => setHelp(false)} autoFocus><X size={20}/></button><div className="eyebrow">SOTTO · VERSION 0.3</div><h2 id="help-title">Find your own tempo.</h2><p>Play the score, slow down a phrase, or mute your part and play along with the other voices. Click a note to move there.</p><div className="help-shortcuts"><span><kbd>space</kbd> Play / pause</span><span><kbd>←</kbd> <kbd>→</kbd> Previous / next bar</span><span><kbd>R</kbd> Restart</span><span><kbd>M</kbd> Metronome</span></div><h3>Bringing another score</h3><p>Open a <code>.sotto.json</code> bundle created by the included LilyPond exporter. Use Library to bookmark files or folders and mark favorites; use Export backup to save the library and practice settings. MusicXML can first be converted with <code>musicxml2ly</code>. Use the microphone icon for volume and attack-timing feedback. Direct PDF recognition, raw MIDI import and pitch assessment are not implemented yet.</p><h3>Playback details</h3><p>The example follows both endings and D.C. al Coda. Guitar pitches sound an octave below the notation. Tempo is measured in dotted-quarter beats; expressive tempo changes and harmonic overtones are not modelled yet.</p><button className="primary-button" onClick={() => setHelp(false)}>Back to the music <ArrowRight size={16}/></button></section></div>}
+    {help && <HelpPage onClose={closeHelp}/>}
   </div>;
 }

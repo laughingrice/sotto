@@ -1,0 +1,129 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ArrowLeft, BookOpen, ChevronRight, Search, X } from 'lucide-react';
+import './help.css';
+
+type Topic = { id: string; title: string; summary: string; keywords: string; content: ReactNode };
+const Where = ({ children }: { children: ReactNode }) => <p className="guide-where"><span>Where to find it</span>{children}</p>;
+const topics: Topic[] = [
+  { id: 'start', title: 'Start practicing', summary: 'Open a piece, choose your part and play along.', keywords: 'quick start first steps bass guitar drums accompaniment mute solo learn', content: <>
+    <Where>Open score in the top bar · Voices on the left · Play at the bottom</Where>
+    <ol><li>Choose <strong>Open score</strong> and select a <code>.sotto.json</code> file. You can also begin with the included Julia Florida example.</li>
+      <li>Under <strong>Voices</strong>, find the part you want to practice. Its speaker button mutes or unmutes Sotto’s playback of that part.</li>
+      <li>Use the <strong>Tempo</strong> slider at the bottom to slow the piece down. Press <strong>Play</strong> or <kbd>Space</kbd>. A one-bar count-in is on by default.</li>
+      <li>To repeat a phrase, choose <strong>From</strong> and <strong>To</strong> under <strong>Practice loop</strong>, then turn its switch on.</li></ol>
+    <div className="guide-example"><h3>Bass practice with drum accompaniment</h3><p>Open your bass-and-drums score. Check the Sound selectors: Bass should use <strong>Electric bass</strong> and Drums should use <strong>Acoustic drums</strong>. Mute Bass and leave Drums on. Start playback and play the bass part yourself. Turn on microphone feedback when you want to compare attack timing.</p></div>
+    <p>Sotto remembers your last song and practice settings. Reopening starts paused, with the microphone off.</p>
+  </> },
+  { id: 'playback', title: 'Playback & navigation', summary: 'Move around the score, adjust tempo and follow repeats.', keywords: 'play pause restart previous next bar measure note progress scrub tempo bpm 220 repeat endings ds dc coda pickup bar zero', content: <>
+    <Where>Playback controls below the score · Practice settings on the left</Where>
+    <ul><li><strong>Play / pause:</strong> the large round button, or <kbd>Space</kbd>. Pause holds your place.</li>
+      <li><strong>Previous / next bar:</strong> the arrows next to Play, or <kbd>←</kbd> / <kbd>→</kbd>.</li>
+      <li><strong>Restart:</strong> the circular arrow, or <kbd>R</kbd>. With a loop enabled, this returns to the loop’s start.</li>
+      <li><strong>Jump to a note:</strong> click or tap a notehead. Drag the progress slider above the playback buttons to scrub through the piece.</li></ul>
+    <h3>Tempo and bar numbers</h3><p>The tempo slider and − / + buttons reach 220 BPM. Faster original or saved tempos remain supported. The percentage beside the tempo resets it to the score’s original setting. The pulse comes from the exported score: Julia Florida uses dotted-quarter beats; many other scores use quarter notes.</p>
+    <p>The bar readout follows the printed score. A pickup before the first full measure is shown as <strong>bar 0</strong>; the first full measure is bar 1. Repeated appearances can be labeled <strong>pass 2</strong>, and so on.</p>
+    <h3>Repeats and jumps</h3><p>Keep <strong>Follow repeats &amp; jumps</strong> checked to play the exported performance order, including repeats, endings and encoded D.S./D.C./coda returns. Uncheck it to play each written measure once. Printed jump instructions must have been encoded during score preparation; text alone cannot define playback.</p>
+  </> },
+  { id: 'sounds', title: 'Parts & instruments', summary: 'Choose a sound for each voice and control the accompaniment.', keywords: 'track voice part instrument sound auto default guitar bass acoustic drums piano violin marimba organ flute mute solo volume octave transpose', content: <>
+    <Where>Voices in the left panel · Sliders icon above the score for Sound &amp; metronome</Where>
+    <p>Each exported voice has its own controls. A score with separate bass and drum parts should show two voice cards.</p>
+    <ul><li><strong>Speaker button:</strong> mute or unmute this part. Muting a part does not turn off the microphone.</li>
+      <li><strong>Solo:</strong> hear only that voice. Press Solo again to end solo while keeping your manual mutes. <strong>Restore all voices</strong> clears both solo and all mutes.</li>
+      <li><strong>Volume slider:</strong> set this part’s playback level independently.</li>
+      <li><strong>Sound:</strong> choose an instrument just for this part. <strong>Auto</strong> uses the part’s name or instrument information when recognized. Choose a sound manually if the guess is wrong.</li></ul>
+    <h3>Available sounds</h3><p>Nylon guitar, piano, violin, electric bass and acoustic drums use recorded samples. Marimba, organ and flute are synthesized. All are bundled for offline playback. The acoustic kit includes kick, snare, sidestick, hi-hats, toms, crash and ride/bell; it is a small kit rather than every possible percussion sound.</p>
+    <p><strong>Default instrument</strong> in Sound &amp; metronome is the fallback for parts that Auto cannot identify. An explicitly chosen sound or a recognized part can therefore differ from this default. Per-part choices are saved with the song.</p>
+    <h3>Octave correction</h3><p><strong>Playback octave</strong> in Sound &amp; metronome offers As exported, one octave lower or one octave higher. Start with As exported: guitar and bass files may already contain their sounding-pitch transposition. Lowering them again would put them an octave too low. Octave changes leave percussion keys unchanged.</p>
+  </> },
+  { id: 'loops', title: 'Loops, count-in & metronome', summary: 'Repeat a passage and get a clear pulse before and during playback.', keywords: 'practice loop from to inclusive first last repeat count in count-in lead in metronome click beat subdivision continuous pulse six eight 6/8', content: <>
+    <Where>Practice loop on the left · Metronome beside playback · Sliders icon above the score</Where>
+    <ol><li>Choose the first and last bars using <strong>From</strong> and <strong>To</strong>. Both selected bars are included.</li><li>Turn on <strong>Practice loop</strong> and press Play. Playback returns to the first selected bar after the last one.</li><li>Pause whenever you want to review microphone feedback. Loop wraps preserve the recent graph and accumulate timing totals.</li></ol>
+    <p>When repeats are enabled, the loop choices can include separate passes of the same printed bar. Seeking outside the loop turns the loop off.</p>
+    <h3>One-bar count-in</h3><p>Open <strong>Sound &amp; metronome</strong> using the sliders icon. <strong>One-bar count-in</strong> is on by default and remembers an explicit off choice. It counts a full bar using the starting bar’s meter and current tempo before each Play, even if the metronome is off. Pause cancels the count-in. This is separate from a pickup in the written score.</p>
+    <h3>Three click modes</h3><p>The <strong>Metronome</strong> button, or <kbd>M</kbd>, cycles <strong>Off → Playback → Continuous</strong>. Playback clicks only while the score runs. Continuous also clicks while paused. The first click in each bar is accented.</p>
+    <p>Under Sound &amp; metronome, <strong>Pulse</strong> selects Beat or Subdivision. In 6/8, Beat gives two dotted-quarter clicks, on the first and fourth eighths; Subdivision gives all six eighths. <strong>Click volume</strong> is independent of voice volumes.</p>
+  </> },
+  { id: 'reading', title: 'Reading & screen space', summary: 'Zoom, follow the current bar and keep more music visible.', keywords: 'zoom fit width page notation scroll follow score portrait tablet hide show controls compact ear microphone toolbar', content: <>
+    <Where>Toolbar above the score · Hide controls in the top bar</Where>
+    <ul><li><strong>Full-bar highlight:</strong> the green rectangle marks the current measure; colored noteheads show the current notes.</li>
+      <li><strong>Zoom:</strong> use − / + above the score, from 50–250%. Tap the percentage to return to Fit score to width at 100%.</li>
+      <li><strong>Pan:</strong> enlarged pages can scroll horizontally as well as vertically. Notation enlarges but does not reflow onto new lines.</li>
+      <li><strong>Follow score:</strong> keep the current bar in view automatically. Turn it off when you want to browse another passage without being pulled back.</li></ul>
+    <h3>Hide the controls</h3><p>Choose <strong>Hide controls</strong>, or press <kbd>C</kbd>, to give the score more room. A compact toolbar keeps Restart, previous bar, Play/pause, next bar, the listening ear and metronome available. <strong>Show controls</strong> restores the full panels.</p>
+    <p>The <strong>ear</strong> starts/stops microphone listening. The <strong>microphone icon</strong> shows/hides the rhythm panel; hiding that panel does not stop an active microphone. The sliders icon still opens sound and metronome settings.</p>
+  </> },
+  { id: 'library', title: 'Scores & folder library', summary: 'Open a piece, browse nested folders and mark favorites.', keywords: 'open save file folder directory directories instrument composer book pieces cloud onedrive dropbox filenames metadata refresh reconnect favorite search remove upload', content: <>
+    <Where>Open score, Library and Save score in the top bar</Where>
+    <p><strong>Open score</strong> reads a local <code>.sotto.json</code> bundle. <strong>Save score</strong> downloads a copy of that bundle; it does not save your practice settings into the original file.</p>
+    <ol><li>In <strong>Library</strong>, choose <strong>Connect folder</strong> and select your top-level scores folder, including a locally synced OneDrive or Dropbox folder.</li><li>Expand folders such as Instrument → Composer → Book → Piece. There is no fixed nesting limit.</li><li>Open a piece, star it as a favorite, or use Search. Search and Favorites reveal matches throughout the folder hierarchy.</li></ol>
+    <h3>Browsing without opening every cloud file</h3><p>Scans list filenames and paths without reading score contents. An unopened piece may show a lowercase filename and no composer. Once you open it, Sotto remembers the title and composer from the file. Already learned metadata is kept during later scans.</p>
+    <p><strong>Refresh</strong> looks for files using the remembered folder connection. <strong>Reconnect</strong> opens the folder picker again when access needs renewing or on another device. Desktop browsers with folder handles can refresh automatically when Library opens, if permission is already granted. Other browsers may require reselection through their file picker.</p>
+    <p>On iPad, choose OneDrive or another provider through Files when available. A browser may label local file selection “Upload”; Sotto reads the selected file locally and does not upload it. The browser/cloud provider controls its picker behavior.</p>
+    <p>Removing a bookmark or folder from Library leaves the original files untouched.</p>
+  </> },
+  { id: 'memory', title: 'Memory, backups & offline', summary: 'Resume your last piece and move settings to another computer.', keywords: 'remember cache last song session restore export import backup sync transfer new computer preferences offline browser storage privacy data saved settings', content: <>
+    <Where>Library → Export backup / Import backup</Where>
+    <p>Sotto caches <strong>only the last opened song</strong> for resuming. Opening another replaces that cached copy; the rest of the library stays as references. If the linked file is accessible on reopening, it is read fresh. Otherwise, the last cached copy can reopen, including offline.</p>
+    <ul><li><strong>General preferences:</strong> instrument fallback, zoom, follow score, panel visibility, count-in, metronome and microphone display/input preferences.</li><li><strong>Per-song settings:</strong> tempo, position, repeats, loop range, mute/solo/volumes, per-part sounds, practice voice and playback octave.</li></ul>
+    <h3>Move to another computer</h3><ol><li>Choose <strong>Library → Export backup</strong> and save <code>sotto-library.json</code>, for example in OneDrive.</li><li>On the other device, choose <strong>Import backup</strong>.</li><li>Reconnect the original score files or folders. Open a piece through its imported bookmark to recover its associated practice settings.</li></ol>
+    <p>The backup includes library references, favorites and settings. It excludes sheet music, the last-song cache, file permissions and device-specific microphone device/delay calibration. Imported bookmarks merge by ID; settings replace saved values for matching songs while other songs stay intact. Older library indexes still import.</p>
+    <h3>Offline use and privacy</h3><p>Visit the HTTPS app online first and allow its offline files to finish caching. The app, built-in score and instrument samples are bundled for offline use. Other songs need their source file, except the single cached last song. No account is required, and browser sync does not automatically synchronize Sotto’s app data. Backups currently transfer it manually.</p>
+    <p>Playback and microphone input reopen paused. Clearing site storage removes browser-held bookmarks, preferences and the cached song, but does not delete your source files. Microphone audio is not recorded or uploaded, and rhythm results are not saved between visits.</p>
+  </> },
+  { id: 'microphone', title: 'Microphone rhythm feedback', summary: 'Compare played attacks with the score and review each loop.', keywords: 'mic microphone listening ear rhythm feedback timing graph plot waveform volume peaks baseline on time early late missed unmatched calibration latency offset airpods gate boost filter bandpass high low headphones', content: <>
+    <Where>Microphone icon above the score → Enable mic → Input, timing &amp; calibration</Where>
+    <ol><li>Use headphones so the accompaniment and click do not trigger the microphone. Open the rhythm panel and choose <strong>Enable mic</strong>; allow browser permission. Microphone access requires HTTPS or localhost.</li><li>Keep your instrument quiet for the first two seconds while Sotto learns the background level. Select your <strong>Practice voice</strong> under Input, timing &amp; calibration.</li><li>Use <strong>Mute practice voice</strong> to silence that part’s playback, then Play the score and perform it yourself. The button changes to Unmute; All voices mutes/restores every part.</li><li>Pause after a phrase or loop to inspect the frozen graph. <strong>Stop mic</strong> releases the microphone. Closing the panel only hides it.</li></ol>
+    <h3>Read the graph</h3><ul><li>The filled trace shows volume; its outline preserves peaks. Green dashed lines mark expected score attacks.</li><li>Red lines follow the metronome Pulse setting: solid at bar starts, dashed for the other beats or subdivisions.</li><li>Detected attack dots: green on time, amber early, blue late and gray unmatched. The default on-time tolerance is ±80 ms.</li></ul>
+    <p><strong>Plot window</strong> controls total visible time; <strong>Look ahead</strong> is separate. The default is 24 seconds total with 4 seconds ahead. <strong>Trace boost</strong> and <strong>Hide learned background</strong> change the drawing, not detection sensitivity. Use <strong>Learn baseline</strong> with your instrument quiet after the room noise changes; it pauses the score and metronome.</p>
+    <h3>Adjust input and timing</h3><p>Select your microphone under <strong>Microphone</strong>. A positive <strong>Input offset</strong> moves delayed input earlier. Adjust it until attacks line up, or use <strong>Calibrate speakers</strong> in a quiet room through speakers. Calibration plays six clicks and estimates the current speaker/microphone delay; a different device, headphones or Bluetooth route can need another adjustment.</p>
+    <p>The <strong>Low-pass filter</strong> defaults to 4 kHz; the optional High-pass filter removes low rumble and starts off. Lower the <strong>Attack gate</strong> if quiet notes are missed; raise it if noise triggers detections. On-time tolerance is adjustable. If attacks are hard to see but detection is working, try Trace boost first. If input is heavily processed, compare another microphone.</p>
+    <p>Loop wraps keep recent history and accumulate totals. Starting playback again, seeking, changing timing settings or choosing Clear feedback starts a new take. The detector estimates attack timing, not pitch or note accuracy; legato, ringing strings, strums and background noise can confuse it. “Missed” is an estimate, not proof you omitted a note. Backgrounding the app stops microphone input.</p>
+  </> },
+  { id: 'preparing', title: 'Prepare a new score', summary: 'Turn editable notation into a portable Sotto bundle.', keywords: 'prepare export import lilypond musicxml pdf midi convert source title composer file bundle json transcription guitar transpose drums named voices', content: <>
+    <Where>Prepare on a computer → transfer the bundle → Open score in Sotto</Where>
+    <p>Sotto opens <code>.sotto.json</code> bundles containing the notation pages, note timing, voices and playback order. Direct PDF recognition, raw MIDI loading and browser-based LilyPond/MusicXML conversion are not available yet.</p>
+    <ol><li>Start with a proofread LilyPond file. MusicXML can first be converted with <code>musicxml2ly</code>. A PDF needs transcription or recognition and proofreading before export.</li><li>Give each instrument/part a named voice so it can be controlled independently. Encode repeats and jumps in the performed music, not only as printed text.</li><li>Run the included exporter on a computer with LilyPond 2.26 and Python 3, then transfer the resulting bundle to the tablet or your cloud scores folder.</li></ol>
+    <details className="guide-advanced"><summary>Exporter command</summary><pre><code>{`python3 scripts/export_score.py path/to/piece.ly \\\n  --title "My piece" --composer "Composer" \\\n  --beat-unit 1 --bpm 100 \\\n  --output path/to/piece.sotto.json`}</code></pre><p>Always supply the source path for a custom piece. Omitting it is reserved for rebuilding the Julia Florida example with no options. Changing a title or output filename does not change the underlying music. Use a beat unit of 1 for quarter notes or 1.5 for dotted quarters, as appropriate.</p></details>
+    <p>The exporter reads measure timing and supported repeats from LilyPond, including separate percussion voices. Check the exported notation, playback order and sounding octave. Re-export and reopen the bundle after correcting the source; changing metadata alone will not replace the old notes.</p>
+  </> },
+  { id: 'shortcuts', title: 'Shortcuts & troubleshooting', summary: 'Keyboard controls and answers to common problems.', keywords: 'help keyboard shortcuts space arrows r m c escape faq problem silent wrong piece julia title author composer lower case missing folder wrong octave no audio unsupported', content: <>
+    <Where>Keyboard while practicing · Help button (?) in the top bar</Where>
+    <div className="guide-table-wrap"><table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>
+      <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr><tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Previous / next bar</td></tr><tr><td><kbd>R</kbd></td><td>Restart the piece or active loop</td></tr><tr><td><kbd>M</kbd></td><td>Cycle metronome Off / Playback / Continuous</td></tr><tr><td><kbd>C</kbd></td><td>Hide / show practice controls</td></tr><tr><td><kbd>Esc</kbd></td><td>Close help or the open settings/library dialog</td></tr>
+    </tbody></table></div>
+    <p>Space and the arrow keys stay tied to playback after clicking practice controls. Text-entry fields and open dialogs keep their normal keyboard behavior. Other letter shortcuts apply when focus is outside form controls.</p>
+    <details className="guide-question"><summary>Why is there no sound?</summary><p>Check the part’s speaker button, Solo selection and volume, plus the device’s output volume. Wait for instrument loading to finish and press Play. An enabled count-in adds a bar before the notes start. If Bass is intentionally muted, only the accompanying parts should play.</p></details>
+    <details className="guide-question"><summary>Why does a new title still show Julia’s music?</summary><p>The bundle may have been exported from Julia’s source with a different title. Export again with the correct LilyPond source path, then use Open score to replace the cached bundle. The title alone does not identify or replace the notation inside the file.</p></details>
+    <details className="guide-question"><summary>Why is a library title lowercase with no composer?</summary><p>Unopened entries show filenames to avoid reading every cloud file. Open the piece once to learn its title/composer; later scans keep those details.</p></details>
+    <details className="guide-question"><summary>Why is an instrument or octave wrong?</summary><p>Choose the part’s Sound manually if Auto guessed incorrectly. In Sound &amp; metronome, try As exported for Playback octave; the source may already include guitar/bass transposition. The instrument choice changes timbre, not the written notes.</p></details>
+    <details className="guide-question"><summary>Why are microphone results noisy or delayed?</summary><p>Use headphones, check the selected microphone, relearn the quiet baseline and adjust the Attack gate. Align delayed attacks with Input offset. Recalibrate after changing the audio route. Increasing Trace boost makes the plot taller but does not improve detection.</p></details>
+    <details className="guide-question"><summary>Why does a bookmarked file ask to reconnect?</summary><p>The browser may no longer grant access, or the cloud file may not be available locally. Reconnect the remembered file/folder. On a new computer, import your backup first, then reconnect the original scores. The single cached last song can still resume without source access.</p></details>
+  </> },
+];
+const currentTopic = () => window.location.hash.replace(/^#help\/?/, '') || 'start';
+export function isHelpLocation() { return /^#help(?:\/|$)/.test(window.location.hash); }
+export default function HelpPage({ onClose }: { onClose(): void }) {
+  const dialog = useRef<HTMLDialogElement>(null), article = useRef<HTMLElement>(null);
+  const [active, setActive] = useState(currentTopic), [query, setQuery] = useState('');
+  const visible = topics.filter(topic => `${topic.title} ${topic.summary} ${topic.keywords}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const selected = visible.find(topic => topic.id === active) ?? visible[0];
+  useEffect(() => {
+    const element = dialog.current!, previous = document.activeElement;
+    element.showModal();
+    const navigate = () => { setActive(currentTopic()); setQuery(''); };
+    window.addEventListener('hashchange', navigate);
+    return () => { window.removeEventListener('hashchange', navigate); element.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+  }, []);
+  useEffect(() => { article.current?.scrollTo({ top: 0 }); }, [selected?.id]);
+  const choose = (id: string) => {
+    setActive(id); setQuery(''); window.history.replaceState(window.history.state, '', `#help/${id}`);
+  };
+  return <dialog ref={dialog} className="guide-page" aria-labelledby="guide-title" onCancel={event => { event.preventDefault(); onClose(); }}>
+    <header className="guide-header"><button className="quiet-button" aria-label="Close help" onClick={onClose} autoFocus><ArrowLeft size={16}/><span>Back to the music</span></button><div><BookOpen size={18}/><h1 id="guide-title">Sotto help</h1></div><span className="guide-version">Practice guide · v0.3</span></header>
+    <div className="guide-layout"><aside className="guide-index"><label className="guide-search"><Search size={16}/><input aria-label="Search help" placeholder="Find a feature…" value={query} onChange={event => setQuery(event.target.value)}/>{query && <button aria-label="Clear help search" onClick={() => setQuery('')}><X size={14}/></button>}</label>
+      <nav aria-label="Help topics">{visible.map(topic => <button key={topic.id} aria-current={selected?.id === topic.id ? 'page' : undefined} onClick={() => choose(topic.id)}>{topic.title}<ChevronRight size={13}/></button>)}</nav>
+      <label className="guide-topic-select">Topic<select aria-label="Help topic" value={selected?.id ?? ''} onChange={event => choose(event.target.value)}>{!visible.length && <option value="">No matches</option>}{visible.map(topic => <option key={topic.id} value={topic.id}>{topic.title}</option>)}</select></label>
+    </aside>
+    <article className="guide-article" ref={article} aria-live="polite">{selected ? <div className="guide-content"><span className="eyebrow">SOTTO PRACTICE GUIDE</span><h2>{selected.title}</h2><p className="guide-summary">{selected.summary}</p>{selected.content}<footer><button className="quiet-button" onClick={onClose}><ArrowLeft size={14}/> Back to the music</button></footer></div> : <div className="guide-empty"><h2>No matching topics</h2><p>Try “metronome”, “bass”, “backup” or “microphone”.</p><button className="quiet-button" onClick={() => setQuery('')}>Show all topics</button></div>}</article></div>
+  </dialog>;
+}

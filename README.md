@@ -4,6 +4,8 @@ A local web practice player, starting with Julia Florida. React + TypeScript + V
 
 **New piece? Start with [Prepare a new score](#prepare-a-new-score).**
 
+For the player’s features and step-by-step practice workflows, choose **? Help** in the top bar or open the [Sotto practice guide](https://laughingrice.github.io/sotto/#help). The searchable guide covers playback, per-part instruments, loops, metronome/count-in, screen space, folder libraries, backups, microphone rhythm feedback, score preparation and troubleshooting. It works offline after the app has cached and uses a topic selector on smaller screens. Each topic explains where to find its controls and how to use them.
+
 ## Deploy to GitHub Pages
 
 The repository includes a workflow that tests, builds, and publishes the static app. No LilyPond installation or server is needed for deployment: the compiled example score is already included.
