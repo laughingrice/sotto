@@ -63,7 +63,7 @@ describe('rhythm input and timing', () => {
     expect(pass.stats.missed).toBe(1);
   });
   it('groups chord notes and excludes tied continuations and grace ornaments', () => {
-    const score: Score = JSON.parse(readFileSync(new URL('../public/scores/julia-florida.sotto.json', import.meta.url), 'utf8'));
+    const score: Score = JSON.parse(readFileSync(new URL('../scripts/fixtures/julia-florida.sotto.json', import.meta.url), 'utf8'));
     const performance = makePerformance(score);
     const attacks = expectedAttacks(performance, 'melody');
     expect(new Set(attacks).size).toBe(attacks.length);

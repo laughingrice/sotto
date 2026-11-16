@@ -49,7 +49,7 @@ const portableOptions: Record<string, (value: string) => boolean> = {
 };
 export type PortablePreferences = { version: 1; general: Preferences; options: Record<string, string>; songs: Record<string, Partial<PracticeSettings>>; lastSong?: string };
 export function exportPreferences(songKeys: string[]): PortablePreferences {
-  const keys = new Set(['builtin:julia-florida', ...songKeys]);
+  const keys = new Set(['builtin:julia-florida', 'builtin:carcassi', ...songKeys]);
   const songs = Object.fromEntries([...keys].flatMap(key => {
     const value = read(`sotto.practice.${key}`);
     return Object.keys(value).length ? [[key, value]] : [];
@@ -77,7 +77,7 @@ export function parsePreferences(value: unknown, songKeys: string[]): PortablePr
     if (!Object.hasOwn(portableOptions, key) || typeof item !== 'string' || !portableOptions[key](item)) throw invalid();
     return [key, item];
   }));
-  const allowed = new Set(['builtin:julia-florida', ...songKeys]);
+  const allowed = new Set(['builtin:julia-florida', 'builtin:carcassi', ...songKeys]);
   const id = (item: unknown): item is string => typeof item === 'string' && item.length > 0 && item.length <= 2000;
   const numeric: Record<string, [number, number]> = { bpm: [15, 300], beat: [0, 1e9], loopStart: [0, 1e7], loopEnd: [0, 1e7] };
   const songs = Object.fromEntries(Object.entries(value.songs).map(([key, item]) => {

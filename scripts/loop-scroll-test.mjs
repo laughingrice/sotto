@@ -1,3 +1,4 @@
+import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -9,7 +10,7 @@ const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.BASE_URL || 'http://localhost:4176/sotto/');
+  await page.goto(process.env.BASE_URL || 'http://localhost:4176/sotto/'); await openPracticeFixture(page);
   await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
   // Two short bars on the first line, with the next line well below the viewport.
   const fixture = { format: 'sotto-score', version: 1, title: 'Loop boundary', composer: '', subtitle: '', description: '',

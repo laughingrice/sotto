@@ -1,3 +1,4 @@
+import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
@@ -16,7 +17,7 @@ await page.addInitScript(() => {
 const button = name => page.getByRole('button', { name, exact: true });
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.BASE_URL || 'http://localhost:4176/sotto/');
+  await page.goto(process.env.BASE_URL || 'http://localhost:4176/sotto/'); await openPracticeFixture(page);
   await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
   await page.locator('[data-score-input]').setInputFiles({ name: source.split('/').at(-1), mimeType: 'application/json', buffer: Buffer.from(text) });
   await page.getByRole('heading', { name: score.title, exact: true }).waitFor();

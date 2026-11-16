@@ -1,3 +1,4 @@
+import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
@@ -12,7 +13,7 @@ await page.addInitScript(() => {
   const start = AudioBufferSourceNode.prototype.start;
   AudioBufferSourceNode.prototype.start = function (...args) { if (Math.abs((this.buffer?.duration ?? 0) - .035) < .0001) window.clickStarts++; if (this.buffer?.duration > .1 && !this.loop) window.instrumentStarts++; return start.apply(this, args); };
 });
-const fixture = JSON.parse(await readFile(new URL('../public/scores/julia-florida.sotto.json', import.meta.url), 'utf8'));
+const fixture = JSON.parse(await readFile(new URL('./fixtures/julia-florida.sotto.json', import.meta.url), 'utf8'));
 const heading = title => page.getByRole('heading', { name: title, exact: true, includeHidden: true }).waitFor({ state: 'attached' });
 const button = name => page.getByRole('button', { name, exact: true });
 const slider = name => page.getByRole('slider', { name, exact: true });
@@ -25,7 +26,7 @@ const openBook = async title => {
 };
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.BASE_URL || 'http://localhost:4176/sotto/'); await heading('Julia Florida');
+  await page.goto(process.env.BASE_URL || 'http://localhost:4176/sotto/'); await openPracticeFixture(page); await heading('Julia Florida');
   await page.evaluate(async fixture => {
     const root = await navigator.storage.getDirectory();
     const file = await root.getFileHandle('practice-a.sotto.json', { create: true });

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compile a trusted LilyPond score into a portable Sotto practice bundle.
 
-Built-in example: python3 scripts/export_score.py
+Public samples:   python3 scripts/export_score.py
 Other .ly file:   python3 scripts/export_score.py score.ly --title 'My piece'
 MusicXML: first run musicxml2ly --output=score.ly score.musicxml, then export.
 Requires LilyPond 2.26 and Python 3; no Python packages are needed.
@@ -119,7 +119,7 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
     with tempfile.TemporaryDirectory(prefix='sotto-export-') as temp:
         folder = Path(temp)
         (folder / 'score.ly').write_text(text)
-        compilation = subprocess.run(['lilypond', '-I', str(source.parent), '-dbackend=svg', '-dno-point-and-click', '-o', 'score', 'score.ly'],
+        compilation = subprocess.run(['lilypond', '-I', str(source.parent), '-dbackend=svg', '-dno-point-and-click', '-o', 'score', str(folder / 'score.ly')],
                                      cwd=folder, check=True, capture_output=True, text=True)
         if 'programming error:' in compilation.stderr:
             raise ValueError('LilyPond reported an internal error; no partial playback will be exported.\n' + compilation.stderr)
@@ -171,7 +171,7 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('source', nargs='?', type=Path, help='Source .ly file; omit only to rebuild the built-in Julia Florida example.')
+    parser.add_argument('source', nargs='?', type=Path, help='Source .ly file; omit only to rebuild the public sample library.')
     parser.add_argument('--title')
     parser.add_argument('--composer')
     parser.add_argument('--beats-per-bar', type=float, help='Deprecated: measure boundaries are read from LilyPond Timing.')
@@ -182,10 +182,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.source is None:
         if any(value is not None for value in (args.title, args.composer, args.output, args.beats_per_bar, args.beat_unit, args.bpm, args.transpose)):
-            parser.error('Provide the .ly source path when exporting a custom score. Omitting the source exports Julia Florida; changing the title or output does not change the music.')
-        args.source = DEFAULT_SOURCE
+            parser.error('Provide the .ly source path when exporting a custom score. Omitting the source rebuilds the public sample library; changing the title or output does not change the music.')
+        from build_samples import main
+        main()
+        raise SystemExit(0)
     julia = args.source.resolve() == DEFAULT_SOURCE.resolve()
-    output = args.output or (ROOT / 'public/scores/julia-florida.sotto.json' if julia else args.source.with_suffix('.sotto.json'))
+    output = args.output or args.source.with_suffix('.sotto.json')
     try:
         compile_score(args.source.resolve(), args.title or ('Julia Florida' if julia else args.source.stem),
                       args.composer or ('Agustín Barrios' if julia else ''), output, julia,

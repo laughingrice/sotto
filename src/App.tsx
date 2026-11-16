@@ -10,13 +10,14 @@ import { buildBarHighlights } from './bar-highlight';
 import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, loopDisplayBeat, validateScore, type Score } from './score';
 import { INSTRUMENTS, clickStep, isInstrument, voiceInstrument, type ClickMode, type InstrumentId } from './sounds';
 
-const DEFAULT_SCORE = `${import.meta.env.BASE_URL}scores/julia-florida.sotto.json`;
+const DEFAULT_SCORE = `${import.meta.env.BASE_URL}scores/samples/carcassi.sotto.json`;
+const DEFAULT_KEY = 'builtin:carcassi';
 
 export default function App() {
   const [preferences] = useState(loadPreferences);
   const player = useMemo(() => new Player(), []);
   const [score, setScore] = useState<Score | null>(null);
-  const [scoreKey, setScoreKey] = useState('builtin:julia-florida');
+  const [scoreKey, setScoreKey] = useState(DEFAULT_KEY);
   const [settingsGeneration, setSettingsGeneration] = useState(0);
   const [resumeNeeded, setResumeNeeded] = useState('');
   const [practiceVoice, setPracticeVoice] = useState('melody');
@@ -133,7 +134,7 @@ export default function App() {
     zoomAnchor.current = null;
   }, [zoom]);
 
-  const openScore = useCallback((value: unknown, key = 'builtin:julia-florida', persist = true) => {
+  const openScore = useCallback((value: unknown, key = DEFAULT_KEY, persist = true) => {
     validateScore(value);
     value.pages.forEach(cleanSvg);
     if (latestPractice.current) savePractice(latestPractice.current.key, latestPractice.current.settings);
@@ -157,7 +158,7 @@ export default function App() {
       const response = await fetch(DEFAULT_SCORE, { signal: controller.signal });
       if (!response.ok) throw new Error('The example score could not be loaded.');
       const value: unknown = await response.json();
-      if (!controller.signal.aborted && openedVersion.current === version) openScore(value, 'builtin:julia-florida', false);
+      if (!controller.signal.aborted && openedVersion.current === version) openScore(value, DEFAULT_KEY, false);
     })().catch(reason => { if (reason.name !== 'AbortError') setError(reason.message); });
     return () => { controller.abort(); player.dispose(); };
   }, [openScore, player]);

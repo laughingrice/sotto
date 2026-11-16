@@ -1,6 +1,6 @@
 # Sotto v0.3
 
-A local web practice player, starting with Julia Florida. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The bundled instrument recordings, synthesized timbres, and metronome work offline.
+A local web practice player, starting with a public-domain Carcassi guitar study and seven ready-to-play public-domain samples. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The bundled instrument recordings, synthesized timbres, and metronome work offline.
 
 **New piece? Start with [Prepare a new score](#prepare-a-new-score).**
 
@@ -53,16 +53,16 @@ The production build includes a service worker that caches the app, built-in sco
 - Actual LilyPond SVG pages with individual notehead IDs and voice membership.
 - Playback with a full-bar highlight, simultaneous active-note highlighting, and automatic scrolling. Bar highlights also work with existing score bundles.
 - Click-to-seek, pause/resume, restart, previous/next bar, and scrubber.
-- Tempo control measured in dotted-quarter beats for Julia Florida.
+- Tempo control uses the exported pulse, including dotted-quarter and half-note beats.
 - Piece details in the settings panel; Open and Save score together in the top bar.
 - Hide/show all practice controls to give the score the full viewport, with compact restart, previous/next bar, play/pause and listening buttons. The ear button starts/stops the microphone directly; the microphone icon still shows/hides the feedback strip. The setting is remembered and playback continues while controls are hidden.
 - The score panel fills the available browser width. Zoom ranges from 50–250%; click the percentage to fit the page to the available width again. Enlarged pages can be panned horizontally, and Follow score keeps the current bar in view in both directions.
 - Voice mute, solo, and independent volume.
 - Tempo controls reach 220 BPM; imported scores with a faster saved/original tempo remain supported.
 - Phrase loops and an accented metronome with beat/subdivision choice and independent click volume. It can click while the score is paused or follow playback.
-- Both alternate endings, repeated section, and D.C. al Coda for the example.
-- Guitar playback one octave below the written notation, including low D2.
-- Instrument selection: recorded nylon guitar, piano and violin, plus synthesized marimba, organ and flute. The recordings are bundled with the app, balanced in level, and cached for offline use.
+- Structured repeats, alternate endings and explicitly encoded D.S./D.C./coda playback order.
+- Guitar transposition to sounding pitch; percussion keeps its drum keys.
+- Instrument selection: recorded nylon guitar, piano, violin, electric bass and acoustic drums, plus synthesized marimba, organ and flute. The recordings are bundled with the app, balanced in level, and cached for offline use.
 - Save/open portable `.sotto.json` bundles. Imported SVG is sanitized before rendering.
 - Meter changes use exported bar timing for playback, navigation, highlights, and metronome accents.
 - A persistent library of file/folder bookmarks, favorites, and a portable settings backup; the last opened song alone is cached for resuming. Granted folder handles are refreshed when Library opens, with separate Refresh and Reconnect actions.
@@ -98,7 +98,7 @@ python3 scripts/export_score.py my-score.ly \
   --output my-score.sotto.json
 ```
 
-Always pass the `.ly` source path for a custom piece. Omitting it is reserved for rebuilding Julia Florida with no options; custom titles or output paths without a source are rejected. Renaming a bundle does not change its engraved pages, notes or parts. Named voices on separate staves (for example, Violin I and Violin II) export as independent parts, in score order, with separate colors and mute/solo/volume controls.
+Always pass the `.ly` source path for a custom piece. With no arguments, the exporter rebuilds the public sample library; custom titles or output paths without a source are rejected. Renaming a bundle does not change its engraved pages, notes or parts. Named voices on separate staves (for example, Violin I and Violin II) export as independent parts, in score order, with separate colors and mute/solo/volume controls.
 
 For **6/8 guitar**, with a dotted-quarter pulse:
 
@@ -126,26 +126,61 @@ Transfer `my-score.sotto.json` to the tablet using Files, AirDrop, or a file-sha
 
 The last song is cached for resuming across reloads; **Library** remembers the other score bookmarks and favorites. See the library workflow below.
 
-### Rebuild the included example
+### Rebuild the public samples
 
-The editable example is `scores/julia-florida.ly`. After editing it:
+The source editions and credits are under `scores/samples/`. Rebuild all seven with LilyPond 2.26, `convert-ly` and Python 3:
 
 ```sh
-npm run export:score
+python3 scripts/build_samples.py
+# equivalent: npm run export:score
 ```
 
-This regenerates `public/scores/julia-florida.sotto.json`. The exporter installs a custom engraver that writes note IDs, durations, voices, ties, score positions and measure numbers while LilyPond renders SVG. Repeated performances reference the same notehead IDs. For new pieces, the exporter unfolds LilyPond’s structured repeats and uses the source locations of notes/rests to map each playback measure back to its printed measure.
+This preserves the original sources, updates working copies for current LilyPond syntax, prepares independent practice parts and writes `.sotto.json` bundles, downloadable source archives and `catalog.json` under `public/scores/samples/`. Carcassi’s Étude Op. 60 No. 1 is the default. The sample editions are designated public domain by Mutopia; original credits remain in the engraving, source archives and catalog. See `scores/samples/README.md` for provenance and adaptation details.
+
+Julia Florida is no longer served by the app. Its existing regression fixture lives outside `public/`; locally opened scores and saved settings continue to work. The legacy LilyPond source can still be exported explicitly for personal use, with output beside the source by default.
 
 ### Where scores are stored, and what “Open” means
 
-The example is committed to this repository in two forms:
+The public sample library uses:
 
-- `scores/julia-florida.ly`: editable notation source.
-- `public/scores/julia-florida.sotto.json`: rendered SVG pages, note timings, voices, metadata, and playback sequence. This is what the deployed app downloads.
+- `scores/samples/`: unchanged original LilyPond editions.
+- `scripts/build_samples.py`: reproducible adaptations and exports.
+- `public/scores/samples/catalog.json`: lightweight titles, instruments, source/license credits and relative bundle URLs.
+- `public/scores/samples/*.sotto.json`: rendered notation, timing and playback order.
 
-The browser caches the built-in bundle for offline use; the cache is not the original or only copy. **Open score** reads a `.sotto.json` file locally and remembers a bookmark in Library. It does not upload anything to GitHub or to a server, and a page reload resumes your last song. Keep your bundle file as the original; **Save score** downloads a separate copy only when requested.
+Only the small default Carcassi score is precached with the app for offline startup. Connecting a catalog downloads its metadata, not all its scores. Opening a piece downloads that bundle and replaces the one-song resume cache. Service-worker Cache Storage does not accumulate other score bundles or source archives. Catalog metadata, favorites and per-song settings are included in library backups; score files are not.
 
-To publish a different built-in score for everyone, commit its `.ly` source under `scores/` and its bundle under `public/scores/`, then change `DEFAULT_SCORE` in `src/App.tsx` to that bundle's URL, using `import.meta.env.BASE_URL` as the prefix. Push to `main`; GitHub Actions rebuilds and deploys. Simply adding a file to the repo does not list it in the app: the personal Library lists files/folders you choose, rather than scanning the deployed repository.
+**Open score** still reads local `.sotto.json` files without uploading them. Keep personal/copyrighted editions outside `public/`: Vite publishes everything in that directory. **Save score** downloads a separate copy.
+
+### Host an online library
+
+For a small public collection, keep sources and generated bundles in Git and serve the catalog/bundles through the existing GitHub Pages deployment. The seven starter bundles total about 8 MB; no extra service or account is needed. A larger independently updated library can live in its own Pages repository or an HTTPS object-storage bucket. For another origin, configure CORS to allow `GET` from Sotto’s origin (or `*` for a public library). Serve JSON directly, without authentication or a sharing-page wrapper. OneDrive remains useful for the personal local/synced-folder workflow; its public sharing pages are not a static catalog host.
+
+Open **Library → Sample scores** for the included collection, or **Connect an online library** and paste a catalog URL. Online catalog connections persist and transfer in backups. Refresh re-reads a catalog while preserving favorites and practice settings for stable entry IDs. A catalog controls which entries it lists; removing one from the catalog removes that bookmark on refresh.
+
+Example `catalog.json` (relative paths resolve against the catalog URL):
+
+```json
+{
+  "format": "sotto-catalog",
+  "version": 1,
+  "title": "My public library",
+  "scores": [{
+    "id": "study-1",
+    "title": "Study No. 1",
+    "composer": "Composer",
+    "instruments": "Guitar",
+    "file": "study-1.sotto.json",
+    "license": "Public Domain",
+    "credit": "Edition/typesetter credit",
+    "source": "https://example.org/original-edition",
+    "sourceFile": "study-1-source.zip",
+    "description": "Optional notes about the edition or adaptation"
+  }]
+}
+```
+
+Use stable alphanumeric IDs (`-` and `_` allowed), check redistribution rights for each edition, and preserve its attribution/license requirements. Sotto validates the catalog structure and links; it cannot verify a host’s legal claims. There are no credentials or cloud sign-in flows in this first online-library implementation.
 
 The exporter requires a single engraved score, an explicit `\layout { }` block, and named voices for meaningful part controls. It reads actual measure timing from LilyPond, including changing meters, silent measures, pickups, and a final cadenza. The exporter unfolds structured repeats (including nested repeats and alternate endings). If there is a MIDI score, it uses that score’s music for playback order; otherwise it unfolds the engraved score. Printed and MIDI versions must share named voices and underlying measure definitions so source locations can link them reliably. Ambiguous mappings fail explicitly. Tempo maps still need a more general importer. Instrument `\transposition` metadata is applied to exported sounding pitches. Drum noteheads use LilyPond’s General MIDI drum mapping (or a custom `drumPitchTable`), retain a separate voice, and play through the bundled recorded acoustic drum kit. Per-voice instrument selectors can override automatic name/metadata detection; octave changes apply to pitched notes without changing percussion keys. Julia Florida retains its existing explicit navigation map. Export only LilyPond files you trust, since the compiler executes Scheme.
 

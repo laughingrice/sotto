@@ -1,0 +1,98 @@
+{
+  "format": "sotto-catalog",
+  "version": 1,
+  "title": "Sotto sample scores",
+  "scores": [
+    {
+      "id": "carcassi",
+      "title": "Étude Op. 60 No. 1",
+      "composer": "Matteo Carcassi",
+      "instruments": "Guitar",
+      "file": "carcassi.sotto.json",
+      "bytes": 321570,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=13",
+      "license": "Public Domain",
+      "credit": "Jeff Covey",
+      "sourceFile": "carcassi-source.zip",
+      "description": "Public-domain Mutopia edition · prepared for Sotto"
+    },
+    {
+      "id": "invention-2",
+      "title": "Invention No. 2 · BWV 773",
+      "composer": "Johann Sebastian Bach",
+      "instruments": "Piano",
+      "file": "invention-2.sotto.json",
+      "bytes": 676142,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=58",
+      "license": "Public Domain",
+      "credit": "Allen Garvin",
+      "sourceFile": "invention-2-source.zip",
+      "description": "Public-domain Mutopia edition · prepared for Sotto"
+    },
+    {
+      "id": "invention-8",
+      "title": "Invention No. 8 · BWV 779",
+      "composer": "Johann Sebastian Bach",
+      "instruments": "Piano",
+      "file": "invention-8.sotto.json",
+      "bytes": 561972,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=61",
+      "license": "Public Domain",
+      "credit": "Allen Garvin",
+      "sourceFile": "invention-8-source.zip",
+      "description": "Public-domain Mutopia edition · prepared for Sotto"
+    },
+    {
+      "id": "double-concerto",
+      "title": "Double Violin Concerto · I. Vivace",
+      "composer": "Johann Sebastian Bach",
+      "instruments": "Violins & strings",
+      "file": "double-concerto.sotto.json",
+      "bytes": 4244023,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=3",
+      "license": "Public Domain",
+      "credit": "David Chan",
+      "sourceFile": "double-concerto-source.zip",
+      "description": "First movement · six independent string parts; viola and continuo use violin timbre."
+    },
+    {
+      "id": "entertainer",
+      "title": "The Entertainer",
+      "composer": "Scott Joplin",
+      "instruments": "Piano",
+      "file": "entertainer.sotto.json",
+      "bytes": 1452559,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=263",
+      "license": "Public Domain",
+      "credit": "Chris Sawer; revised by Simon Albrecht",
+      "sourceFile": "entertainer-source.zip",
+      "description": "Public-domain Mutopia edition · prepared for Sotto"
+    },
+    {
+      "id": "lagrima",
+      "title": "Lágrima · guitar duo",
+      "composer": "Francisco Tárrega",
+      "instruments": "Two guitars",
+      "file": "lagrima.sotto.json",
+      "bytes": 253154,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=2103",
+      "license": "Public Domain",
+      "credit": "Jeffrey Olson (arranger and typesetter)",
+      "sourceFile": "lagrima-source.zip",
+      "description": "Guitar duo · synchronized section repeats and D.S. al Fine playback."
+    },
+    {
+      "id": "greensleeves",
+      "title": "Greensleeves to a Ground with Division",
+      "composer": "Anonymous",
+      "instruments": "Violin",
+      "file": "greensleeves.sotto.json",
+      "bytes": 710307,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=1730",
+      "license": "Public Domain",
+      "credit": "Allen Garvin",
+      "sourceFile": "greensleeves-source.zip",
+      "description": "Public-domain Mutopia edition · prepared for Sotto"
+    }
+  ]
+}

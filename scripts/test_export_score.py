@@ -14,6 +14,22 @@ class ExportTests(unittest.TestCase):
             source.write_text('\\version "2.26.0"\n' + music)
             return compile_score(source, 'Fixture', '', Path(temp) / 'out.json', False)
 
+    def test_source_named_score_ly_does_not_shadow_instrumented_temporary_input(self):
+        with tempfile.TemporaryDirectory(prefix='sotto-named-score-') as temp:
+            source = Path(temp) / 'score.ly'
+            source.write_text(r'''\version "2.26.0"
+\score { \new Voice = "melody" { c'1 } \layout { } }''')
+            bundle = compile_score(source, 'Fixture', '', Path(temp) / 'out.json', False)
+            self.assertEqual(len(bundle['notes']), 1)
+
+    def test_anonymous_polyphonic_voices_on_different_staves_are_distinct(self):
+        bundle = self.export(r'''
+\score { \new PianoStaff <<
+  \new Staff = "right" << { c''1 } \\ { e'1 } >>
+  \new Staff = "left" << { c'1 } \\ { e1 } >>
+>> \layout { } }''')
+        self.assertEqual({voice['id'] for voice in bundle['voices']}, {'right:1', 'right:2', 'left:1', 'left:2'})
+
     def test_custom_export_requires_a_source_instead_of_relabeling_julia(self):
         result = subprocess.run([sys.executable, str(Path(__file__).with_name('export_score.py')), '--title', 'Spring', '--output', 'spring.sotto.json'], capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)

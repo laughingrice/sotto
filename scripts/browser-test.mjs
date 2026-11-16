@@ -1,6 +1,8 @@
+import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
+const fixture = JSON.parse(await readFile(new URL('./fixtures/julia-florida.sotto.json', import.meta.url), 'utf8'));
 const production = process.argv.includes('--production');
 const pages = process.argv.includes('--pages');
 const chromeArgument = process.argv.indexOf('--chrome');
@@ -21,7 +23,7 @@ await page.addInitScript(() => {
 });
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.BASE_URL || (pages ? 'http://localhost:4174/sotto/' : production ? 'http://localhost:4173/' : 'http://localhost:5173/'));
+  await page.goto(process.env.BASE_URL || (pages ? 'http://localhost:4174/sotto/' : production ? 'http://localhost:4173/' : 'http://localhost:5173/')); await openPracticeFixture(page);
   await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
   assert.equal(await page.locator('.score-note').count(), 500);
   assert.equal(await page.locator('.current-bar-highlight').count(), 61, 'Every written measure has a highlight rectangle');
@@ -89,7 +91,7 @@ try {
   assert.equal(await page.getByRole('combobox', { name: 'Loop start measure' }).locator('option').count(), 61);
   await page.getByRole('checkbox', { name: 'Follow repeats & jumps' }).check();
   assert.equal(await page.getByRole('combobox', { name: 'Loop start measure' }).locator('option').count(), 88);
-  const noteId = await page.evaluate(async () => (await (await fetch(new URL('scores/julia-florida.sotto.json', location.href))).json()).notes.find(note => note.bar === 3 && note.grace === 0).id);
+  const noteId = fixture.notes.find(note => note.bar === 3 && note.grace === 0).id;
   await page.locator(`#${noteId}`).click({ force: true });
   assert.equal(await page.locator('.measure-readout strong').innerText(), '3 / 59');
   assert.equal(await page.locator('.current-bar-highlight.is-current').getAttribute('data-bar-index'), '2');
@@ -98,11 +100,10 @@ try {
   await page.locator('input[type=file]').setInputFiles({ name: 'bad.sotto.json', mimeType: 'application/json', buffer: Buffer.from('{"format":"midi"}') });
   await page.getByRole('alert').waitFor();
   await page.getByRole('button', { name: 'Dismiss error', exact: true }).click();
-  const maliciousBundle = await page.evaluate(async () => {
-    const score = await (await fetch(new URL('scores/julia-florida.sotto.json', location.href))).json();
+  const maliciousBundle = await page.evaluate(score => {
     score.pages[0] = score.pages[0].replace('<svg', '<svg onload="window.svgInjected=true"').replace(/(<svg[^>]*>)/, '$1<script>window.svgInjected=true</script><foreignObject/><use href="https://evil.example/a"/>');
     return JSON.stringify(score);
-  });
+  }, fixture);
   await page.locator('input[type=file]').setInputFiles({ name: 'sanitization.sotto.json', mimeType: 'application/json', buffer: Buffer.from(maliciousBundle) });
   await page.waitForTimeout(100);
   assert.equal(await page.evaluate(() => window.svgInjected), undefined, 'Imported SVG is not executable');

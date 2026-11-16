@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { activeNotes, clockTime, makePerformance, measureAt, loopDisplayBeat, validateScore, type Score } from './score';
 
-const score: Score = JSON.parse(readFileSync(new URL('../public/scores/julia-florida.sotto.json', import.meta.url), 'utf8'));
+const score: Score = JSON.parse(readFileSync(new URL('../scripts/fixtures/julia-florida.sotto.json', import.meta.url), 'utf8'));
 
 describe('performance order and note mapping', () => {
   it('exports every notehead and all three independent voices', () => {

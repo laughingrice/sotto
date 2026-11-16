@@ -1,5 +1,6 @@
 import type { Score } from './score';
 import type { PortablePreferences } from './preferences';
+import { onlineUrl, parseOnlineScore, type OnlineScore } from './catalog';
 /** The library index stores references and metadata. A separate single slot
  * caches the last opened score for resuming when file access is unavailable. */
 export type ReadHandle = {
@@ -20,8 +21,9 @@ export type LibraryEntry = {
   id: string; name: string; title: string; composer: string;
   folderId?: string; path?: string; favorite: boolean; lastOpened?: number;
   handle?: ReadHandle; fileSize?: number; modified?: number;
+  online?: OnlineScore;
 };
-export type LibraryFolder = { id: string; name: string; handle?: DirectoryHandle };
+export type LibraryFolder = { id: string; name: string; handle?: DirectoryHandle; catalogUrl?: string };
 export type Library = { entries: LibraryEntry[]; folders: LibraryFolder[] };
 export const emptyLibrary = (): Library => ({ entries: [], folders: [] });
 export const filePickers = globalThis as unknown as {
@@ -88,7 +90,7 @@ export function saveLastScore(key: string, score: Score): Promise<void> {
 }
 export function exportLibrary(library: Library, settings?: PortablePreferences): string {
   return JSON.stringify({ format: 'sotto-library', version: 1, ...(settings ? { settings } : {}),
-    folders: library.folders.map(({ id, name }) => ({ id, name })),
+    folders: library.folders.map(({ id, name, catalogUrl }) => ({ id, name, ...(catalogUrl ? { catalogUrl } : {}) })),
     entries: library.entries.map(({ handle: _handle, ...metadata }) => metadata),
   }, null, 2);
 }
@@ -99,7 +101,7 @@ export function parseLibrary(text: string): Library {
       !Array.isArray(value.folders) || value.entries.length > 10000 || value.folders.length > 1000) throw new Error('This is not a Sotto library index.');
   const folders: LibraryFolder[] = value.folders.map((folder: LibraryFolder) => {
     if (!validString(folder.id) || !validString(folder.name)) throw new Error('Invalid folder bookmark.');
-    return { id: folder.id, name: folder.name };
+    return { id: folder.id, name: folder.name, ...(folder.catalogUrl !== undefined ? { catalogUrl: onlineUrl(folder.catalogUrl) } : {}) };
   });
   const entries: LibraryEntry[] = value.entries.map((entry: LibraryEntry) => {
     if (!validString(entry.id) || !validString(entry.name) || typeof entry.title !== 'string' || typeof entry.composer !== 'string' ||
@@ -109,6 +111,7 @@ export function parseLibrary(text: string): Library {
     return { id: entry.id, name: entry.name, title: entry.title, composer: entry.composer, favorite: entry.favorite,
       ...(entry.folderId ? { folderId: entry.folderId, path: entry.path } : {}),
       ...(entry.lastOpened !== undefined ? { lastOpened: entry.lastOpened } : {}),
+      ...(entry.online !== undefined ? { online: parseOnlineScore(entry.online) } : {}),
     };
   });
   if (new Set(folders.map(folder => folder.id)).size !== folders.length || new Set(entries.map(entry => entry.id)).size !== entries.length) throw new Error('Duplicate library identifiers.');

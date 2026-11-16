@@ -1,6 +1,9 @@
+import { readFile } from 'node:fs/promises';
+import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
+const fixture = JSON.parse(await readFile(new URL('./fixtures/julia-florida.sotto.json', import.meta.url), 'utf8'));
 
 const chromeArgument = process.argv.indexOf('--chrome');
 const chromePath = process.env.CHROME_PATH || (chromeArgument >= 0 ? process.argv[chromeArgument + 1] : undefined);
@@ -11,7 +14,7 @@ const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.BASE_URL || 'http://localhost:4174/sotto/');
+  await page.goto(process.env.BASE_URL || 'http://localhost:4174/sotto/'); await openPracticeFixture(page);
   await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
   const initialFrame = await page.locator('.score-frame').boundingBox();
   assert.ok(initialFrame.width > 2100, `Score frame should fill a wide viewport; got ${initialFrame.width}px`);
@@ -41,7 +44,7 @@ try {
   assert.ok(zoomedSvg.width > originalSvg.width * 1.18, 'Zoom increases actual notation size');
   assert.ok(await page.locator('.score-scroller').evaluate(element => element.scrollWidth > element.clientWidth), 'Zoomed pages can be panned horizontally');
   const firstNote = await page.locator('.score-note').first().boundingBox();
-  const lastNoteId = await page.evaluate(async () => (await (await fetch(new URL('scores/julia-florida.sotto.json', location.href))).json()).notes.find(note => note.bar === 4 && note.grace === 0).id);
+  const lastNoteId = fixture.notes.find(note => note.bar === 4 && note.grace === 0).id;
   await page.getByRole('button', { name: 'Show controls', exact: true }).click();
   await page.getByRole('slider', { name: 'Playback position', exact: true }).fill('9');
   await page.waitForTimeout(450);

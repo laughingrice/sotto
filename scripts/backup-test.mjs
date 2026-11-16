@@ -1,3 +1,4 @@
+import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
@@ -8,7 +9,7 @@ const source = await browser.newPage({ viewport: { width: 1440, height: 1000 } }
 const target = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 for (const page of [source, target]) page.on('pageerror', error => errors.push(error.message));
 const base = process.env.BASE_URL || 'http://localhost:4176/sotto/';
-const fixture = JSON.parse(await readFile(new URL('../public/scores/julia-florida.sotto.json', import.meta.url), 'utf8')); fixture.title = 'Portable practice';
+const fixture = JSON.parse(await readFile(new URL('./fixtures/julia-florida.sotto.json', import.meta.url), 'utf8')); fixture.title = 'Portable practice';
 const file = { name: 'portable.sotto.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) };
 const button = (page, name) => page.getByRole('button', { name, exact: true });
 const slider = (page, name) => page.getByRole('slider', { name, exact: true });
@@ -16,7 +17,7 @@ const select = (page, name) => page.getByRole('combobox', { name, exact: true })
 const heading = (page, name) => page.getByRole('heading', { name, exact: true }).waitFor();
 await mkdir('test-results', { recursive: true });
 try {
-  await source.goto(base); await heading(source, 'Julia Florida');
+  await source.goto(base); await openPracticeFixture(source); await heading(source, 'Julia Florida');
   await source.locator('[data-score-input]').setInputFiles(file); await heading(source, fixture.title);
   await source.getByRole('combobox', { name: 'Melody instrument', exact: true }).selectOption('flute');
   await slider(source, 'Tempo').fill('62'); await button(source, 'Mute bass').click(); await slider(source, 'Melody volume').fill('55');
@@ -33,7 +34,7 @@ try {
   assert.ok(text.length < 10000 && !text.includes('<svg') && !text.includes('"notes"') && !text.includes('source-mic') && !text.includes('inputDelay'), 'Backup stays small and excludes score payloads and device calibration');
   assert.equal(Object.values(backup.settings.songs).find(song => song.bpm === 62)?.beat, 12);
   // A separate browser context has no source storage, cache, permissions or handles.
-  await target.goto(base); await heading(target, 'Julia Florida');
+  await target.goto(base); await openPracticeFixture(target); await heading(target, 'Julia Florida');
   await target.evaluate(() => { localStorage.setItem('sotto.inputDelay', '25'); localStorage.setItem('sotto.inputDevice', 'target-mic'); localStorage.setItem('unrelated', 'keep'); });
   await button(target, 'Score library').click();
   await target.getByLabel('Import library backup', { exact: true }).setInputFiles({ name: 'sotto-library.json', mimeType: 'application/json', buffer: Buffer.from(text) });

@@ -1,3 +1,4 @@
+import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
@@ -7,14 +8,14 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 page.setDefaultTimeout(10000);
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
-const fixture = JSON.parse(await readFile(new URL('../public/scores/julia-florida.sotto.json', import.meta.url), 'utf8'));
+const fixture = JSON.parse(await readFile(new URL('./fixtures/julia-florida.sotto.json', import.meta.url), 'utf8'));
 fixture.title = 'Library fixture';
 const inputScore = page.locator('[data-score-input]');
 const ready = () => page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
 const openLibrary = () => page.getByRole('button', { name: 'Score library', exact: true }).click();
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.BASE_URL || 'http://localhost:5175/'); await ready();
+  await page.goto(process.env.BASE_URL || 'http://localhost:5175/'); await openPracticeFixture(page); await ready();
   // Use real structured-cloneable browser file handles in IndexedDB. The
   // test picker selects an isolated fixture, never the user's directories.
   await page.evaluate(async fixture => {

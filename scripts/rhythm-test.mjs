@@ -1,3 +1,4 @@
+import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -76,7 +77,7 @@ const pause = () => page.getByRole('button', { name: 'Pause playback', exact: tr
 const controls = page.locator('.rhythm-stats');
 const ready = () => page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
 try {
-  await page.goto(process.env.BASE_URL || 'http://localhost:5175/'); await ready();
+  await page.goto(process.env.BASE_URL || 'http://localhost:5175/'); await openPracticeFixture(page); await ready();
   await page.getByRole('button', { name: 'Hide controls', exact: true }).click();
   const compact = page.getByRole('group', { name: 'Compact practice controls', exact: true });
   await compact.getByRole('button', { name: 'Next measure', exact: true }).click();

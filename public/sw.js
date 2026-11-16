@@ -1,6 +1,6 @@
 const BASE = new URL('./', self.location.href);
 const CACHE_PREFIX = `sotto:${BASE.pathname}:`;
-const CACHE = `${CACHE_PREFIX}v0.3.6`;
+const CACHE = `${CACHE_PREFIX}v0.3.7`;
 const localUrl = path => new URL(path, BASE).href;
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
@@ -12,7 +12,7 @@ self.addEventListener('install', event => {
       .filter(url => url.origin === BASE.origin && url.pathname.startsWith(BASE.pathname) && url.pathname.includes('/assets/'))
       .map(url => url.href);
     await cache.put(BASE.href, shell);
-    await cache.addAll(['icon.svg', 'manifest.webmanifest', 'rhythm-worklet.js', 'scores/julia-florida.sotto.json'].map(localUrl).concat(assets));
+    await cache.addAll(['icon.svg', 'manifest.webmanifest', 'rhythm-worklet.js', 'scores/samples/carcassi.sotto.json', 'scores/samples/catalog.json'].map(localUrl).concat(assets));
     const manifestResponse = await fetch(localUrl('samples/manifest.json'));
     if (!manifestResponse.ok) throw new Error('Instrument recordings could not be cached.');
     const manifest = await manifestResponse.clone().json();
@@ -27,6 +27,9 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== BASE.origin || !url.pathname.startsWith(BASE.pathname)) return;
+  // Download library scores only on demand. The app's IndexedDB resume slot
+  // stores one song; Cache Storage must not silently retain the entire library.
+  if ((url.pathname.endsWith('.sotto.json') && url.href !== localUrl('scores/samples/carcassi.sotto.json')) || url.pathname.endsWith('-source.zip')) return;
   event.respondWith(fetch(event.request).then(response => {
     if (response.ok) { const copy = response.clone(); event.waitUntil(caches.open(CACHE).then(cache => cache.put(event.request, copy))); }
     return response;

@@ -14,7 +14,7 @@ const heading = name => page.getByRole('heading', { name, exact: true });
 await mkdir('test-results', { recursive: true });
 try {
   await page.goto(base);
-  await heading('Julia Florida').waitFor();
+  await heading('Étude Op. 60 No. 1').waitFor();
   await page.getByRole('button', { name: 'Next measure', exact: true }).click();
   const position = await page.getByRole('slider', { name: 'Playback position', exact: true }).inputValue();
   const helpButton = page.getByRole('button', { name: 'Help and keyboard shortcuts' });

@@ -1,3 +1,4 @@
+import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
@@ -5,12 +6,12 @@ const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? undef
 const browser = await chromium.launch({ headless: true, executablePath: arg('--chrome') || process.env.CHROME_PATH });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const errors = []; page.on('pageerror', error => errors.push(error.message));
-const fixture = JSON.parse(await readFile(new URL('../public/scores/julia-florida.sotto.json', import.meta.url), 'utf8'));
+const fixture = JSON.parse(await readFile(new URL('./fixtures/julia-florida.sotto.json', import.meta.url), 'utf8'));
 const button = name => page.getByRole('button', { name, exact: true });
 const paths = ['Violin/Vivaldi/Book 1/Pieces/Spring/spring.sotto.json', 'Guitar/Tarrega/Book 2/marieta.sotto.json'];
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.BASE_URL || 'http://localhost:4176/sotto/');
+  await page.goto(process.env.BASE_URL || 'http://localhost:4176/sotto/'); await openPracticeFixture(page);
   await page.getByRole('heading', { name: 'Julia Florida', exact: true }).waitFor();
   await page.evaluate(async ({ fixture, paths }) => {
     const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('Cloud scores', { create: true });
