@@ -148,7 +148,8 @@ export async function scanDirectory(handle: DirectoryHandle, prefix = ''): Promi
   return paths;
 }
 export function connectFolder(library: Library, folder: LibraryFolder, paths: string[]): Library {
-  const entries = [...library.entries];
+  const present = new Set(paths);
+  const entries = library.entries.filter(entry => entry.folderId !== folder.id || (entry.path !== undefined && present.has(entry.path)));
   const existing = new Set(entries.filter(entry => entry.folderId === folder.id).map(entry => entry.path));
   for (const path of paths) {
     if (existing.has(path)) continue;

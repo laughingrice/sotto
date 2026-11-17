@@ -38,6 +38,8 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       const next = update(current.current);
       await saveLibrary(next);
       current.current = next; setLibrary(next);
+      const retained = new Set(next.entries.map(entry => entry.id));
+      for (const id of sessionFiles.current.keys()) if (!retained.has(id)) sessionFiles.current.delete(id);
     });
     writes.current = write;
     return write;
@@ -166,16 +168,22 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
         if (await folder.handle.requestPermission({ mode: 'read' }) !== 'granted') throw new Error('Folder access needs permission. Use Reconnect to choose the folder again.');
       }
       const paths = await scanDirectory(folder.handle);
+      let removed = 0;
       await commit(library => {
         const connected = library.folders.find(item => item.id === folder.id);
         // A completed scan must not resurrect a removed or reconnected folder.
-        return connected && connected.handle === folder.handle ? connectFolder(library, connected, paths) : library;
+        if (!connected || connected.handle !== folder.handle) return library;
+        const next = connectFolder(library, connected, paths);
+        // Count removed paths separately from newly discovered files.
+        const present = new Set(paths);
+        removed = library.entries.filter(entry => entry.folderId === folder.id && !present.has(entry.path ?? '')).length;
+        return next;
       });
-      if (request) setMessage(`Refreshed ${folder.name}.`);
+      if (request) setMessage(`Refreshed ${folder.name}.${removed ? ` Removed ${removed} missing score bookmark${removed === 1 ? '' : 's'}.` : ''}`);
     } catch (error) { report(error); }
     finally { setBusy(false); }
   }
-  // Quietly discover added files when the panel opens, provided permission is
+  // Quietly reconcile added and removed files when the panel opens, provided permission is
   // already granted. Only an explicit click may request permission or a picker.
   useEffect(() => {
     if (!visible) return;
@@ -252,21 +260,23 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       <p className="settings-note">Keep your scores in a folder of your choice, including a synced OneDrive folder. Browse nested folders at any depth. Scans list filenames without opening score files; titles and composers are remembered when you open a piece. The library stores bookmarks and favorites. Only the last opened song is cached for resuming; opening another replaces that copy.</p>
       {!filePickers.showDirectoryPicker && <p className="settings-note">Your last song can reopen from its cached copy. Other scores may require you to reselect files or reconnect a folder after reopening Sotto. On iPad, choose a score through Files → OneDrive. Chrome/Edge on desktop can remember file and folder access. A picker may call the selection “Upload”; Sotto reads it locally and does not send it anywhere.</p>}
       <p className="settings-note">Save a backup to OneDrive to transfer favorites, library references, general preferences and per-song practice settings. Import on the other device, then reconnect the folders. Cached sheet music and microphone device/calibration are excluded. Import merges songs and replaces saved settings for matching songs.</p>
-      <p className="settings-note">Removing a bookmark leaves the original file untouched. Reconnecting uses the selected folder’s relative paths. File access may need permission again; bookmarks do not sync automatically.</p>
+      <p className="settings-note">Refreshing removes bookmarks for missing files after a complete scan; failed scans keep the existing listing. Removing a bookmark leaves the original file untouched. Reconnecting uses the selected folder’s relative paths. File access may need permission again; bookmarks do not sync automatically.</p>
       </details>
       <input ref={folderInput} type="file" className="visually-hidden" aria-label="Connect score folder" {...{ webkitdirectory: '', directory: '' }} multiple onChange={event => {
-        const files = Array.from(event.target.files ?? []).filter(file => isScoreFile(file.name)); event.target.value = '';
-        if (!files.length) { setMessage('No .sotto or .sotto.json files were selected.'); return; }
+        const selected = Array.from(event.target.files ?? []); event.target.value = '';
+        if (!selected.length) return; // An empty selection can mean Cancel.
+        const files = selected.filter(file => isScoreFile(file.name));
         setBusy(true);
         void (async () => {
           await ready.current;
-          const folder = { id: reconnectFolder.current ?? crypto.randomUUID(), name: files[0].webkitRelativePath.split('/')[0] || 'Scores' };
+          const folder = { id: reconnectFolder.current ?? crypto.randomUUID(), name: selected[0].webkitRelativePath.split('/')[0] || 'Scores' };
           const paths = files.map(file => file.webkitRelativePath.split('/').slice(1).join('/') || file.name);
           await commit(library => {
             const next = connectFolder(library, folder, paths);
             files.forEach((file, i) => { const entry = next.entries.find(entry => entry.folderId === folder.id && entry.path === paths[i])!; sessionFiles.current.set(entry.id, file); });
             return next;
           });
+          if (!files.length) setMessage('This folder contains no Sotto scores. Removed its missing score bookmarks.');
         })().catch(report).finally(() => { setBusy(false); reconnectFolder.current = undefined; });
       }}/>
       <input ref={indexInput} type="file" accept=".json" className="visually-hidden" aria-label="Import library backup" onChange={event => {

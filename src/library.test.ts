@@ -26,6 +26,21 @@ describe('portable reference library', () => {
     expect(refreshed.entries[0].favorite).toBe(true);
     expect(refreshed.folders).toHaveLength(1);
   });
+  it('removes missing nested paths only from the refreshed folder, retaining IDs and metadata', () => {
+    const folder = { id: 'f', name: 'Scores' }, other = { id: 'other', name: 'Other' };
+    let library = connectFolder(emptyLibrary(), folder, ['Book/stays.sotto', 'Book/deleted.sotto', 'Renamed/old.sotto']);
+    Object.assign(library.entries[0], { title: 'Known title', composer: 'Composer', favorite: true });
+    const survivor = library.entries[0];
+    library = connectFolder(library, other, ['Book/deleted.sotto']);
+    library.entries.push({ id: 'loose', name: 'loose.sotto', title: 'Loose', composer: '', favorite: false });
+    const refreshed = connectFolder(library, folder, ['Book/stays.sotto', 'Renamed/new.sotto']);
+    expect(refreshed.entries.find(entry => entry.id === survivor.id)).toEqual(survivor);
+    expect(refreshed.entries.filter(entry => entry.folderId === 'f').map(entry => entry.path)).toEqual(['Book/stays.sotto', 'Renamed/new.sotto']);
+    expect(refreshed.entries.some(entry => entry.folderId === 'other' && entry.path === 'Book/deleted.sotto')).toBe(true);
+    expect(refreshed.entries.some(entry => entry.id === 'loose')).toBe(true);
+    expect(connectFolder(refreshed, folder, []).entries.filter(entry => entry.folderId === 'f')).toEqual([]);
+    expect(refreshed.folders).toHaveLength(2);
+  });
   it('rejects traversal paths and non-library files, and discards injected handles', () => {
     const value = { format: 'sotto-library', version: 1, folders: [{ id: 'f', name: 'Scores' }], entries: [
       { id: 's', name: 'piece.sotto.json', title: 'Piece', composer: '', favorite: false, folderId: 'f', path: '../piece.sotto.json' },
