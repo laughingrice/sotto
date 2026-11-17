@@ -417,7 +417,7 @@ export default function App() {
 
         <RhythmPanel key={settingsGeneration} ref={rhythmControl} visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} clickMode={clickMode} practiceVoice={practiceVoice} onPracticeVoice={setPracticeVoice} onMicState={setMicrophoneActive}
           prepareCalibration={() => { player.pause(); setPlaying(false); setBeat(player.beat); void player.setMetronome(false); setMetronomeMode('off'); }}
-          mutedVoices={effectivelyMuted} muteVoice={voice => {
+          pitchOffset={pitchOffset} instruments={resolvedInstruments} mutedVoices={effectivelyMuted} muteVoice={voice => {
             const selected = score?.voices.filter(item => voice === 'all' || item.id === voice) ?? [];
             const restore = selected.every(item => effectivelyMuted.has(item.id));
             setMuted(current => { const next = new Set(current); selected.forEach(item => { if (restore) next.delete(item.id); else next.add(item.id); }); return next; });

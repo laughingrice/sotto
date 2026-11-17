@@ -39,10 +39,12 @@ it('backs up song settings and portable preferences, excluding score data and de
   const saved = { ...loadPractice('library:one', score), bpm: 62, loop: true, loopStart: 1, loopEnd: 2, beat: 5, muted: ['melody'] };
   savePractice('library:one', saved); savePractice('library:other', { ...saved, bpm: 90 });
   rememberScore('library:one');
+  localStorage.setItem('sotto.pitchCheck', 'true');
   localStorage.setItem('sotto.instrument', 'violin'); localStorage.setItem('sotto.inputDelay', '180'); localStorage.setItem('sotto.inputDevice', 'source-mic');
   const backup = exportPreferences(['library:one']);
   expect(backup.songs).toEqual({ 'library:one': saved });
-  expect(backup.options).toEqual({ 'sotto.instrument': 'violin' });
+  expect(backup.options).toEqual({ 'sotto.instrument': 'violin', 'sotto.pitchCheck': 'true' });
+  localStorage.setItem('sotto.pitchCheck', 'false');
   expect(JSON.stringify(backup)).not.toMatch(/pages|notes|source-mic|inputDelay/);
   localStorage.setItem('sotto.inputDelay', '25'); localStorage.setItem('sotto.inputDevice', 'target-mic');
   savePractice('library:one', { ...saved, bpm: 100 });
@@ -51,6 +53,7 @@ it('backs up song settings and portable preferences, excluding score data and de
   expect(loadPractice('library:other', score).bpm).toBe(90);
   expect(localStorage.getItem('sotto.inputDelay')).toBe('25'); expect(localStorage.getItem('sotto.inputDevice')).toBe('target-mic');
   expect(lastScore()).toBe('library:one');
+  expect(localStorage.getItem('sotto.pitchCheck')).toBe('true');
 });
 it('accepts older indexes and validates the whole backup before importing settings', () => {
   expect(parsePreferences(undefined, [])).toBeUndefined();

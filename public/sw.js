@@ -1,18 +1,27 @@
 const BASE = new URL('./', self.location.href);
 const CACHE_PREFIX = `sotto:${BASE.pathname}:`;
-const CACHE = `${CACHE_PREFIX}v0.4.2`;
+const CACHE = `${CACHE_PREFIX}v0.4.3`;
 const localUrl = path => new URL(path, BASE).href;
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    const shell = await fetch(BASE.href);
+    const shell = await fetch(BASE.href, { cache: 'no-store' });
     const html = await shell.clone().text();
     const assets = [...html.matchAll(/(?:src|href)="([^\"]+)"/g)]
       .map(match => new URL(match[1], BASE))
       .filter(url => url.origin === BASE.origin && url.pathname.startsWith(BASE.pathname) && url.pathname.includes('/assets/'))
       .map(url => url.href);
+    // Include worker chunks so pitch checking can first be enabled offline.
+    const buildResponse = await fetch(localUrl('asset-manifest.json'), { cache: 'no-store' });
+    if (!buildResponse.ok) throw new Error('App assets could not be cached.');
+    const build = await buildResponse.clone().json();
+    const workerAssets = Object.values(build).flatMap(chunk => [chunk.file, ...(chunk.css ?? []), ...(chunk.assets ?? [])])
+      .filter(path => typeof path === 'string').map(path => new URL(path, BASE))
+      .filter(url => url.origin === BASE.origin && url.pathname.startsWith(BASE.pathname) && url.pathname.includes('/assets/'))
+      .map(url => url.href);
+    await cache.put(localUrl('asset-manifest.json'), buildResponse);
     await cache.put(BASE.href, shell);
-    await cache.addAll(['icon.svg', 'manifest.webmanifest', 'rhythm-worklet.js', 'scores/samples/carcassi.sotto', 'scores/samples/catalog.json'].map(localUrl).concat(assets));
+    await cache.addAll(['icon.svg', 'manifest.webmanifest', 'rhythm-worklet.js', 'THIRD-PARTY-LICENSES.txt', 'scores/samples/carcassi.sotto', 'scores/samples/catalog.json'].map(localUrl).concat([...new Set([...assets, ...workerAssets])]));
     const manifestResponse = await fetch(localUrl('samples/manifest.json'));
     if (!manifestResponse.ok) throw new Error('Instrument recordings could not be cached.');
     const manifest = await manifestResponse.clone().json();

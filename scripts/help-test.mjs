@@ -30,7 +30,7 @@ try {
   assert.equal(await page.locator('.app').getByRole('button', { name: 'Pause playback', includeHidden: true }).count(), 0, 'Help keys do not start the score');
   const search = page.getByRole('textbox', { name: 'Search help' });
   await search.fill('latency');
-  await heading('Microphone rhythm feedback').waitFor();
+  await heading('Microphone rhythm and pitch feedback').waitFor();
   await search.fill('no-such-feature');
   await heading('No matching topics').waitFor();
   await page.getByRole('button', { name: 'Show all topics' }).click();
@@ -47,7 +47,7 @@ try {
   await page.goto(`${base}#help/preparing`);
   await heading('Prepare a new score').waitFor();
   await page.getByText('Exporter command', { exact: true }).click();
-  assert.ok((await page.locator('.guide-article pre').innerText()).includes('\\\n  --title'), 'Exporter command has copyable shell continuations');
+  assert.equal((await page.locator('.guide-article pre').innerText()).trim(), 'python3 scripts/export_score.py path/to/piece.ly', 'Exporter command is copyable and uses automatic metadata');
   for (const width of [768, 390]) {
     await page.setViewportSize({ width, height: 900 });
     if (width === 390) await page.getByRole('combobox', { name: 'Help topic', exact: true }).selectOption('microphone');
@@ -63,7 +63,7 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   await context.setOffline(true);
   await page.reload();
-  await heading('Microphone rhythm feedback').waitFor();
+  await heading('Microphone rhythm and pitch feedback').waitFor();
   await page.getByRole('button', { name: 'Close help' }).click();
   await page.waitForURL(base);
   await helpButton.click();

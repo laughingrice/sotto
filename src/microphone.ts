@@ -1,3 +1,4 @@
+import type { PitchFrame } from './pitch';
 import * as Tone from 'tone';
 import type { LevelFrame } from './rhythm';
 
@@ -21,6 +22,31 @@ export class MicrophoneInput {
   private lowpass?: BiquadFilterNode;
   private filter = { highpass: 0, lowpass: 4000 };
   private version = 0;
+  private pitchEnabled = false;
+  private pitchEpoch = 0;
+  private pitchWorker?: Worker;
+  private pitchBusy = false;
+  onPitch: (frame: PitchFrame) => void = () => {};
+  onPitchError: (message: string) => void = () => {};
+  setPitchTracking(enabled: boolean) {
+    this.pitchEnabled = enabled;
+    this.pitchWorker?.terminate(); this.pitchWorker = undefined; this.pitchBusy = false;
+    const epoch = ++this.pitchEpoch;
+    if (!this.worklet) return;
+    if (enabled) {
+      try {
+        const worker = new Worker(new URL('./pitch-worker.ts', import.meta.url), { type: 'module' });
+        this.pitchWorker = worker;
+        worker.onmessage = ({ data }) => {
+          if (this.pitchWorker !== worker || data.epoch !== this.pitchEpoch) return;
+          this.pitchBusy = false;
+          if (this.pitchEnabled) this.onPitch(data as PitchFrame);
+        };
+        worker.onerror = event => { event.preventDefault(); if (this.pitchWorker !== worker) return; this.setPitchTracking(false); this.onPitchError('Pitch analysis stopped. Rhythm feedback still works; turn pitch checking on again to retry.'); };
+      } catch { this.pitchEnabled = false; this.onPitchError('This browser could not start pitch analysis. Rhythm feedback still works.'); }
+    }
+    this.worklet.port.postMessage({ type: 'pitch', enabled: this.pitchEnabled, epoch });
+  }
   private pulses = new Set<AudioBufferSourceNode>();
   onFrame: (frame: LevelFrame) => void = () => {};
   onEnded: (message: string) => void = () => {};
@@ -67,7 +93,14 @@ export class MicrophoneInput {
       this.lowpass = context.rawContext.createBiquadFilter(); this.lowpass.type = 'lowpass'; this.lowpass.Q.value = Math.SQRT1_2;
       this.sink = context.rawContext.createGain(); this.sink.gain.value = 0;
       this.wireFilters(); this.worklet.connect(this.sink); this.sink.connect(context.rawContext.destination);
-      this.worklet.port.onmessage = event => this.onFrame(event.data as LevelFrame);
+      this.worklet.port.onmessage = ({ data }) => {
+        if (version !== this.version) return;
+        if (data.type !== 'pitch') { this.onFrame(data as LevelFrame); return; }
+        if (!this.pitchEnabled || !this.pitchWorker || this.pitchBusy || data.epoch !== this.pitchEpoch) return;
+        this.pitchBusy = true;
+        this.pitchWorker.postMessage(data, [data.samples.buffer]);
+      };
+      this.setPitchTracking(this.pitchEnabled);
       this.worklet.onprocessorerror = () => { this.stop(); this.onEnded('The microphone processor stopped. Enable the microphone again to retry.'); };
       stream.getAudioTracks().forEach(track => { track.onended = () => { this.stop(); this.onEnded('Microphone access ended. Enable the microphone to reconnect.'); }; });
       return true;
@@ -91,7 +124,8 @@ export class MicrophoneInput {
   }
   cancelCalibration() { this.pulses.forEach(source => source.stop()); this.pulses.clear(); }
   stop() {
-    this.version++;
+    this.version++; this.pitchEpoch++;
+    this.pitchWorker?.terminate(); this.pitchWorker = undefined; this.pitchBusy = false;
     this.cancelCalibration();
     this.worklet?.port.close(); this.worklet?.disconnect(); this.worklet = undefined;
     this.source?.disconnect(); this.source = undefined; this.sink?.disconnect(); this.sink = undefined;

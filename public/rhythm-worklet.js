@@ -1,9 +1,18 @@
-/* Only short-window level summaries leave the audio thread. No recording. */
+/* Level summaries, plus optional transient pitch-analysis windows. No recording. */
 class SottoLevelProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.sum = 0; this.peak = 0; this.count = 0;
     this.window = Math.round(sampleRate * .01);
+    this.pitchEnabled = false; this.pitchEpoch = 0;
+    this.pitchRing = new Float32Array(sampleRate > 64000 ? 8192 : 4096);
+    this.pitchIndex = 0; this.pitchCount = 0; this.pitchSince = 0;
+    this.port.onmessage = ({ data }) => {
+      if (data.type !== 'pitch') return;
+      this.pitchEnabled = data.enabled; this.pitchEpoch = data.epoch;
+      this.pitchRing.fill(0);
+      this.pitchIndex = 0; this.pitchCount = 0; this.pitchSince = 0;
+    };
   }
   process(inputs, outputs) {
     for (const channel of outputs[0] ?? []) channel.fill(0);
@@ -12,6 +21,19 @@ class SottoLevelProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < channels[0].length; i++) {
       let sample = 0;
       for (const channel of channels) sample += channel[i] / channels.length;
+      if (this.pitchEnabled) {
+        this.pitchRing[this.pitchIndex] = sample;
+        this.pitchIndex = (this.pitchIndex + 1) % this.pitchRing.length;
+        this.pitchCount++; this.pitchSince++;
+        if (this.pitchCount >= this.pitchRing.length && this.pitchSince >= sampleRate * .04) {
+          const samples = new Float32Array(this.pitchRing.length);
+          const tail = this.pitchRing.subarray(this.pitchIndex);
+          samples.set(tail); samples.set(this.pitchRing.subarray(0, this.pitchIndex), tail.length);
+          this.port.postMessage({ type: 'pitch', epoch: this.pitchEpoch, samples, sampleRate,
+            time: (currentFrame + i + 1 - samples.length / 2) / sampleRate }, [samples.buffer]);
+          this.pitchSince = 0;
+        }
+      }
       this.sum += sample * sample; this.peak = Math.max(this.peak, Math.abs(sample)); this.count++;
       if (this.count >= this.window) {
         this.port.postMessage({ time: (currentFrame + i + 1 - this.count / 2) / sampleRate,
