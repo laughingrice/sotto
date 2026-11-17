@@ -1,4 +1,4 @@
-# Sotto v0.3
+# Sotto v0.4
 
 A local web practice player, starting with a public-domain Carcassi guitar study and ten ready-to-play openly licensed samples. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The bundled instrument recordings, synthesized timbres, and metronome work offline.
 
@@ -16,6 +16,8 @@ The repository includes a workflow that tests, builds, and publishes the static 
 4. Once the deployment finishes, visit **https://laughingrice.github.io/sotto/**.
 
 Subsequent pushes to `main` test and deploy automatically. Before Pages is enabled, the workflow still builds and tests successfully and skips publication. The `v0.1` tag records the first release; `v0.2` includes full-bar highlighting, expanded score/zoom controls, an accented standalone metronome, and recorded nylon-guitar, piano and violin playback. The `v0.3` release adds a persistent file/folder library, improved repeat and meter handling, microphone rhythm feedback with baseline learning and loop history, compact practice controls, a one-bar count-in, and Off/Playback/Continuous metronome modes.
+
+The `v0.4` release adds last-song and per-song settings persistence with portable backups, nested folder libraries, per-part bass/drum playback, a searchable help page and ten openly licensed sample scores with online catalogs. It also aligns visual timing with audible output, introduces compressed `.sotto` bundles and lossless SVG optimization, and reads LilyPond headers and starting tempos automatically. Extracted titles include subtitles to distinguish passages from the same book.
 
 To preview the same `/sotto/` deployment path locally:
 
