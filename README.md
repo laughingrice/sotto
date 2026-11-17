@@ -1,6 +1,6 @@
 # Sotto v0.3
 
-A local web practice player, starting with a public-domain Carcassi guitar study and seven ready-to-play public-domain samples. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The bundled instrument recordings, synthesized timbres, and metronome work offline.
+A local web practice player, starting with a public-domain Carcassi guitar study and ten ready-to-play openly licensed samples. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The bundled instrument recordings, synthesized timbres, and metronome work offline.
 
 **New piece? Start with [Prepare a new score](#prepare-a-new-score).**
 
@@ -128,14 +128,14 @@ The last song is cached for resuming across reloads; **Library** remembers the o
 
 ### Rebuild the public samples
 
-The source editions and credits are under `scores/samples/`. Rebuild all seven with LilyPond 2.26, `convert-ly` and Python 3:
+The source editions and credits are under `scores/samples/`. Rebuild all ten with LilyPond 2.26, `convert-ly` and Python 3:
 
 ```sh
 python3 scripts/build_samples.py
 # equivalent: npm run export:score
 ```
 
-This preserves the original sources, updates working copies for current LilyPond syntax, prepares independent practice parts and writes `.sotto.json` bundles, downloadable source archives and `catalog.json` under `public/scores/samples/`. Carcassi’s Étude Op. 60 No. 1 is the default. The sample editions are designated public domain by Mutopia; original credits remain in the engraving, source archives and catalog. See `scores/samples/README.md` for provenance and adaptation details.
+This preserves the original sources, updates working copies for current LilyPond syntax, prepares independent practice parts and writes `.sotto.json` bundles, downloadable source archives and `catalog.json` under `public/scores/samples/`. Carcassi’s Étude Op. 60 No. 1 is the default. Most sample editions are designated public domain by Mutopia; solo Adelita is CC BY-SA 2.5 and Recuerdos de la Alhambra is CC BY-SA 3.0. Adapted editions retain those licenses; original credits remain in the engraving, source archives and catalog. See `scores/samples/README.md` for provenance and adaptation details.
 
 Julia Florida is no longer served by the app. Its existing regression fixture lives outside `public/`; locally opened scores and saved settings continue to work. The legacy LilyPond source can still be exported explicitly for personal use, with output beside the source by default.
 
@@ -154,7 +154,7 @@ Only the small default Carcassi score is precached with the app for offline star
 
 ### Host an online library
 
-For a small public collection, keep sources and generated bundles in Git and serve the catalog/bundles through the existing GitHub Pages deployment. The seven starter bundles total about 8 MB; no extra service or account is needed. A larger independently updated library can live in its own Pages repository or an HTTPS object-storage bucket. For another origin, configure CORS to allow `GET` from Sotto’s origin (or `*` for a public library). Serve JSON directly, without authentication or a sharing-page wrapper. OneDrive remains useful for the personal local/synced-folder workflow; its public sharing pages are not a static catalog host.
+For a small public collection, keep sources and generated bundles in Git and serve the catalog/bundles through the existing GitHub Pages deployment. The starter collection is small enough to host alongside the app; no extra service or account is needed. A larger independently updated library can live in its own Pages repository or an HTTPS object-storage bucket. For another origin, configure CORS to allow `GET` from Sotto’s origin (or `*` for a public library). Serve JSON directly, without authentication or a sharing-page wrapper. OneDrive remains useful for the personal local/synced-folder workflow; its public sharing pages are not a static catalog host.
 
 Open **Library → Sample scores** for the included collection, or **Connect an online library** and paste a catalog URL. Online catalog connections persist and transfer in backups. Refresh re-reads a catalog while preserving favorites and practice settings for stable entry IDs. A catalog controls which entries it lists; removing one from the catalog removes that bookmark on refresh.
 

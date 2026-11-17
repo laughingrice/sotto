@@ -1,7 +1,7 @@
 import type { Library, LibraryEntry, LibraryFolder } from './library';
 
 export const SAMPLE_CATALOG = `${import.meta.env.BASE_URL}scores/samples/catalog.json`;
-export type OnlineScore = { url: string; instruments: string; license: string; credit: string; source?: string; sourceFile?: string; description: string };
+export type OnlineScore = { url: string; instruments: string; license: string; licenseUrl?: string; credit: string; source?: string; sourceFile?: string; description: string };
 export type Catalog = { title: string; scores: { id: string; title: string; composer: string; online: OnlineScore }[] };
 const string = (value: unknown, max = 2000): value is string => typeof value === 'string' && value.length > 0 && value.length <= max;
 export function onlineUrl(value: unknown, base?: string): string {
@@ -15,6 +15,7 @@ export function parseOnlineScore(value: unknown): OnlineScore {
   const item = value as OnlineScore;
   if (!item || !string(item.instruments) || !string(item.license) || !string(item.credit) || typeof item.description !== 'string' || item.description.length > 4000) throw new Error('Invalid online score metadata.');
   return { url: onlineUrl(item.url), instruments: item.instruments, license: item.license, credit: item.credit, description: item.description,
+    ...(item.licenseUrl !== undefined ? { licenseUrl: onlineUrl(item.licenseUrl) } : {}),
     ...(item.source !== undefined ? { source: onlineUrl(item.source) } : {}), ...(item.sourceFile !== undefined ? { sourceFile: onlineUrl(item.sourceFile) } : {}) };
 }
 export function parseCatalog(value: unknown, address: string): Catalog {

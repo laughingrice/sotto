@@ -25,7 +25,7 @@ try {
   await button('Score library').click();
   const before = requests.length;
   await button('Sample scores').click();
-  await page.getByRole('status').filter({ hasText: '7 scores' }).waitFor();
+  await page.getByRole('status').filter({ hasText: '10 scores' }).waitFor();
   assert.equal(requests.length, before, 'Connecting the catalog never downloads all the music');
   await find('');
   await page.locator('summary').filter({ hasText: /^Piano3$/ }).click();
@@ -81,6 +81,23 @@ try {
   await page.screenshot({ path: 'test-results/sample-concerto.png' });
   await button('Score library').click(); await open('Greensleeves to a Ground with Division');
   assert.equal(await page.locator('.score-note').count(), 798);
+  for (const [title, license, notes] of [['Adelita · solo guitar', 'CC BY-SA 2.5', 131], ['Claro de Luna · Moonlight Sonata', null, 999], ['Recuerdos de la Alhambra', 'CC BY-SA 3.0', 1670]]) {
+    await button('Score library').click(); await find(title);
+    await page.locator('.online-score-credits summary').click();
+    if (license) assert.ok((await page.getByRole('link', { name: license, exact: true }).getAttribute('href')).startsWith('https://creativecommons.org/licenses/by-sa/'));
+    await page.locator('.library-open').click(); await heading(title).waitFor();
+    assert.equal(await page.locator('.voice-card').count(), 3, 'Solo guitar keeps separate practice voices');
+    assert.equal(await page.locator('.score-note').count(), notes);
+    await button('Play score').click(); await button('Pause playback').waitFor(); await page.waitForTimeout(300); await button('Pause playback').click();
+    if (license) {
+      const [scoreDownload] = await Promise.all([page.waitForEvent('download'), button('Save score').click()]);
+      const exported = JSON.parse(await readFile(await scoreDownload.path(), 'utf8'));
+      assert.equal(exported.provenance.license, license);
+      assert.ok(exported.provenance.licenseUrl.startsWith('https://creativecommons.org/licenses/by-sa/'));
+      assert.equal(exported.provenance.credit, 'Stewart Holmes');
+    }
+    await page.screenshot({ path: `test-results/sample-${title.split(' ')[0].toLowerCase()}.png` });
+  }
   await button('Score library').click();
   await page.getByText('Connect an online library', { exact: true }).click();
   await page.route('https://catalog.example/catalog.json', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ format: 'sotto-catalog', version: 1, title: 'External library', scores: [{ id: 'piece', title: 'External sample', composer: '', file: new URL('scores/samples/invention-8.sotto.json', base).href, instruments: 'Piano', license: 'Public Domain', credit: 'Allen Garvin' }] }) }));
@@ -88,6 +105,6 @@ try {
   await button('Connect online library').click();
   await find('External sample'); await page.locator('.library-open').click(); await heading('Invention No. 8 · BWV 779').waitFor();
   assert.deepEqual(errors, []);
-  console.log('PASS: public default, on-demand seven-score catalog, credits, playback, part grouping, favorites/refresh/backup, offline single-song cache, mobile layout and external catalog.');
+  console.log('PASS: public default, on-demand ten-score catalog, credits, playback, part grouping, favorites/refresh/backup, offline single-song cache, mobile layout and external catalog.');
 } catch (error) { await page.screenshot({ path: 'test-results/catalog-failure.png' }); throw error; }
 finally { await browser.close(); }

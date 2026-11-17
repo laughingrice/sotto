@@ -93,6 +93,48 @@
       "credit": "Allen Garvin",
       "sourceFile": "greensleeves-source.zip",
       "description": "Public-domain Mutopia edition · prepared for Sotto"
+    },
+    {
+      "id": "adelita",
+      "title": "Adelita · solo guitar",
+      "composer": "Francisco Tárrega",
+      "instruments": "Guitar",
+      "file": "adelita.sotto.json",
+      "bytes": 211318,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=808",
+      "license": "CC BY-SA 2.5",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/2.5/",
+      "credit": "Stewart Holmes",
+      "sourceFile": "adelita-source.zip",
+      "description": "Solo guitar · section repeats and D.C. al Fine playback (A A B B A). LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
+    },
+    {
+      "id": "claro-de-luna",
+      "title": "Claro de Luna · Moonlight Sonata",
+      "composer": "Ludwig van Beethoven · arranged by Francisco Tárrega",
+      "instruments": "Guitar",
+      "file": "claro-de-luna.sotto.json",
+      "bytes": 1067176,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=2074",
+      "license": "Public Domain",
+      "licenseUrl": "https://www.mutopiaproject.org/legal.html",
+      "credit": "Jeffrey Olson",
+      "sourceFile": "claro-de-luna-source.zip",
+      "description": "Beethoven’s Moonlight Sonata, first movement · Tárrega’s solo-guitar arrangement · drop D tuning. LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
+    },
+    {
+      "id": "recuerdos",
+      "title": "Recuerdos de la Alhambra",
+      "composer": "Francisco Tárrega",
+      "instruments": "Guitar",
+      "file": "recuerdos.sotto.json",
+      "bytes": 1665640,
+      "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=810",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "credit": "Stewart Holmes",
+      "sourceFile": "recuerdos-source.zip",
+      "description": "Solo guitar tremolo · repeats, alternate endings and D.C. al Coda playback. LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
     }
   ]
 }
