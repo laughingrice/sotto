@@ -14,6 +14,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from svg_optimize import encoded as encode_score, optimize_score
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SOURCE = ROOT / 'scores' / 'julia-florida.ly'
@@ -109,7 +110,7 @@ def voice_labels(notes):
 
 def write_bundle(output, bundle):
     """Lossless gzip by default; explicit .json paths retain the legacy format."""
-    data = json.dumps(bundle, separators=(',', ':')).encode('utf-8')
+    data = encode_score(bundle)
     legacy = output.suffix.lower() == '.json'
     encoded = data if legacy else gzip.compress(data, mtime=0)
     output.write_bytes(encoded)
@@ -175,7 +176,7 @@ def starting_tempo(tempos, meter, julia, beat_unit=None, bpm=None, midi_quarter_
 
 
 def compile_score(source: Path, title: str | None, composer: str | None, output: Path, julia: bool,
-                  beats_per_bar=None, beat_unit=None, bpm=None, transpose=None):
+                  beats_per_bar=None, beat_unit=None, bpm=None, transpose=None, optimize_svg=True):
     transpose = transpose if transpose is not None else (-12 if julia else 0)
     text = source.read_text()
     if '\\layout {' not in text:
@@ -234,6 +235,8 @@ def compile_score(source: Path, title: str | None, composer: str | None, output:
                   notes=notes, pages=pages, bars=bars, sequence=sequence,
                   description='Drop D tuning · sounds one octave below the written score' if julia else
                               f'LilyPond playback order · pitch offset {transpose:+d} semitones')
+    if optimize_svg:
+        bundle = optimize_score(bundle)
     output.parent.mkdir(parents=True, exist_ok=True)
     write_bundle(output, bundle)
     print(f'Exported {len(notes)} noteheads, {len(pages)} pages, {measure_count} written bars, {len(sequence)} playback bars → {output}')
@@ -249,10 +252,11 @@ if __name__ == '__main__':
     parser.add_argument('--beat-unit', type=float, help='Override the score tempo pulse in quarter notes (e.g. 1.5 for dotted quarter).')
     parser.add_argument('--bpm', type=float, help='Override the opening score tempo (numeric marking or tempo-word midpoint).')
     parser.add_argument('--transpose', type=int, help='Additional semitone offset after LilyPond transposition (default 0, built-in Julia -12). Do not lower already transposed guitar pitches twice.')
+    parser.add_argument('--no-optimize-svg', action='store_true', help='Keep the original LilyPond SVG for comparison (gzip compression is still enabled).')
     parser.add_argument('--output', type=Path, help='Output path (default: source.sotto, gzip compressed). A .json extension explicitly selects uncompressed legacy JSON.')
     args = parser.parse_args()
     if args.source is None:
-        if any(value is not None for value in (args.title, args.composer, args.output, args.beats_per_bar, args.beat_unit, args.bpm, args.transpose)):
+        if args.no_optimize_svg or any(value is not None for value in (args.title, args.composer, args.output, args.beats_per_bar, args.beat_unit, args.bpm, args.transpose)):
             parser.error('Provide the .ly source path when exporting a custom score. Omitting the source rebuilds the public sample library; changing the title or output does not change the music.')
         from build_samples import main
         main()
@@ -261,7 +265,7 @@ if __name__ == '__main__':
     output = args.output or args.source.with_suffix('.sotto')
     try:
         compile_score(args.source.resolve(), args.title, args.composer, output, julia,
-                      args.beats_per_bar, args.beat_unit, args.bpm, args.transpose)
+                      args.beats_per_bar, args.beat_unit, args.bpm, args.transpose, not args.no_optimize_svg)
     except subprocess.CalledProcessError as exc:
         print(exc.stdout or '')
         print(exc.stderr or '')

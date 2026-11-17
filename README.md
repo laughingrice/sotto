@@ -134,7 +134,16 @@ The export contains SVG score pages, notehead identities, note timings, voices, 
 
 ### 3. Open it on any device
 
-The exporter writes gzip-compressed JSON, preserving all SVG drawing data and score metadata. An explicit output name ending in `.json` produces legacy uncompressed JSON: if an older command still uses `--output my-score.sotto.json`, change it to `--output my-score.sotto` to enable compression. The exporter reports the format and byte count after writing. Save score and the single-song resume cache also use compression. Existing `.sotto.json` files remain supported; open one and choose **Save score** to get a compressed copy. Library/settings backups remain ordinary JSON.
+The exporter writes gzip-compressed JSON, preserving SVG drawing precision and score metadata. SVG optimization runs automatically: repeated glyph paths become shared definitions, formatting whitespace is removed and plain transform wrappers are collapsed without changing transform order. Text spacing, note IDs and voice attributes are retained. The exporter compares actual gzip sizes and keeps the original if optimization would make the bundle larger. Use `--no-optimize-svg` to export the original LilyPond SVG for comparison. An explicit output name ending in `.json` produces legacy uncompressed JSON: if an older command still uses `--output my-score.sotto.json`, change it to `--output my-score.sotto` to enable compression. The exporter reports the format and byte count after writing. Save score and the single-song resume cache also use compression. Existing `.sotto.json` files remain supported; open one and choose **Save score** to get a compressed copy. Library/settings backups remain ordinary JSON.
+
+You can also optimize an existing bundle without recompiling its LilyPond source:
+
+```sh
+python3 scripts/svg_optimize.py old-score.sotto --output optimized-score.sotto
+# Uncompressed .sotto.json inputs are also accepted.
+```
+
+SVG optimization is performed by these Python tools. Browser **Save score** compresses the SVG already in the opened file; re-export or run the command above to optimize an older score. The ten public samples total 675,092 bytes after SVG optimization, down from 845,334 with gzip alone (20.1% less) and 11,163,861 before compression. Browser comparisons verified identical pixels on all 41 pages, including active and muted note styling.
 
 Transfer `my-score.sotto` to the tablet using Files, AirDrop, or a file-sharing service, open Sotto, and choose **Open score**. Select the bundle. This reads it locally; it does not upload the file. You can also use **Save score** to download a copy.
 
@@ -261,6 +270,9 @@ This is an energy-based attack detector and fixed-tempo reference, not pitch rec
 ```sh
 npm test
 python3 scripts/test_export_score.py # also requires LilyPond
+python3 scripts/test_svg_optimize.py
+# Compare candidate SVGs with original bundles, including pixels and bar/note geometry:
+node scripts/svg-test.mjs --original-dir /path/to/originals --optimized-dir /path/to/candidates
 npm run build
 node scripts/browser-test.mjs
 # Against a running production preview, including offline reload/playback:
