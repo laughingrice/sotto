@@ -40,6 +40,48 @@
      (+ 60 (ly:pitch-semitones pitch)
         (if (and (not (symbol? drum)) (ly:pitch? transposition))
             (ly:pitch-semitones transposition) 0))))
+% Export parsed header/tempo values, so includes, variables and markup work.
+#(define practice-tempo-port (open-output-file "tempos.jsonl"))
+#(define (practice-json-string value port)
+   (write-char #\" port)
+   (for-each (lambda (c)
+     (case c
+       ((#\") (display "\\\"" port))
+       ((#\\) (display "\\\\" port))
+       ((#\newline) (display "\\n" port))
+       ((#\return) (display "\\r" port))
+       ((#\tab) (display "\\t" port))
+       (else (if (< (char->integer c) 32)
+                 (format port "\\u~4,'0x" (char->integer c))
+                 (write-char c port))))) (string->list value))
+   (write-char #\" port))
+#(define (practice-write-tempo context event)
+   (let* ((unit (ly:event-property event 'tempo-unit))
+          (count (ly:event-property event 'metronome-count))
+          (bpm (cond ((number? count) count)
+                     ((number-pair? count) (/ (+ (car count) (cdr count)) 2))
+                     (else #f))))
+     (format practice-tempo-port "{\"beat\":~a,\"unit\":~a,\"bpm\":~a,\"text\":"
+       (practice-beats (ly:context-current-moment context))
+       (if (ly:duration? unit) (practice-beats (ly:duration->moment unit)) "null")
+       (if bpm (exact->inexact bpm) "null"))
+     (practice-json-string (markup->string (ly:event-property event 'text)) practice-tempo-port)
+     (display "}\n" practice-tempo-port)
+     (force-output practice-tempo-port)))
+#(define practice-header-scopes '())
+#(define (practice-write-header score midi-quarter-bpm)
+   (let* ((headers (assq-ref practice-header-scopes score))
+          (port (open-output-file "header.json")))
+     (display "{" port)
+     (for-each (lambda (field)
+       (if (not (eq? field 'title)) (display "," port))
+       (practice-json-string (symbol->string field) port)
+       (display ":" port)
+       (practice-json-string (markup->string (ly:modules-lookup headers field)) port))
+       '(title composer subtitle))
+     (format port ",\"midiQuarterBpm\":~a}\n" (or midi-quarter-bpm "null"))
+     (close-output-port port)))
+
 % Read Timing after its translators have advanced, including silent bars,
 % pickups and changes of meter. Keep the final moment to end the last bar.
 #(define (practice-write-timing context port)
@@ -55,11 +97,15 @@
 #(define practice-timing-engraver
    (lambda (context)
      (make-engraver
+       (listeners
+         ((tempo-change-event engraver event) (practice-write-tempo context event)))
        ((stop-translation-timestep engraver)
          (practice-write-timing context practice-measure-port)))))
 #(define practice-timing-performer
    (lambda (context)
      (make-performer
+       (listeners
+         ((tempo-change-event performer event) (practice-write-tempo context event)))
        ((stop-translation-timestep performer)
          (practice-write-timing context practice-played-measure-port)))))
 #(define practice-event-performer
@@ -112,23 +158,42 @@
 % Capture parsed music before LilyPond renders it. Reuse the exact same music
 % objects/source locations to link an unfolded performance to printed measures.
 #(define practice-scores '())
-#(define (practice-capture score)
-   (if (ly:score? score) (set! practice-scores (append practice-scores (list score)))))
+#(define (practice-capture score . books)
+   (if (ly:score? score)
+     (begin
+       (set! practice-scores (append practice-scores (list score)))
+       (set! practice-header-scopes
+         (acons score (filter module?
+           (append (list (ly:score-header score))
+             (map ly:book-header (append books (filter ly:book?
+               (list (ly:parser-lookup '$current-bookpart) (ly:parser-lookup '$current-book)))))
+             (list (ly:parser-lookup '$defaultheader)))) practice-header-scopes)))))
 #(define practice-original-score-handler toplevel-score-handler)
 #(define toplevel-score-handler
    (lambda (score) (practice-capture score) (practice-original-score-handler score)))
 #(define practice-original-book-score-handler book-score-handler)
 #(define book-score-handler
-   (lambda (book score) (practice-capture score) (practice-original-book-score-handler book score)))
+   (lambda (book score) (practice-capture score book) (practice-original-book-score-handler book score)))
 #(define practice-original-bookpart-score-handler bookpart-score-handler)
 #(define bookpart-score-handler
-   (lambda (book score) (practice-capture score) (practice-original-bookpart-score-handler book score)))
+   (lambda (book score) (practice-capture score book) (practice-original-bookpart-score-handler book score)))
 
 practiceMidi = \midi {
   \context { \Score \consists #practice-timing-performer }
   \context { \Voice \consists #practice-event-performer }
   \context { \DrumVoice \consists #practice-event-performer }
 }
+% A MIDI block can set its initial tempo without a visible tempo event.
+% Explicit assignments precede the inherited Score default in property-ops.
+#(define (practice-midi-quarter-bpm score)
+   (any (lambda (output)
+     (and (eq? (ly:output-def-lookup output 'output-def-kind #f) 'midi)
+       (let* ((context (ly:output-def-lookup output 'Score))
+              (ops (ly:context-def-lookup context 'property-ops))
+              (tempos (filter (lambda (op)
+                (and (eq? (car op) 'assign) (eq? (cadr op) 'tempoWholesPerMinute))) ops)))
+         (and (> (length tempos) 1)
+           (practice-beats (caddar tempos)))))) (ly:score-output-defs score)))
 #(define (practice-export-playback)
    (let* ((midi-scores (filter (lambda (score)
                    (any (lambda (output) (eq? (ly:output-def-lookup output 'output-def-kind #f) 'midi))
@@ -136,6 +201,11 @@ practiceMidi = \midi {
           (choices (if (null? midi-scores) practice-scores midi-scores)))
      (if (not (= (length choices) 1))
        (ly:error "Sotto needs one engraved score and at most one MIDI playback score."))
+     (let ((engraved (filter (lambda (score)
+                (any (lambda (output) (eq? (ly:output-def-lookup output 'output-def-kind #f) 'layout))
+                  (ly:score-output-defs score))) practice-scores)))
+       (practice-write-header (if (pair? engraved) (car engraved) (car practice-scores))
+         (practice-midi-quarter-bpm (car choices))))
      (ly:run-translator
        ;; Parsed scores cache lengths before repeats have been unfolded.
        ;; Clear those caches on the copy or interpretation can stop early.

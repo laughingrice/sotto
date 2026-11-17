@@ -8,15 +8,15 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
-from export_score import compile_score, write_bundle
+from export_score import compile_score, write_bundle, tempo_word
 
 
 class ExportTests(unittest.TestCase):
-    def export(self, music):
+    def export(self, music, title='Fixture', composer='', **options):
         with tempfile.TemporaryDirectory(prefix='sotto-navigation-') as temp:
             source = Path(temp) / 'fixture.ly'
             source.write_text('\\version "2.26.0"\n' + music)
-            return compile_score(source, 'Fixture', '', Path(temp) / 'out.json', False)
+            return compile_score(source, title, composer, Path(temp) / 'out.json', False, **options)
 
     def test_compressed_output_is_lossless_and_legacy_json_remains_supported(self):
         bundle = {'pages': ['<svg>é</svg>'], 'notes': [1, 2], 'provenance': {'credit': 'Author'}}
@@ -38,13 +38,94 @@ class ExportTests(unittest.TestCase):
     def test_cli_default_writes_compressed_sotto_beside_the_source(self):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / 'piece.ly'
-            source.write_text(r'''\version "2.26.0" \score { \new Voice = "melody" { c'1 } \layout { } }''')
+            (Path(temp) / 'metadata.ily').write_text(r'''\header { title = "Included title" composer = "Included composer" }''')
+            source.write_text(r'''\version "2.26.0" \include "metadata.ily" \score { \new Voice = "melody" { \tempo 4 = 101 c'1 } \layout { } }''')
             result = subprocess.run([sys.executable, str(Path(__file__).with_name('export_score.py')), str(source)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             output = source.with_suffix('.sotto')
             self.assertIn('Gzip compressed:', result.stdout)
-            self.assertEqual(len(json.loads(gzip.decompress(output.read_bytes()))['notes']), 1)
+            score = json.loads(gzip.decompress(output.read_bytes()))
+            self.assertEqual(len(score['notes']), 1)
+            self.assertEqual((score['title'], score['composer'], score['bpm']), ('Included title', 'Included composer', 101))
             self.assertFalse(source.with_suffix('.sotto.json').exists())
+
+    def test_reads_parsed_headers_variables_markup_and_numeric_tempo(self):
+        bundle = self.export(r'''
+pieceTitle = "Étude \"No. 1\""
+\header { title = \pieceTitle composer = \markup { \italic "A. Composer" } subtitle = "For two violins" }
+\score { \new Voice = "melody" { \time 6/8 \tempo "Andante" 4. = 60 - 72 c'2. }
+  \layout { } }
+''', title=None, composer=None)
+        self.assertEqual(bundle['title'], 'Étude "No. 1"')
+        self.assertEqual(bundle['composer'], 'A. Composer')
+        self.assertEqual(bundle['subtitle'], 'For two violins')
+        self.assertEqual((bundle['beatUnit'], bundle['bpm']), (1.5, 66))
+
+    def test_score_header_overrides_book_and_global_headers(self):
+        bundle = self.export(r'''
+\header { title = "Global title" composer = "Global composer" }
+\book { \header { title = "Book title" composer = "Book composer" }
+  \score { \new Voice = "melody" { c'1 }
+    \header { title = "Score title" } \layout { } } }
+''', title=None, composer=None)
+        self.assertEqual(bundle['title'], 'Score title')
+        self.assertEqual(bundle['composer'], 'Book composer')
+
+    def test_tempo_words_use_midpoints_and_keep_compound_pulse(self):
+        bundle = self.export(r'''
+\score { \new Voice = "melody" { \time 6/8 \tempo \markup { \bold "Allegro con brio" } c'2. | \tempo 4 = 90 d'2. }
+  \layout { } }
+''')
+        self.assertEqual((bundle['beatUnit'], bundle['bpm']), (1.5, 144))
+        self.assertEqual(tempo_word('Allegro moderato')[0], 118)
+        self.assertEqual(tempo_word('Allegretto')[0], 116)
+        self.assertEqual(tempo_word('Andante cantabile')[0], 92)
+        self.assertIsNone(tempo_word('a tempo'))
+
+    def test_explicit_metadata_and_tempo_override_score(self):
+        bundle = self.export(r'''
+\header { title = "Source title" composer = "Source composer" }
+\score { \new Voice = "melody" { \tempo 4. = 60 c'1 } \layout { } }
+''', title='Custom title', composer='', bpm=99, beat_unit=1)
+        self.assertEqual((bundle['title'], bundle['composer']), ('Custom title', ''))
+        self.assertEqual((bundle['beatUnit'], bundle['bpm']), (1, 99))
+
+    def test_pulse_override_preserves_numeric_score_speed(self):
+        bundle = self.export(r'''
+\score { \new Voice = "melody" { \tempo 4. = 60 c'1 } \layout { } }
+''', beat_unit=1)
+        self.assertEqual((bundle['beatUnit'], bundle['bpm']), (1, 90))
+
+    def test_midi_block_numeric_tempo_beats_text_only_marking(self):
+        bundle = self.export(r'''
+\score { \new Voice = "melody" { \time 6/8 \tempo "Andante" c'2. }
+  \layout { } \midi { \tempo 4. = 68 } }
+''')
+        self.assertEqual((bundle['beatUnit'], bundle['bpm']), (1.5, 68))
+
+    def test_separate_midi_music_supplies_an_opening_numeric_tempo(self):
+        bundle = self.export(r'''
+notes = \new Voice = "melody" { c'1 }
+\score { << { \tempo "Andante" s1 } \notes >> \layout { } }
+\score { << { \tempo 4 = 102 s1 } \notes >> \midi { } }
+''')
+        self.assertEqual((bundle['beatUnit'], bundle['bpm']), (1, 102))
+
+    def test_empty_midi_block_does_not_replace_text_tempo_with_lilypond_default(self):
+        bundle = self.export(r'''
+\score { \new Voice = "melody" { \tempo "Allegro" c'1 }
+  \layout { } \midi { } }
+''')
+        self.assertEqual(bundle['bpm'], 144)
+
+    def test_bookpart_inherits_outer_book_metadata(self):
+        bundle = self.export(r'''
+\header { title = "Global title" composer = "Global composer" }
+\book { \header { composer = "Book composer" }
+  \bookpart { \header { title = "Part title" }
+    \score { \new Voice = "melody" { c'1 } \layout { } } } }
+''', title=None, composer=None)
+        self.assertEqual((bundle['title'], bundle['composer']), ('Part title', 'Book composer'))
 
     def test_source_named_score_ly_does_not_shadow_instrumented_temporary_input(self):
         with tempfile.TemporaryDirectory(prefix='sotto-named-score-') as temp:

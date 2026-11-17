@@ -121,10 +121,61 @@ def write_bundle(output, bundle):
         print(f'Gzip compressed: {len(data):,} → {len(encoded):,} bytes ({abs(saved):.1f}% {"smaller" if saved >= 0 else "larger"}).')
 
 
-def compile_score(source: Path, title: str, composer: str, output: Path, julia: bool,
+# Practical defaults, not exact definitions of musical character. Midpoints are
+# used only when the opening score marking has no metronome number.
+# Ranges: https://www.skoove.com/blog/wp-content/uploads/2021/04/Italian-tempo-markings.pdf
+TEMPO_RANGES = {
+    'grave': (25, 45), 'largo': (40, 60), 'lento': (45, 60),
+    'larghetto': (60, 66), 'adagio': (66, 76), 'adagietto': (72, 76),
+    'andante': (76, 108), 'andantino': (80, 108),
+    'andante moderato': (92, 112), 'marcia moderato': (83, 85),
+    'moderato': (108, 120), 'allegretto': (112, 120),
+    'allegro moderato': (116, 120), 'allegro': (120, 168),
+    'vivace': (168, 176), 'vivacissimo': (172, 176),
+    'allegrissimo': (172, 176), 'allegro vivace': (172, 176),
+    'presto': (168, 200),
+    # These open-ended terms need finite practice defaults within player limits.
+    'larghissimo': (15, 24), 'prestissimo': (200, 240),
+}
+
+
+def tempo_word(text):
+    normalized = ' '.join(text.casefold().split())
+    for marking in sorted(TEMPO_RANGES, key=len, reverse=True):
+        if re.search(r'\b' + re.escape(marking) + r'\b', normalized):
+            low, high = TEMPO_RANGES[marking]
+            return (low + high) / 2, f'{marking} midpoint ({low}–{high})'
+    return None
+
+
+def starting_tempo(tempos, meter, julia, beat_unit=None, bpm=None, midi_quarter_bpm=None):
+    # Later tempo changes must not accidentally become the opening tempo.
+    opening = [event for event in tempos if event['beat'] <= 1e-6]
+    numeric = next((event for event in opening if event.get('bpm') and event.get('unit')), None)
+    word = next((found for event in opening if (found := tempo_word(event.get('text', '')))), None)
+    numerator, denominator = meter
+    meter_pulse = (3 if numerator > 3 and numerator % 3 == 0 else 1) * 4 / denominator
+    default_unit = 1.5 if julia else meter_pulse
+    if numeric is None and midi_quarter_bpm:
+        numeric = dict(unit=default_unit, bpm=midi_quarter_bpm / default_unit)
+    unit = beat_unit if beat_unit is not None else (numeric['unit'] if numeric else default_unit)
+    if bpm is not None:
+        rate, origin = bpm, 'command-line override'
+    elif numeric:
+        rate = numeric['bpm'] * numeric['unit'] / unit
+        origin = 'score metronome marking'
+    elif word:
+        rate, origin = word
+    else:
+        rate, origin = (44 if julia else 80), 'fallback; no recognized opening tempo'
+    if not (0 < unit and 15 <= rate <= 300):
+        raise ValueError('Tempo must be 15–300 BPM with a positive beat unit. Use --bpm and/or --beat-unit to override.')
+    print(f'Starting tempo: {rate:g} BPM, pulse {unit:g} quarter notes ({origin}).')
+    return unit, rate
+
+
+def compile_score(source: Path, title: str | None, composer: str | None, output: Path, julia: bool,
                   beats_per_bar=None, beat_unit=None, bpm=None, transpose=None):
-    beat_unit = beat_unit if beat_unit is not None else (1.5 if julia else 1)
-    bpm = bpm if bpm is not None else (44 if julia else 80)
     transpose = transpose if transpose is not None else (-12 if julia else 0)
     text = source.read_text()
     if '\\layout {' not in text:
@@ -151,12 +202,17 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
                 notes[-1]['percussion'] = True
         bars = read_measures((folder / 'measures.tsv').read_text())
         played_bars = read_measures((folder / 'played-measures.tsv').read_text())
+        header = json.loads((folder / 'header.json').read_text())
+        tempos = [json.loads(row) for row in (folder / 'tempos.jsonl').read_text().splitlines()]
         written_events = (folder / 'written-events.tsv').read_text()
         played_events = (folder / 'played-events.tsv').read_text()
     if not pages or not notes:
         raise ValueError('No pages or notes were exported.')
     if not bars:
         raise ValueError('No measure timing was exported.')
+    title = title if title is not None else header.get('title') or ('Julia Florida' if julia else source.stem)
+    composer = composer if composer is not None else header.get('composer') or ('Agustín Barrios' if julia else '')
+    beat_unit, bpm = starting_tempo(tempos, bars[0]['meter'], julia, beat_unit, bpm, header.get('midiQuarterBpm'))
     beats_per_bar = bars[0]['meter'][0] * 4 / bars[0]['meter'][1]
     for bar in bars:
         if julia and bar['index'] in (30, 31): bar['label'] += ' · 1st'
@@ -170,7 +226,7 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
     sequence = (list(range(32)) + list(range(20, 30)) + list(range(32, 56))
                 + list(range(17)) + list(range(56, 61))) if julia else playback_sequence(bars, played_bars, written_events, played_events)
     bundle = dict(format='sotto-score', version=1, title=title, composer=composer,
-                  subtitle='Barcarola · solo guitar' if julia else 'Practice score',
+                  subtitle=header.get('subtitle') or ('Barcarola · solo guitar' if julia else 'Practice score'),
                   beatsPerBar=beats_per_bar, beatUnit=beat_unit, bpm=bpm,
                   voices=[dict(id=v, name=name, color=color) for v, name, color in
                           [('melody', 'Melody', '#31745e'), ('middle', 'Inner voice', '#b47734'), ('bass', 'Bass', '#657db1')]] if julia else
@@ -187,11 +243,11 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', nargs='?', type=Path, help='Source .ly file; omit only to rebuild the public sample library.')
-    parser.add_argument('--title')
-    parser.add_argument('--composer')
+    parser.add_argument('--title', help='Override the title from the LilyPond header.')
+    parser.add_argument('--composer', help='Override the composer from the LilyPond header.')
     parser.add_argument('--beats-per-bar', type=float, help='Deprecated: measure boundaries are read from LilyPond Timing.')
-    parser.add_argument('--beat-unit', type=float, help='Tempo pulse in quarter notes (e.g. 1.5 for dotted quarter).')
-    parser.add_argument('--bpm', type=float)
+    parser.add_argument('--beat-unit', type=float, help='Override the score tempo pulse in quarter notes (e.g. 1.5 for dotted quarter).')
+    parser.add_argument('--bpm', type=float, help='Override the opening score tempo (numeric marking or tempo-word midpoint).')
     parser.add_argument('--transpose', type=int, help='Additional semitone offset after LilyPond transposition (default 0, built-in Julia -12). Do not lower already transposed guitar pitches twice.')
     parser.add_argument('--output', type=Path, help='Output path (default: source.sotto, gzip compressed). A .json extension explicitly selects uncompressed legacy JSON.')
     args = parser.parse_args()
@@ -204,8 +260,7 @@ if __name__ == '__main__':
     julia = args.source.resolve() == DEFAULT_SOURCE.resolve()
     output = args.output or args.source.with_suffix('.sotto')
     try:
-        compile_score(args.source.resolve(), args.title or ('Julia Florida' if julia else args.source.stem),
-                      args.composer or ('Agustín Barrios' if julia else ''), output, julia,
+        compile_score(args.source.resolve(), args.title, args.composer, output, julia,
                       args.beats_per_bar, args.beat_unit, args.bpm, args.transpose)
     except subprocess.CalledProcessError as exc:
         print(exc.stdout or '')

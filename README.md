@@ -90,7 +90,17 @@ The LilyPond file needs a single engraved score (a separate MIDI score is fine),
 
 ### 2. Export the player bundle
 
-From this repository's root, for a **quarter-note pulse** (including scores that change meter):
+From this repository’s root, the usual command is:
+
+```sh
+python3 scripts/export_score.py my-score.ly
+```
+
+This creates `my-score.sotto` beside the source. Title, composer and subtitle come from the parsed LilyPond headers, including includes, variables, markup and score/book header overrides. The starting tempo uses an opening numeric `\tempo` marking (including dotted-note units and range midpoints), or an explicit numeric tempo in the MIDI block. Text-only tempo markings use the midpoint of an approximate range: Adagio 71, Andante 92, Moderato 114, Allegro 144 and Presto 184 BPM. These are practice defaults based on [Skoove’s tempo ranges](https://www.skoove.com/blog/wp-content/uploads/2021/04/Italian-tempo-markings.pdf), not exact performance prescriptions. Finite fallback ranges for the open-ended Larghissimo and Prestissimo markings are 15–24 and 200–240.
+
+Without a numeric pulse, the meter supplies the beat unit: for example, a quarter note in 4/4 and a dotted quarter in 6/8, 9/8 or 12/8. Unrecognized/missing opening tempos fall back to 80 BPM (the legacy Julia export uses 44). The exporter prints the chosen starting tempo and its source. It currently exports one starting tempo; later tempo changes remain visible in the notation but do not change playback speed.
+
+To override the source metadata and use a **quarter-note pulse**:
 
 ```sh
 python3 scripts/export_score.py my-score.ly \
@@ -101,7 +111,7 @@ python3 scripts/export_score.py my-score.ly \
 
 Always pass the `.ly` source path for a custom piece. With no arguments, the exporter rebuilds the public sample library; custom titles or output paths without a source are rejected. Renaming a bundle does not change its engraved pages, notes or parts. Named voices on separate staves (for example, Violin I and Violin II) export as independent parts, in score order, with separate colors and mute/solo/volume controls.
 
-For **6/8 guitar**, with a dotted-quarter pulse:
+For an explicit **6/8 guitar** practice tempo, with a dotted-quarter pulse:
 
 ```sh
 python3 scripts/export_score.py my-score.ly \
@@ -112,9 +122,10 @@ python3 scripts/export_score.py my-score.ly \
 
 | Option | Meaning |
 | --- | --- |
+| `--title`, `--composer` | Override the parsed LilyPond header values. Omit these to use the source metadata. |
 | `--beats-per-bar` | Deprecated and ignored. Actual bar starts, durations, and time signatures come from LilyPond’s Timing context, including meter changes and pickups. |
-| `--beat-unit` | Tempo pulse in quarter-note units: 1 for a quarter, 1.5 for a dotted quarter. This also sets the metronome beat. |
-| `--bpm` | Number of those pulses per minute. |
+| `--beat-unit` | Override the tempo pulse in quarter-note units: 1 for a quarter, 1.5 for a dotted quarter. This also sets the metronome beat. When only the pulse is overridden, a numeric source tempo is converted to preserve playback speed. |
+| `--bpm` | Override the number of selected pulses per minute. Otherwise use the opening source tempo or tempo-word midpoint. |
 | `--transpose` | Additional semitone offset **after** LilyPond’s `\transpose` and `\transposition` instrument metadata. Percussion is never shifted. Defaults to 0 for imported pieces. Use -12 only when the exported pitches are still in the written guitar octave. |
 
 The export contains SVG score pages, notehead identities, note timings, voices, ties, bar numbers, and playback metadata in one portable file. No separate PDF, MIDI, or audio file is needed. Playback instrument selection changes the timbre. Sound settings also offer a temporary playback-octave adjustment for older bundles.
@@ -126,6 +137,8 @@ The export contains SVG score pages, notehead identities, note timings, voices, 
 The exporter writes gzip-compressed JSON, preserving all SVG drawing data and score metadata. An explicit output name ending in `.json` produces legacy uncompressed JSON: if an older command still uses `--output my-score.sotto.json`, change it to `--output my-score.sotto` to enable compression. The exporter reports the format and byte count after writing. Save score and the single-song resume cache also use compression. Existing `.sotto.json` files remain supported; open one and choose **Save score** to get a compressed copy. Library/settings backups remain ordinary JSON.
 
 Transfer `my-score.sotto` to the tablet using Files, AirDrop, or a file-sharing service, open Sotto, and choose **Open score**. Select the bundle. This reads it locally; it does not upload the file. You can also use **Save score** to download a copy.
+
+When reopening an existing bookmark, Sotto keeps your saved practice BPM. Click the percentage button below the tempo slider (**Reset to score tempo**) to use the newly exported score tempo.
 
 The last song is cached for resuming across reloads; **Library** remembers the other score bookmarks and favorites. See the library workflow below.
 
