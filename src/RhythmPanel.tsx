@@ -3,14 +3,14 @@ import { ChevronDown, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
 import type { Player } from './audio';
 import { metronomePattern, type ClickMode } from './sounds';
 import { MicrophoneInput } from './microphone';
-import { calibrationOffset, emptyStats, estimateBackground, expectedAttacks, OnsetDetector, RhythmPass, TRACE_HISTORY_SECONDS, LOOK_AHEAD_CHOICES, plotLookAhead, traceColumns, traceLevel, type Attack, type BackgroundLevel, type LevelFrame, type RhythmStats } from './rhythm';
+import { calibrationOffset, emptyStats, estimateBackground, expectedAttacks, OnsetDetector, RhythmPass, TRACE_HISTORY_SECONDS, LOOK_AHEAD_CHOICES, plotLookAhead, traceColumns, traceLevel, type Attack, type BackgroundLevel, type LevelFrame, type RhythmStats, type TimingMoments, emptyTiming, mergeTiming, rhythmReview, attackCooldown } from './rhythm';
 import type { Performance, Score } from './score';
 
 type Props = { visible: boolean; onHide(): void; player: Player; score: Score | null; performance: Performance | null;
   practiceVoice: string; onPracticeVoice(voice: string): void; playing: boolean; bpm: number; clickMode: ClickMode; onMicState(active: boolean): void; prepareCalibration(): void; mutedVoices: ReadonlySet<string>; muteVoice(voice: string): void };
 type Sample = LevelFrame;
 type Dot = Attack & { time: number };
-type Pass = { tracker: RhythmPass; origin: number; lastBeat: number; lastTime: number; endTime?: number };
+type Pass = { tracker: RhythmPass; origin: number; lastBeat: number; lastTime: number; endTime?: number; finished?: boolean };
 const setting = (key: string, fallback: number, min: number, max: number) => {
   try { const stored = localStorage.getItem(key); const value = stored === null ? fallback : Number(stored); return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback; } catch { return fallback; }
 };
@@ -39,6 +39,8 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   const [hideBackground, setHideBackground] = useState(() => { try { return localStorage.getItem('sotto.hideBackground') !== 'false'; } catch { return true; } });
   const [tolerance, setTolerance] = useState(() => setting('sotto.rhythmTolerance', 80, 25, 150));
   const [stats, setStats] = useState<RhythmStats>(emptyStats);
+  const [timing, setTiming] = useState<TimingMoments>(emptyTiming);
+  const [lastLoop, setLastLoop] = useState<ReturnType<typeof rhythmReview> | null>(null);
   const [lastAttack, setLastAttack] = useState<Attack | null>(null);
   const [level, setLevel] = useState(-90);
   const [clipped, setClipped] = useState(false);
@@ -48,6 +50,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   const pass = useRef<Pass | null>(null);
   const completedPasses = useRef<Pass[]>([]);
   const completedStats = useRef<RhythmStats>(emptyStats());
+  const completedTiming = useRef<TimingMoments>(emptyTiming());
   const [loopPasses, setLoopPasses] = useState(0);
   const detector = useRef(new OnsetDetector());
   const calibration = useRef<{ times: number[]; detected: number[] } | null>(null);
@@ -68,7 +71,13 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
 
   function reset() {
     pass.current = null; completedPasses.current = []; completedStats.current = emptyStats(); setLoopPasses(0); samples.current = []; dots.current = []; detector.current.reset();
-    frozenTime.current = 0; setStats(emptyStats()); setLastAttack(null);
+    frozenTime.current = 0; setStats(emptyStats()); setTiming(emptyTiming()); completedTiming.current = emptyTiming(); setLastLoop(null); setLastAttack(null);
+  }
+  function refreshStats() {
+    const tracker = pass.current?.tracker;
+    if (!tracker) return;
+    setStats(Object.fromEntries(Object.entries(tracker.stats).map(([key, value]) => [key, value + completedStats.current[key as keyof RhythmStats]])) as RhythmStats);
+    setTiming(mergeTiming(completedTiming.current, tracker.timing));
   }
   function beginBaseline(manual = false) {
     baselineCapture.current = { since: null, frames: [], manual };
@@ -78,6 +87,9 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   function stop() {
     requestVersion.current++; baselineCapture.current = null; setLearningBaseline(false);
     window.clearTimeout(calibrationTimer.current); calibration.current = null;
+    if (pass.current && !pass.current.finished) {
+      pass.current.tracker.finish(pass.current.lastBeat); pass.current.finished = true; refreshStats();
+    }
     input.stop(); setEnabled(false); setBusy(false); setCalibrating(false); current.current.onMicState(false);
     levelPeak.current = 0; setLevel(-90); setClipped(false);
   }
@@ -108,7 +120,11 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   useEffect(() => {
     input.onFrame = frame => {
       const state = current.current;
-      const onset = detector.current.push(frame, state.gate);
+      const time = frame.time - state.delay / 1000;
+      const clock = state.player.clockAt(time);
+      const secondsPerBeat = 60 / (state.bpm * (state.score?.beatUnit ?? 1));
+      const cooldown = clock.active && !calibration.current ? attackCooldown(state.targets, secondsPerBeat, clock.beat) : .085;
+      const onset = detector.current.push(frame, state.gate, cooldown);
       const learning = baselineCapture.current;
       if (learning && !calibration.current) {
         learning.since ??= frame.time;
@@ -125,17 +141,14 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
         latestLevelUpdate.current = frame.time;
         setLevel(Math.max(-90, 20 * Math.log10(Math.max(1e-5, levelPeak.current)))); levelPeak.current = 0;
         setClipped(frame.time < clipUntil.current);
-        if (pass.current) setStats(Object.fromEntries(Object.entries(pass.current.tracker.stats).map(([key, value]) => [key, value + completedStats.current[key as keyof RhythmStats]])) as RhythmStats);
+        if (pass.current) refreshStats();
       }
       if (calibration.current) {
         if (onset) calibration.current.detected.push(frame.time);
         samples.current.push(frame); samples.current = samples.current.filter(sample => sample.time > frame.time - TRACE_HISTORY_SECONDS);
         return;
       }
-      const time = frame.time - state.delay / 1000;
-      const clock = state.player.clockAt(time);
       if (clock.active && (state.playing || pass.current)) {
-        const secondsPerBeat = 60 / (state.bpm * (state.score?.beatUnit ?? 1));
         const previous = pass.current;
         if (!previous || clock.beat < previous.lastBeat - .05 ||
             Math.abs(clock.beat - previous.lastBeat - (time - previous.lastTime) / secondsPerBeat) > .25) {
@@ -143,7 +156,9 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
           const wrapped = previous && loop.enabled && clock.beat < previous.lastBeat &&
             previous.lastBeat > loop.end - .25 && clock.beat < loop.start + .25;
           if (wrapped) {
-            previous.tracker.advance(loop.end + previous.tracker.windowMs / 1000 / secondsPerBeat);
+            previous.tracker.finish(loop.end);
+            setLastLoop(rhythmReview(previous.tracker.stats, previous.tracker.timing));
+            completedTiming.current = mergeTiming(completedTiming.current, previous.tracker.timing);
             previous.endTime = previous.origin + loop.end * secondsPerBeat;
             completedPasses.current.push(previous);
             completedPasses.current = completedPasses.current.filter(take => take.endTime! > time - TRACE_HISTORY_SECONDS);
@@ -151,7 +166,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
             setLoopPasses(value => value + 1);
           } else {
             completedPasses.current = []; completedStats.current = emptyStats(); setLoopPasses(0);
-            samples.current = []; dots.current = []; setStats(emptyStats()); setLastAttack(null);
+            samples.current = []; dots.current = []; setStats(emptyStats()); setTiming(emptyTiming()); completedTiming.current = emptyTiming(); setLastLoop(null); setLastAttack(null);
           }
           pass.current = { tracker: new RhythmPass(loop.enabled ? state.targets.filter(beat => beat >= loop.start && beat < loop.end) : state.targets,
             secondsPerBeat, wrapped ? loop.start : Math.max(0, clock.beat - .1 / secondsPerBeat), state.tolerance),
@@ -167,8 +182,9 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
         // Input can arrive after pause due to device latency. Finish consuming
         // frames from the active audio interval before freezing the graph.
         frozenTime.current = pass.current.lastTime;
-        if (state.performance && pass.current.lastBeat >= state.performance.duration - .1) {
-          pass.current.tracker.advance(state.performance.duration + pass.current.tracker.windowMs / 1000 / pass.current.tracker.secondsPerBeat);
+        if (!pass.current.finished) {
+          const end = Math.min(state.performance?.duration ?? Infinity, Math.max(pass.current.lastBeat, clock.beat));
+          pass.current.tracker.finish(end); pass.current.finished = true; refreshStats();
         }
         return;
       }
@@ -293,6 +309,8 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
     }, 5300);
   }
   useImperativeHandle(ref, () => ({ toggleMicrophone: () => { if (enabled || busy) stop(); else void start(); } }));
+  const review = rhythmReview(stats, timing);
+  const offsetLabel = review.offsetMs === null ? '—' : Math.abs(review.offsetMs) < .5 ? 'Centered' : `${Math.abs(Math.round(review.offsetMs))} ms ${review.offsetMs < 0 ? 'early' : 'late'}`;
   const feedback = lastAttack ? lastAttack.kind === 'extra' ? 'Unmatched attack' : `${lastAttack.kind === 'on-time' ? 'On time' : lastAttack.kind === 'early' ? 'Early' : 'Late'} · ${Math.round(lastAttack.errorMs!)} ms` :
     enabled ? props.playing ? 'Listening for attacks…' : 'Play a few notes to check the input, then start the score.' : 'Enable the microphone to begin.';
   return <section className="rhythm-panel" aria-label="Microphone rhythm feedback" hidden={!props.visible}>
@@ -300,6 +318,16 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
     <div className="rhythm-monitor"><div className="input-level" role="meter" aria-label="Microphone input level" aria-valuemin={-90} aria-valuemax={0} aria-valuenow={Math.round(level)}><span style={{ width: `${Math.max(0, (level + 70) / 70 * 100)}%` }}/></div><span>{enabled ? `${Math.round(level)} dB` : 'Mic off'}</span><button className="baseline-button" aria-label="Learn microphone baseline" disabled={!enabled || busy || calibrating || learningBaseline} onClick={() => beginBaseline(true)}>{enabled && learningBaseline ? 'Learning baseline…' : 'Learn baseline'}</button>{background && <span className="baseline-readout">Background {Math.round(20 * Math.log10(background.rms))} dB</span>}<strong className={clipped ? 'clipped' : ''}>{clipped ? 'Input clipping—lower microphone gain.' : feedback}</strong></div>
     <canvas ref={canvas} data-window-seconds={plotWindow} data-trace-boost={traceBoost} data-background-rms={background?.rms} data-background-ready={!!background} data-hide-background={hideBackground} data-metronome-beats={beatGrid.length} data-downbeats={beatGrid.filter(click => click.accent === 'downbeat').length} data-lookahead-seconds={visibleLookAhead} role="img" aria-label="Microphone volume with score attacks and metronome beats"/>
     <div className="rhythm-footer"><div className="rhythm-stats" aria-label="Rhythm timing estimates" data-completed-loops={loopPasses} data-history-dots={dots.current.length} data-on-time={stats.onTime} data-early={stats.early} data-late={stats.late} data-missed={stats.missed} data-extra={stats.extra}><span>On time <strong>{stats.onTime}</strong></span><span>Early <strong>{stats.early}</strong></span><span>Late <strong>{stats.late}</strong></span><span>Missed <strong>{stats.missed}</strong></span><span>Unmatched <strong>{stats.extra}</strong></span></div><div className="rhythm-plot-controls"><label>Plot window<select aria-label="Rhythm plot window" value={plotWindow} onChange={event => setPlotWindow(Number(event.target.value))}>{[6, 12, 24, 48].map(seconds => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select></label><label>Look ahead<select aria-label="Rhythm look ahead" value={visibleLookAhead} onChange={event => setLookAhead(Number(event.target.value))}>{LOOK_AHEAD_CHOICES.filter(seconds => seconds <= plotWindow - 2).map(seconds => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select></label><label>Trace boost<select aria-label="Microphone trace boost" value={traceBoost} onChange={event => setTraceBoost(Number(event.target.value))}>{[0, 6, 12, 18, 24, 30, 36].map(db => <option key={db} value={db}>+{db} dB</option>)}</select></label></div><div className="rhythm-legend"><span>Volume fill · peak outline · green dashed notes</span><span className="beat-legend">Red: solid bar starts · dashed beats</span><span>Dots: green on time · amber early · blue late · gray unmatched</span></div></div>
+    {review.assessed > 0 && <details className="rhythm-review" open={!props.playing}>
+      <summary><span>Take review</span><strong>{review.onTimePercent}% on time</strong><span>{review.matched} / {review.expected} expected attacks matched</span></summary>
+      <div className="rhythm-review-metrics" role="group" aria-label="Rhythm take review" data-assessed={review.assessed} data-offset-ms={review.offsetMs ?? ''} data-spread-ms={review.spreadMs ?? ''}>
+        <span title="Mean signed timing error after input-offset correction; device latency can contribute.">Average offset <strong>{review.enoughTiming ? offsetLabel : '—'}</strong></span>
+        <span title="Standard deviation of matched timing errors: lower means more consistent timing, even if consistently early or late.">Timing spread <strong>{review.enoughTiming ? `${Math.round(review.spreadMs!)} ms` : '—'}</strong></span>
+        <span title="Mean absolute distance from the expected score attacks.">Average error <strong>{review.enoughTiming ? `${Math.round(review.meanErrorMs!)} ms` : '—'}</strong></span>
+        {lastLoop && <span>Last loop <strong>{lastLoop.onTimePercent}% on time · {lastLoop.matched}/{lastLoop.expected} matched</strong></span>}
+      </div>
+      <p>{review.enoughTiming ? 'On-time percentage includes missed and unmatched attacks. Calibrate input timing before interpreting the offset.' : 'Play at least four matched attacks for timing averages. Missed and unmatched attacks count toward the on-time percentage.'}</p>
+    </details>}
     {message && <p className="rhythm-message" role="status">{message}</p>}
     <details className="rhythm-options"><summary>Input, timing &amp; calibration <ChevronDown size={13}/></summary><div className="rhythm-fields">
       <label className="baseline-option"><input aria-label="Hide learned microphone background" type="checkbox" checked={hideBackground} onChange={event => setHideBackground(event.target.checked)}/>Hide learned background (display only)</label>
@@ -312,7 +340,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
       <label>Attack gate ({gate} dB)<input aria-label="Microphone attack gate" type="range" min="-65" max="-20" value={gate} disabled={calibrating} onChange={event => setGate(Number(event.target.value))}/></label>
       <label>On-time tolerance (ms)<input aria-label="Rhythm timing tolerance" type="number" min="25" max="150" step="5" value={tolerance} disabled={calibrating} onChange={event => setTolerance(Math.min(150, Math.max(25, Number(event.target.value))))}/></label>
       <button className="quiet-button" disabled={!enabled || busy || calibrating || learningBaseline} onClick={calibrate}>{calibrating ? 'Calibrating…' : 'Calibrate speakers'}</button><button className="quiet-button" disabled={calibrating} onClick={reset}>Clear feedback</button>
-    </div>{enabled && <p className="capture-processing">{captureInfo}</p>}<p>Capture requests noise suppression, echo cancellation and automatic gain off; the browser may not expose all settings. AirPods and Apple’s system Mic Mode can still process sound. If available in Control Center, try Standard or Wide Spectrum for music. A device’s built-in microphone can be selected while keeping AirPods for listening.</p><p>The baseline is measured during the first two seconds of input. Use Learn baseline with your instrument quiet to measure it again; this pauses playback and the metronome. Baseline cropping and trace boost affect only the drawing. Red lines follow the metronome Pulse setting: Beat gives two lines in 6/8 (first and fourth eighths), while Subdivision gives all six. Each bar starts solid; the remaining lines are dashed. Look ahead is independent of the total plot window; the default shows 24 seconds total with 4 seconds ahead.</p><p>The 4 kHz low-pass reduces high-frequency noise before the volume plot and attack detector. The optional high-pass removes low rumble. Filters cannot recover sound already suppressed by the microphone. Trace boost changes only the drawing, not detection sensitivity.</p><p>Use headphones so Sotto’s playback does not trigger the microphone. Mute the voice you are playing. Timing estimates use detected attacks; they do not check pitches. Sustained or overlapping notes, strums and room noise can confuse this first detector.</p><p>A positive offset moves captured input earlier. Adjust it until attacks line up, or run speaker calibration in a quiet room. Calibration measures the current speaker/microphone route; headphones or Bluetooth can change the delay.</p><p>Feedback covers the current take. Loop repeats keep the recent graph and accumulate timing totals, so you can pause after a wrap to review earlier passes. Starting playback again, seeking or changing timing settings begins a new take. Pausing freezes the graph. Only level summaries are kept in memory; microphone audio is never recorded or uploaded.</p></details>
+    </div>{enabled && <p className="capture-processing">{captureInfo}</p>}<p>Capture requests noise suppression, echo cancellation and automatic gain off; the browser may not expose all settings. AirPods and Apple’s system Mic Mode can still process sound. If available in Control Center, try Standard or Wide Spectrum for music. A device’s built-in microphone can be selected while keeping AirPods for listening.</p><p>The baseline is measured during the first two seconds of input. Use Learn baseline with your instrument quiet to measure it again; this pauses playback and the metronome. Baseline cropping and trace boost affect only the drawing. Red lines follow the metronome Pulse setting: Beat gives two lines in 6/8 (first and fourth eighths), while Subdivision gives all six. Each bar starts solid; the remaining lines are dashed. Look ahead is independent of the total plot window; the default shows 24 seconds total with 4 seconds ahead.</p><p>The 4 kHz low-pass reduces high-frequency noise before the volume plot and attack detector. The optional high-pass removes low rumble. Filters cannot recover sound already suppressed by the microphone. Trace boost changes only the drawing, not detection sensitivity.</p><p>Use headphones so Sotto’s playback does not trigger the microphone. Mute the voice you are playing. Timing estimates use detected attacks; they do not check pitches. The detector adapts its cooldown to the nearby score attacks. Matching follows score order; a second attack closest to a consumed note is unmatched instead of taking the next note. Take review separates average offset from timing spread, so consistently late input is distinguished from uneven timing. Input latency can contribute to the offset; calibrate before judging it. Sustained or overlapping notes, strums and room noise can confuse this first detector.</p><p>A positive offset moves captured input earlier. Adjust it until attacks line up, or run speaker calibration in a quiet room. Calibration measures the current speaker/microphone route; headphones or Bluetooth can change the delay.</p><p>Feedback covers the current take. Loop repeats keep the recent graph and accumulate timing totals, so you can pause after a wrap to review earlier passes. Starting playback again, seeking or changing timing settings begins a new take. Pausing freezes the graph. Only level summaries are kept in memory; microphone audio is never recorded or uploaded.</p></details>
   </section>;
 });
 export default RhythmPanel;

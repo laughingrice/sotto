@@ -60,7 +60,7 @@ await page.addInitScript(() => {
     const calibration = window.injectCalibration && Math.abs((this.buffer?.duration ?? 0) - .04) < .0001;
     const time = Number(args[0] ?? this.context.currentTime);
     if (destination && destination.context === this.context && window.testMicTrack.readyState === 'live' &&
-        (instrument || calibration) && time - (window.lastInjectedTime ?? -Infinity) > .07) {
+        (instrument || calibration) && time - (window.lastInjectedTime ?? -Infinity) > .03) {
       window.lastInjectedTime = time;
       const buffer = this.context.createBuffer(1, Math.round(this.context.sampleRate * .025), this.context.sampleRate);
       const data = buffer.getChannelData(0);
@@ -172,6 +172,9 @@ try {
   await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.late) >= 3);
   assert.ok(Number(await page.getByRole('meter', { name: 'Microphone input level', exact: true }).getAttribute('aria-valuenow')) > -90, 'Real worklet receives generated audio');
   await pause().click(); await page.waitForTimeout(300);
+  const takeReview = page.locator('[aria-label="Rhythm take review"]');
+  assert.ok(await takeReview.isVisible(), 'Take review opens when paused');
+  assert.ok(Number(await takeReview.getAttribute('data-offset-ms')) > 70, 'Review shows the known uncalibrated delay');
   const frozen = await controls.getAttribute('data-late');
   await page.waitForTimeout(300); assert.equal(await controls.getAttribute('data-late'), frozen, 'Paused results stay frozen');
   await page.getByRole('spinbutton', { name: 'Microphone timing offset', exact: true }).fill('120');
@@ -183,6 +186,8 @@ try {
   assert.ok(Number(await controls.getAttribute('data-on-time')) >= 3, 'Background display adjustment preserves detection results');
   await page.getByRole('checkbox', { name: 'Hide learned microphone background', exact: true }).check();
   await pause().click(); await page.waitForTimeout(300);
+  assert.ok(Math.abs(Number(await takeReview.getAttribute('data-offset-ms'))) < 45, 'Calibrated average timing is close to the score');
+  assert.ok(Number(await takeReview.getAttribute('data-spread-ms')) < 35, 'Even generated attacks have low timing spread');
   const beforeLearning = Number(await controls.getAttribute('data-on-time'));
   await page.getByRole('button', { name: 'Learn microphone baseline', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.rhythm-panel canvas').dataset.backgroundReady === 'true');
@@ -244,6 +249,20 @@ try {
   assert.equal(Number(await controls.getAttribute('data-on-time')), loopReview.onTime, 'Paused loop history stays available');
   await page.screenshot({ path: 'test-results/rhythm-loop-review.png' });
   await page.getByRole('switch', { name: 'Practice loop', exact: true }).click();
+  await page.getByText(/Last loop/).waitFor();
+  const fastNotes = notes.map((note, i) => ({ ...note, beat: i / 4, duration: .15, bar: Math.floor(i / 16) + 1, measure: Math.floor(i / 16) }));
+  const fast = { ...fixture, title: 'Rhythm fast test', bpm: 220, notes: fastNotes,
+    bars: fixture.bars.slice(0, 2), sequence: [0, 1] };
+  await page.locator('[data-score-input]').setInputFiles({ name: 'rhythm-fast.sotto.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fast)) });
+  await page.getByRole('heading', { name: 'Rhythm fast test', exact: true }).waitFor();
+  await page.getByRole('spinbutton', { name: 'Microphone timing offset', exact: true }).fill('0');
+  await page.evaluate(() => { window.testInputDelay = 0; });
+  await play().click();
+  await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.onTime) >= 28);
+  await play().waitFor();
+  assert.ok(Number(await controls.getAttribute('data-on-time')) >= 28, 'Worklet and detector handle sixteenths at 220 BPM');
+  await page.screenshot({ path: 'test-results/rhythm-fast-review.png' });
+  await page.evaluate(() => { window.testInputDelay = .12; });
   await page.evaluate(() => { window.injectPerformance = false; window.injectCalibration = true; });
   await page.getByRole('button', { name: 'Calibrate speakers', exact: true }).click();
   await page.getByText(/Speaker\/microphone alignment:/).waitFor();
@@ -269,7 +288,7 @@ try {
   await page.screenshot({ path: 'test-results/rhythm-phone.png' });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight), 'Phone has no page overflow');
   if (process.env.CHECK_OFFLINE) {
-    await page.context().setOffline(true); await page.reload(); await page.getByRole('heading', { name: 'Rhythm test', exact: true }).waitFor();
+    await page.context().setOffline(true); await page.reload(); await page.getByRole('heading', { name: 'Rhythm fast test', exact: true }).waitFor();
     if (!await page.locator('.rhythm-panel').isVisible()) await page.getByRole('button', { name: 'Rhythm feedback', exact: true }).click();
     await page.getByRole('button', { name: 'Enable microphone', exact: true }).click();
     await page.getByRole('button', { name: 'Stop microphone', exact: true }).waitFor();
@@ -277,7 +296,7 @@ try {
     await page.context().setOffline(false);
   }
   assert.deepEqual(errors, []); assert.deepEqual(uploads, [], 'No microphone audio is uploaded');
-  console.log('PASS: focused-control transport shortcuts; worklet input, late/on-time detection, offset, calibration, stop/denial/cancel, and responsive rhythm feedback.');
+  console.log('PASS: transport shortcuts, real worklet input, timing/loop summaries, sixteenths at 220 BPM, offset/calibration, offline behavior and responsive rhythm feedback.');
 } catch (error) {
   console.log('Browser errors:', errors);
   await page.screenshot({ path: 'test-results/rhythm-failure.png' });
