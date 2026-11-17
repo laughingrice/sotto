@@ -110,7 +110,15 @@ def voice_labels(notes):
 def write_bundle(output, bundle):
     """Lossless gzip by default; explicit .json paths retain the legacy format."""
     data = json.dumps(bundle, separators=(',', ':')).encode('utf-8')
-    output.write_bytes(data if output.suffix == '.json' else gzip.compress(data, mtime=0))
+    legacy = output.suffix.lower() == '.json'
+    encoded = data if legacy else gzip.compress(data, mtime=0)
+    output.write_bytes(encoded)
+    if legacy:
+        compressed_path = output.with_suffix('') if output.name.lower().endswith('.sotto.json') else output.with_suffix('.sotto')
+        print(f'Uncompressed JSON: {len(data):,} bytes. For gzip compression, use --output "{compressed_path}".')
+    else:
+        saved = 100 * (1 - len(encoded) / len(data))
+        print(f'Gzip compressed: {len(data):,} → {len(encoded):,} bytes ({abs(saved):.1f}% {"smaller" if saved >= 0 else "larger"}).')
 
 
 def compile_score(source: Path, title: str, composer: str, output: Path, julia: bool,
@@ -185,7 +193,7 @@ if __name__ == '__main__':
     parser.add_argument('--beat-unit', type=float, help='Tempo pulse in quarter notes (e.g. 1.5 for dotted quarter).')
     parser.add_argument('--bpm', type=float)
     parser.add_argument('--transpose', type=int, help='Additional semitone offset after LilyPond transposition (default 0, built-in Julia -12). Do not lower already transposed guitar pitches twice.')
-    parser.add_argument('--output', type=Path)
+    parser.add_argument('--output', type=Path, help='Output path (default: source.sotto, gzip compressed). A .json extension explicitly selects uncompressed legacy JSON.')
     args = parser.parse_args()
     if args.source is None:
         if any(value is not None for value in (args.title, args.composer, args.output, args.beats_per_bar, args.beat_unit, args.bpm, args.transpose)):

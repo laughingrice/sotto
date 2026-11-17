@@ -123,7 +123,7 @@ The export contains SVG score pages, notehead identities, note timings, voices, 
 
 ### 3. Open it on any device
 
-The exporter writes gzip-compressed JSON, preserving all SVG drawing data and score metadata. An explicit output name ending in `.json` produces legacy uncompressed JSON. Save score and the single-song resume cache also use compression. Existing `.sotto.json` files remain supported; open one and choose **Save score** to get a compressed copy. Library/settings backups remain ordinary JSON.
+The exporter writes gzip-compressed JSON, preserving all SVG drawing data and score metadata. An explicit output name ending in `.json` produces legacy uncompressed JSON: if an older command still uses `--output my-score.sotto.json`, change it to `--output my-score.sotto` to enable compression. The exporter reports the format and byte count after writing. Save score and the single-song resume cache also use compression. Existing `.sotto.json` files remain supported; open one and choose **Save score** to get a compressed copy. Library/settings backups remain ordinary JSON.
 
 Transfer `my-score.sotto` to the tablet using Files, AirDrop, or a file-sharing service, open Sotto, and choose **Open score**. Select the bundle. This reads it locally; it does not upload the file. You can also use **Save score** to download a copy.
 

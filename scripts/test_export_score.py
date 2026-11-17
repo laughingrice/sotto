@@ -1,4 +1,6 @@
 """Integration checks for the LilyPond timing exporter. Requires LilyPond."""
+from contextlib import redirect_stdout
+from io import StringIO
 import gzip
 import json
 import tempfile
@@ -20,13 +22,29 @@ class ExportTests(unittest.TestCase):
         bundle = {'pages': ['<svg>é</svg>'], 'notes': [1, 2], 'provenance': {'credit': 'Author'}}
         with tempfile.TemporaryDirectory() as temp:
             compressed, legacy = Path(temp) / 'score.sotto', Path(temp) / 'score.sotto.json'
-            write_bundle(compressed, bundle)
-            write_bundle(legacy, bundle)
+            log = StringIO()
+            with redirect_stdout(log):
+                write_bundle(compressed, bundle)
+                write_bundle(legacy, bundle)
+            self.assertIn('Gzip compressed:', log.getvalue())
+            self.assertIn('Uncompressed JSON:', log.getvalue())
+            self.assertIn(f'--output "{compressed}"', log.getvalue())
             self.assertEqual(gzip.decompress(compressed.read_bytes()), legacy.read_bytes())
             self.assertEqual(json.loads(gzip.decompress(compressed.read_bytes())), bundle)
             previous = compressed.read_bytes()
             write_bundle(compressed, bundle)
             self.assertEqual(compressed.read_bytes(), previous)
+
+    def test_cli_default_writes_compressed_sotto_beside_the_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / 'piece.ly'
+            source.write_text(r'''\version "2.26.0" \score { \new Voice = "melody" { c'1 } \layout { } }''')
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('export_score.py')), str(source)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            output = source.with_suffix('.sotto')
+            self.assertIn('Gzip compressed:', result.stdout)
+            self.assertEqual(len(json.loads(gzip.decompress(output.read_bytes()))['notes']), 1)
+            self.assertFalse(source.with_suffix('.sotto.json').exists())
 
     def test_source_named_score_ly_does_not_shadow_instrumented_temporary_input(self):
         with tempfile.TemporaryDirectory(prefix='sotto-named-score-') as temp:
