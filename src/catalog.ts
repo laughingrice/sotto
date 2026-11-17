@@ -1,3 +1,4 @@
+import { scoreFileStem } from './score-file';
 import type { Library, LibraryEntry, LibraryFolder } from './library';
 
 export const SAMPLE_CATALOG = `${import.meta.env.BASE_URL}scores/samples/catalog.json`;
@@ -29,13 +30,19 @@ export function parseCatalog(value: unknown, address: string): Catalog {
   if (new Set(scores.map(score => score.id)).size !== scores.length) throw new Error('Duplicate score IDs in online catalog.');
   return { title: data.title, scores };
 }
-export async function fetchOnlineText(address: string, maxBytes: number, signal?: AbortSignal, timeoutMs = 20000): Promise<string> {
+export async function fetchOnlineBytes(address: string, maxBytes: number, signal?: AbortSignal, timeoutMs = 20000): Promise<Uint8Array<ArrayBuffer>> {
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
   const abort = () => controller.abort();
   signal?.addEventListener('abort', abort, { once: true });
   if (signal?.aborted) controller.abort();
   try {
-    const response = await fetch(onlineUrl(address), { signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
+    // Existing sample bookmarks keep their IDs/settings across the format migration.
+    let url = onlineUrl(address);
+    if (typeof location !== 'undefined') {
+      const samples = new URL('scores/samples/', new URL(import.meta.env.BASE_URL, location.href)).href;
+      if (url.startsWith(samples) && url.endsWith('.sotto.json')) url = url.slice(0, -5);
+    }
+    const response = await fetch(url, { signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
     if (!response.ok) throw new Error(`Online library request failed (${response.status}).`);
     if (Number(response.headers.get('content-length')) > maxBytes) throw new Error('Online library file is too large.');
     const reader = response.body?.getReader();
@@ -54,11 +61,14 @@ export async function fetchOnlineText(address: string, maxBytes: number, signal?
     const combined = new Uint8Array(bytes);
     let offset = 0;
     chunks.forEach(chunk => { combined.set(chunk, offset); offset += chunk.length; });
-    return new TextDecoder().decode(combined);
+    return combined;
   } catch (error) {
     if (controller.signal.aborted && !signal?.aborted) throw new Error('Online library request timed out. Check your connection and try again.');
     throw error;
   } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
+}
+export async function fetchOnlineText(address: string, maxBytes: number, signal?: AbortSignal, timeoutMs = 20000): Promise<string> {
+  return new TextDecoder().decode(await fetchOnlineBytes(address, maxBytes, signal, timeoutMs));
 }
 export async function fetchCatalog(url: string): Promise<Catalog> {
   try { return parseCatalog(JSON.parse(await fetchOnlineText(url, 2_000_000)), url); }
@@ -72,7 +82,7 @@ export function connectCatalog(library: Library, catalog: Catalog, url: string):
   const address = onlineUrl(url), existing = library.folders.find(folder => folder.catalogUrl === address);
   const folder: LibraryFolder = { id: existing?.id ?? crypto.randomUUID(), name: catalog.title, catalogUrl: address };
   const entries: LibraryEntry[] = catalog.scores.map(item => {
-    const name = `${item.id}.sotto.json`, old = library.entries.find(entry => entry.folderId === folder.id && entry.name === name);
+    const name = `${item.id}${new URL(item.online.url).pathname.endsWith('.sotto') ? '.sotto' : '.sotto.json'}`, old = library.entries.find(entry => entry.folderId === folder.id && scoreFileStem(entry.name) === item.id);
     return { ...old, id: old?.id ?? crypto.randomUUID(), name, title: item.title, composer: item.composer, favorite: old?.favorite ?? false,
       folderId: folder.id, path: `${item.online.instruments.replaceAll('/', ' & ')}/${name}`, online: item.online };
   });

@@ -64,7 +64,7 @@ The production build includes a service worker that caches the app, built-in sco
 - Structured repeats, alternate endings and explicitly encoded D.S./D.C./coda playback order.
 - Guitar transposition to sounding pitch; percussion keeps its drum keys.
 - Instrument selection: recorded nylon guitar, piano, violin, electric bass and acoustic drums, plus synthesized marimba, organ and flute. The recordings are bundled with the app, balanced in level, and cached for offline use.
-- Save/open portable `.sotto.json` bundles. Imported SVG is sanitized before rendering.
+- Save/open portable, losslessly gzip-compressed `.sotto` bundles. Legacy uncompressed `.sotto.json` files still open. Imported SVG is sanitized before rendering.
 - Meter changes use exported bar timing for playback, navigation, highlights, and metronome accents.
 - A persistent library of file/folder bookmarks, favorites, and a portable settings backup; the last opened song alone is cached for resuming. Granted folder handles are refreshed when Library opens, with separate Refresh and Reconnect actions.
 - Microphone rhythm preview: a volume trace, expected/detected attack markers, early/late estimates, input offset and optional speaker calibration. No microphone audio is recorded or uploaded.
@@ -96,7 +96,7 @@ From this repository's root, for a **quarter-note pulse** (including scores that
 python3 scripts/export_score.py my-score.ly \
   --title "My score" --composer "Composer" \
   --beat-unit 1 --bpm 80 \
-  --output my-score.sotto.json
+  --output my-score.sotto
 ```
 
 Always pass the `.ly` source path for a custom piece. With no arguments, the exporter rebuilds the public sample library; custom titles or output paths without a source are rejected. Renaming a bundle does not change its engraved pages, notes or parts. Named voices on separate staves (for example, Violin I and Violin II) export as independent parts, in score order, with separate colors and mute/solo/volume controls.
@@ -107,7 +107,7 @@ For **6/8 guitar**, with a dotted-quarter pulse:
 python3 scripts/export_score.py my-score.ly \
   --title "My score" --composer "Composer" \
   --beat-unit 1.5 --bpm 44 \
-  --output my-score.sotto.json
+  --output my-score.sotto
 ```
 
 | Option | Meaning |
@@ -123,7 +123,9 @@ The export contains SVG score pages, notehead identities, note timings, voices, 
 
 ### 3. Open it on any device
 
-Transfer `my-score.sotto.json` to the tablet using Files, AirDrop, or a file-sharing service, open Sotto, and choose **Open score**. Select the bundle. This reads it locally; it does not upload the file. You can also use **Save score** to download a copy.
+The exporter writes gzip-compressed JSON, preserving all SVG drawing data and score metadata. An explicit output name ending in `.json` produces legacy uncompressed JSON. Save score and the single-song resume cache also use compression. Existing `.sotto.json` files remain supported; open one and choose **Save score** to get a compressed copy. Library/settings backups remain ordinary JSON.
+
+Transfer `my-score.sotto` to the tablet using Files, AirDrop, or a file-sharing service, open Sotto, and choose **Open score**. Select the bundle. This reads it locally; it does not upload the file. You can also use **Save score** to download a copy.
 
 The last song is cached for resuming across reloads; **Library** remembers the other score bookmarks and favorites. See the library workflow below.
 
@@ -136,7 +138,7 @@ python3 scripts/build_samples.py
 # equivalent: npm run export:score
 ```
 
-This preserves the original sources, updates working copies for current LilyPond syntax, prepares independent practice parts and writes `.sotto.json` bundles, downloadable source archives and `catalog.json` under `public/scores/samples/`. Carcassi’s Étude Op. 60 No. 1 is the default. Most sample editions are designated public domain by Mutopia; solo Adelita is CC BY-SA 2.5 and Recuerdos de la Alhambra is CC BY-SA 3.0. Adapted editions retain those licenses; original credits remain in the engraving, source archives and catalog. See `scores/samples/README.md` for provenance and adaptation details.
+This preserves the original sources, updates working copies for current LilyPond syntax, prepares independent practice parts and writes `.sotto` bundles, downloadable source archives and `catalog.json` under `public/scores/samples/`. Carcassi’s Étude Op. 60 No. 1 is the default. Most sample editions are designated public domain by Mutopia; solo Adelita is CC BY-SA 2.5 and Recuerdos de la Alhambra is CC BY-SA 3.0. Adapted editions retain those licenses; original credits remain in the engraving, source archives and catalog. See `scores/samples/README.md` for provenance and adaptation details.
 
 Julia Florida is no longer served by the app. Its existing regression fixture lives outside `public/`; locally opened scores and saved settings continue to work. The legacy LilyPond source can still be exported explicitly for personal use, with output beside the source by default.
 
@@ -147,11 +149,11 @@ The public sample library uses:
 - `scores/samples/`: unchanged original LilyPond editions.
 - `scripts/build_samples.py`: reproducible adaptations and exports.
 - `public/scores/samples/catalog.json`: lightweight titles, instruments, source/license credits and relative bundle URLs.
-- `public/scores/samples/*.sotto.json`: rendered notation, timing and playback order.
+- `public/scores/samples/*.sotto`: rendered notation, timing and playback order.
 
 Only the small default Carcassi score is precached with the app for offline startup. Connecting a catalog downloads its metadata, not all its scores. Opening a piece downloads that bundle and replaces the one-song resume cache. Service-worker Cache Storage does not accumulate other score bundles or source archives. Catalog metadata, favorites and per-song settings are included in library backups; score files are not.
 
-**Open score** still reads local `.sotto.json` files without uploading them. Keep personal/copyrighted editions outside `public/`: Vite publishes everything in that directory. **Save score** downloads a separate copy.
+**Open score** still reads local `.sotto` files without uploading them. Keep personal/copyrighted editions outside `public/`: Vite publishes everything in that directory. **Save score** downloads a separate copy.
 
 ### Host an online library
 
@@ -171,7 +173,7 @@ Example `catalog.json` (relative paths resolve against the catalog URL):
     "title": "Study No. 1",
     "composer": "Composer",
     "instruments": "Guitar",
-    "file": "study-1.sotto.json",
+    "file": "study-1.sotto",
     "license": "Public Domain",
     "credit": "Edition/typesetter credit",
     "source": "https://example.org/original-edition",
@@ -200,7 +202,7 @@ The named voices live inside those shared section/measure variables. `returnToSe
 
 ## Library and last-song resume
 
-1. Keep `.sotto.json` files in your preferred folder, such as a locally synced **OneDrive/Scores** folder.
+1. Keep `.sotto` files in your preferred folder, such as a locally synced **OneDrive/Scores** folder.
 2. Open **Library → Connect folder**, choose that folder, and open a score from the list. Subfolders appear as expandable directories with no fixed nesting limit, for example `Violin/Vivaldi/Book 1/Pieces/Spring/`. **Open score / Add score** can bookmark individual files instead.
 3. Use the star to mark pieces you are working on; **Favorites** filters the list. Search matches filenames, known titles/composers and full folder paths. Search and Favorites reveal matching scores throughout the folder tree. Recently opened scores appear first within each favorites group.
 4. Library automatically scans remembered folder handles when it opens if read permission is already granted. Connect, Reconnect and Refresh enumerate directory names and relative file paths only; they do not open or parse score files. Unopened scores use their filenames. Title/composer metadata is learned when a score is opened and preserved on later scans. This avoids requesting every cloud-hosted score just to browse the library. Native folder handles permit directory-only enumeration; fallback file pickers are controlled by the browser/cloud provider. **Refresh** rescans that same handle; it requests permission only when necessary and does not reopen a folder picker. **Reconnect** explicitly chooses a folder again. Opening a linked score reads its current contents from disk, including changes made outside Sotto. Browsers without directory handles still require reselection; the browser may label its local picker “Upload”, but Sotto does not upload the selected files.
@@ -266,6 +268,10 @@ node scripts/part-instruments-test.mjs --score path/to/bass-and-drums.sotto.json
 node scripts/library-test.mjs
 # Arbitrary folder depth, filename-only scans, nested search and opening one file:
 node scripts/library-folders-test.mjs
+# Compressed/legacy imports, Save/Open and compressed offline resume:
+node scripts/compression-test.mjs
+# On-demand public catalog, licensing and old online bookmark compatibility:
+node scripts/catalog-test.mjs
 # Last-song caching, saved settings, fresh linked reads and offline resume:
 node scripts/session-test.mjs
 # Export/restore settings and library references into a separate browser profile:

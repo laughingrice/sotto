@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-from export_score import compile_score
+from export_score import compile_score, write_bundle
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / 'scores/samples'
@@ -210,7 +210,7 @@ def main(identities=None):
             folder = Path(directory)
             shutil.copytree(SOURCES / identity, folder, dirs_exist_ok=True)
             adapted = prepare(identity, folder)
-            output = DEST / f'{identity}.sotto.json'
+            output = DEST / f'{identity}.sotto'
             bundle = compile_score(adapted, title, composer, output, False, beat_unit=pulse, bpm=bpm)
             groups = {'up:1': 'pianoRight', 'up:2': 'pianoRight', 'down:1': 'pianoLeft', 'down:2': 'pianoLeft'} if identity == 'entertainer' else {
                 'guitarI:1': 'guitarI', 'guitarI:2': 'guitarI', 'guitarII:1': 'guitarII', 'guitarII:2': 'guitarII'} if identity == 'lagrima' else {}
@@ -243,7 +243,7 @@ def main(identities=None):
             elif identity == 'recuerdos': bundle['description'] = 'Solo guitar tremolo · repeats, alternate endings and D.C. al Coda playback.'
             else: bundle['description'] = 'Mutopia edition · prepared for Sotto'
             bundle['provenance'] = dict(source=f'https://www.mutopiaproject.org/cgibin/piece-info.cgi?id={number}', license=license_name, licenseUrl=license_url, credit=credit, copyright=copyright_notice, changes=changes)
-            output.write_text(json.dumps(bundle, separators=(',', ':')))
+            write_bundle(output, bundle)
             # Ship adapted, rebuildable source with includes plus unchanged
             # originals so provenance does not depend on GitHub UI or hotlinks.
             with zipfile.ZipFile(DEST / f'{identity}-source.zip', 'w', zipfile.ZIP_DEFLATED) as archive:

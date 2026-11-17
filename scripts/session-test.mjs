@@ -103,9 +103,10 @@ try {
   const stored = await page.evaluate(async () => {
     const db = await new Promise(resolve => { const request = indexedDB.open('sotto-library'); request.onsuccess = () => resolve(request.result); });
     const values = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').getAll(); request.onsuccess = () => resolve(request.result); }); db.close();
-    return { caches: values.filter(value => value.score).map(value => value.score.title), indexHasScore: values.filter(value => value.entries).some(value => JSON.stringify(value).includes('<svg')) };
+    const cached = await Promise.all(values.filter(value => value.data || value.score).map(async value => value.data ? JSON.parse(await new Response(value.data.stream().pipeThrough(new DecompressionStream('gzip'))).text()).title : value.score.title));
+    return { caches: cached, compressed: values.filter(value => value.data instanceof Blob).length, indexHasScore: values.filter(value => value.entries).some(value => JSON.stringify(value).includes('<svg')) };
   });
-  assert.deepEqual(stored, { caches: ['Practice B'], indexHasScore: false }, 'Exactly one song is cached; the library index stays metadata-only');
+  assert.deepEqual(stored, { caches: ['Practice B'], compressed: 1, indexHasScore: false }, 'Exactly one song is cached; the library index stays metadata-only');
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
   await page.context().setOffline(true); await page.reload(); await heading('Practice B');
   assert.equal(await slider('Tempo').inputValue(), '91'); assert.equal(await slider('Playback position').inputValue(), '9');

@@ -1,3 +1,4 @@
+import { readScoreFile, writeScoreFile } from './score-file';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, AudioLines, BookOpen, Check, ChevronDown, CircleHelp, Ear, FileMusic, FolderOpen, Headphones, Mic, Minus, Music2, PanelLeftClose, PanelLeftOpen, Pause, Play, Plus, Repeat2, RotateCcw, SlidersHorizontal, Volume2, VolumeX, X } from 'lucide-react';
 import { Player } from './audio';
@@ -10,7 +11,7 @@ import { buildBarHighlights } from './bar-highlight';
 import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, loopDisplayBeat, validateScore, type Score } from './score';
 import { INSTRUMENTS, clickStep, isInstrument, voiceInstrument, type ClickMode, type InstrumentId } from './sounds';
 
-const DEFAULT_SCORE = `${import.meta.env.BASE_URL}scores/samples/carcassi.sotto.json`;
+const DEFAULT_SCORE = `${import.meta.env.BASE_URL}scores/samples/carcassi.sotto`;
 const DEFAULT_KEY = 'builtin:carcassi';
 
 export default function App() {
@@ -157,7 +158,7 @@ export default function App() {
       if (controller.signal.aborted || openedVersion.current !== version) return;
       const response = await fetch(DEFAULT_SCORE, { signal: controller.signal });
       if (!response.ok) throw new Error('The example score could not be loaded.');
-      const value: unknown = await response.json();
+      const value: unknown = await readScoreFile(await response.blob());
       if (!controller.signal.aborted && openedVersion.current === version) openScore(value, DEFAULT_KEY, false);
     })().catch(reason => { if (reason.name !== 'AbortError') setError(reason.message); });
     return () => { controller.abort(); player.dispose(); };
@@ -351,11 +352,13 @@ export default function App() {
     const next = candidates.find(note => note.start >= beat - .05) ?? candidates[0];
     if (next) seek(next.start);
   };
-  function downloadBundle() {
+  async function downloadBundle() {
     if (!score) return;
-    const href = URL.createObjectURL(new Blob([JSON.stringify(score)], { type: 'application/json' }));
-    const link = document.createElement('a'); link.href = href; link.download = `${score.title.toLowerCase().replaceAll(' ', '-')}.sotto.json`; link.click();
-    setTimeout(() => URL.revokeObjectURL(href), 1000);
+    try {
+      const href = URL.createObjectURL(await writeScoreFile(score));
+      const link = document.createElement('a'); link.href = href; link.download = `${score.title.toLowerCase().replaceAll(' ', '-')}.sotto`; link.click();
+      setTimeout(() => URL.revokeObjectURL(href), 1000);
+    } catch (error) { setError(error instanceof Error ? error.message : 'Score could not be saved.'); }
   }
 
   const fullDuration = performance ? clockTime(performance.duration, bpm, score?.beatUnit ?? 1.5) : '0:00';

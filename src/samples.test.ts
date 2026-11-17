@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseCatalog } from './catalog';
@@ -17,7 +18,7 @@ describe('published openly licensed samples', () => {
     }
   });
   for (const entry of index.scores) it(`${entry.id}: valid timing, sounding pitches and visible note identities`, () => {
-    const score: Score = JSON.parse(readFileSync(new URL(`../public/scores/samples/${entry.file}`, import.meta.url), 'utf8'));
+    const score: Score = JSON.parse(gunzipSync(readFileSync(new URL(`../public/scores/samples/${entry.file}`, import.meta.url))).toString('utf8'));
     validateScore(score);
     const svg = score.pages.join('');
     for (const note of score.notes) {

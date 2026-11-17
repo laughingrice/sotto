@@ -21,6 +21,12 @@ describe('online catalogs', () => {
     expect(library.folders[0].catalogUrl).toBe(address);
     expect(library.entries[0].online?.licenseUrl).toBe(manifest.scores[0].licenseUrl);
   });
+  it('preserves bookmark IDs and favorites when a catalog switches to compressed scores', () => {
+    const old = connectCatalog(emptyLibrary(), parseCatalog(manifest, address), address);
+    old.entries[0].favorite = true;
+    const next = connectCatalog(old, parseCatalog({ ...manifest, scores: [{ ...manifest.scores[0], file: 'piece.sotto' }] }, address), address);
+    expect(next.entries[0]).toMatchObject({ id: old.entries[0].id, favorite: true, name: 'piece.sotto', online: { url: 'https://example.org/music/piece.sotto' } });
+  });
   it('rejects executable links, credentials, duplicate IDs and invalid licenses', () => {
     for (const url of ['javascript:alert(1)', 'data:application/json,{}', 'file:///tmp/score', 'https://user:password@example.org/catalog', 'http://example.org/catalog']) expect(() => onlineUrl(url)).toThrow();
     expect(onlineUrl('http://localhost:4174/catalog.json')).toContain('localhost');

@@ -1,10 +1,12 @@
 """Integration checks for the LilyPond timing exporter. Requires LilyPond."""
+import gzip
+import json
 import tempfile
 import subprocess
 import sys
 import unittest
 from pathlib import Path
-from export_score import compile_score
+from export_score import compile_score, write_bundle
 
 
 class ExportTests(unittest.TestCase):
@@ -13,6 +15,18 @@ class ExportTests(unittest.TestCase):
             source = Path(temp) / 'fixture.ly'
             source.write_text('\\version "2.26.0"\n' + music)
             return compile_score(source, 'Fixture', '', Path(temp) / 'out.json', False)
+
+    def test_compressed_output_is_lossless_and_legacy_json_remains_supported(self):
+        bundle = {'pages': ['<svg>é</svg>'], 'notes': [1, 2], 'provenance': {'credit': 'Author'}}
+        with tempfile.TemporaryDirectory() as temp:
+            compressed, legacy = Path(temp) / 'score.sotto', Path(temp) / 'score.sotto.json'
+            write_bundle(compressed, bundle)
+            write_bundle(legacy, bundle)
+            self.assertEqual(gzip.decompress(compressed.read_bytes()), legacy.read_bytes())
+            self.assertEqual(json.loads(gzip.decompress(compressed.read_bytes())), bundle)
+            previous = compressed.read_bytes()
+            write_bundle(compressed, bundle)
+            self.assertEqual(compressed.read_bytes(), previous)
 
     def test_source_named_score_ly_does_not_shadow_instrumented_temporary_input(self):
         with tempfile.TemporaryDirectory(prefix='sotto-named-score-') as temp:

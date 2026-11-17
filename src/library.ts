@@ -1,3 +1,4 @@
+import { isScoreFile, scoreFileStem, readScoreFile, writeScoreFile } from './score-file';
 import type { Score } from './score';
 import type { PortablePreferences } from './preferences';
 import { onlineUrl, parseOnlineScore, type OnlineScore } from './catalog';
@@ -64,22 +65,25 @@ export async function saveLibrary(library: Library) {
 export async function loadLastScore(): Promise<{ key: string; score: Score } | null> {
   const db = await database();
   try {
-    return await new Promise((resolve, reject) => {
+    const cached = await new Promise<{ key: string; score?: Score; data?: Blob } | null>((resolve, reject) => {
       const request = db.transaction('library').objectStore('library').get('last-score');
       request.onsuccess = () => resolve(request.result ?? null);
       request.onerror = () => reject(request.error);
     });
+    if (!cached) return null;
+    return { key: cached.key, score: cached.data ? await readScoreFile(cached.data) : cached.score! };
   } finally { db.close(); }
 }
 let scoreWrites = Promise.resolve();
 export function saveLastScore(key: string, score: Score): Promise<void> {
   // Keep one slot, and serialize writes so a slow save cannot replace a newer song.
   scoreWrites = scoreWrites.catch(() => {}).then(async () => {
+    const data = await writeScoreFile(score);
     const db = await database();
     try {
       await new Promise<void>((resolve, reject) => {
         const transaction = db.transaction('library', 'readwrite');
-        transaction.objectStore('library').put({ key, score }, 'last-score');
+        transaction.objectStore('library').put({ key, data }, 'last-score');
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
         transaction.onabort = () => reject(transaction.error ?? new Error('Last score could not be saved.'));
@@ -138,7 +142,7 @@ export async function scanDirectory(handle: DirectoryHandle, prefix = ''): Promi
   for await (const child of handle.values()) {
     if (child.name.startsWith('.')) continue;
     if (child.kind === 'directory') paths.push(...await scanDirectory(child, `${prefix}${child.name}/`));
-    else if (child.name.endsWith('.sotto.json')) paths.push(`${prefix}${child.name}`);
+    else if (isScoreFile(child.name)) paths.push(`${prefix}${child.name}`);
     if (paths.length > 10000) throw new Error('Please connect a smaller score folder (up to 10,000 scores).');
   }
   return paths;
@@ -150,7 +154,7 @@ export function connectFolder(library: Library, folder: LibraryFolder, paths: st
     if (existing.has(path)) continue;
     existing.add(path);
     const name = path.split('/').at(-1)!;
-    entries.push({ id: crypto.randomUUID(), name, title: name.replace(/\.sotto\.json$/, '').replaceAll('-', ' '),
+    entries.push({ id: crypto.randomUUID(), name, title: scoreFileStem(name).replaceAll('-', ' '),
       composer: '', folderId: folder.id, path, favorite: false });
   }
   return { entries, folders: [...library.folders.filter(item => item.id !== folder.id), folder] };

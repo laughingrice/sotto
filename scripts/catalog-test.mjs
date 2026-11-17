@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -9,7 +10,7 @@ const page = await context.newPage();
 const base = process.env.BASE_URL || 'http://localhost:4178/sotto/';
 const errors = [], requests = [];
 page.on('pageerror', error => errors.push(error.message));
-page.on('request', request => { if (request.url().endsWith('.sotto.json')) requests.push(request.url()); });
+page.on('request', request => { if (request.url().endsWith('.sotto')) requests.push(request.url()); });
 const button = name => page.getByRole('button', { name, exact: true });
 const heading = name => page.getByRole('heading', { name, exact: true });
 const find = text => page.getByRole('textbox', { name: 'Search library' }).fill(text);
@@ -21,7 +22,7 @@ try {
   await heading('Étude Op. 60 No. 1').waitFor();
   assert.equal(await page.locator('.score-note').count(), 354);
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
-  assert.ok(requests.every(url => url.endsWith('/carcassi.sotto.json')), 'Only the small public demo is fetched at startup');
+  assert.ok(requests.every(url => url.endsWith('/carcassi.sotto')), 'Only the small public demo is fetched at startup');
   await button('Score library').click();
   const before = requests.length;
   await button('Sample scores').click();
@@ -31,7 +32,7 @@ try {
   await page.locator('summary').filter({ hasText: /^Piano3$/ }).click();
   await page.screenshot({ path: 'test-results/sample-library.png' });
   await open('The Entertainer');
-  assert.equal(requests.filter(url => url.endsWith('/entertainer.sotto.json')).length, 1);
+  assert.equal(requests.filter(url => url.endsWith('/entertainer.sotto')).length, 1);
   assert.equal(await page.locator('.score-note').count(), 1717);
   assert.equal(await page.locator('.voice-card').count(), 2, 'Piano hands include their nested notation voices');
   await page.getByRole('slider', { name: 'Tempo', exact: true }).fill('101');
@@ -43,7 +44,7 @@ try {
   assert.ok((await page.getByRole('link', { name: 'LilyPond source', exact: true }).getAttribute('href')).endsWith('entertainer-source.zip'));
   const [download] = await Promise.all([page.waitForEvent('download'), button('Export backup').click()]);
   const backup = JSON.parse(await readFile(await download.path(), 'utf8'));
-  const saved = backup.entries.find(entry => entry.name === 'entertainer.sotto.json');
+  const saved = backup.entries.find(entry => entry.name === 'entertainer.sotto');
   assert.equal(saved.favorite, true);
   assert.equal(backup.settings.songs[`library:${saved.id}`].bpm, 101);
   assert.ok(backup.folders.some(folder => folder.catalogUrl?.endsWith('/catalog.json')));
@@ -51,7 +52,14 @@ try {
   const migrated = await browser.newPage();
   await migrated.goto(base); await migrated.getByRole('heading', { name: 'Étude Op. 60 No. 1', exact: true }).waitFor();
   await migrated.getByRole('button', { name: 'Score library', exact: true }).click();
-  await migrated.getByLabel('Import library backup').setInputFiles({ name: 'sotto-library.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
+  // A backup made before compression must still open its old sample URLs.
+  const legacyBackup = structuredClone(backup);
+  for (const entry of legacyBackup.entries) {
+    entry.name = entry.name.replace(/\.sotto$/, '.sotto.json');
+    entry.path = entry.path?.replace(/\.sotto$/, '.sotto.json');
+    if (entry.online) entry.online.url = entry.online.url.replace(/\.sotto$/, '.sotto.json');
+  }
+  await migrated.getByLabel('Import library backup').setInputFiles({ name: 'sotto-library.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacyBackup)) });
   await migrated.getByRole('status').filter({ hasText: 'Library and settings restored' }).waitFor();
   await migrated.getByRole('textbox', { name: 'Search library' }).fill('The Entertainer');
   await migrated.locator('.library-open').click();
@@ -68,7 +76,7 @@ try {
   await heading('The Entertainer').waitFor();
   assert.equal(await page.getByRole('slider', { name: 'Tempo', exact: true, includeHidden: true }).inputValue(), '101');
   const cached = await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async name => (await (await caches.open(name)).keys()).map(request => request.url)))).flat());
-  assert.ok(!cached.some(url => url.endsWith('/entertainer.sotto.json')), 'Opened library songs are not duplicated in service-worker cache');
+  assert.ok(!cached.some(url => url.endsWith('/entertainer.sotto')), 'Opened library songs are not duplicated in service-worker cache');
   assert.ok(!cached.some(url => url.includes('julia-florida')), 'Old copyrighted demo is absent from the offline app cache');
   await button('Score library').click(); await find('The Entertainer'); await page.locator('.library-open').click();
   await heading('The Entertainer').waitFor();
@@ -91,7 +99,7 @@ try {
     await button('Play score').click(); await button('Pause playback').waitFor(); await page.waitForTimeout(300); await button('Pause playback').click();
     if (license) {
       const [scoreDownload] = await Promise.all([page.waitForEvent('download'), button('Save score').click()]);
-      const exported = JSON.parse(await readFile(await scoreDownload.path(), 'utf8'));
+      const exported = JSON.parse(gunzipSync(await readFile(await scoreDownload.path())).toString('utf8'));
       assert.equal(exported.provenance.license, license);
       assert.ok(exported.provenance.licenseUrl.startsWith('https://creativecommons.org/licenses/by-sa/'));
       assert.equal(exported.provenance.credit, 'Stewart Holmes');
@@ -100,7 +108,7 @@ try {
   }
   await button('Score library').click();
   await page.getByText('Connect an online library', { exact: true }).click();
-  await page.route('https://catalog.example/catalog.json', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ format: 'sotto-catalog', version: 1, title: 'External library', scores: [{ id: 'piece', title: 'External sample', composer: '', file: new URL('scores/samples/invention-8.sotto.json', base).href, instruments: 'Piano', license: 'Public Domain', credit: 'Allen Garvin' }] }) }));
+  await page.route('https://catalog.example/catalog.json', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ format: 'sotto-catalog', version: 1, title: 'External library', scores: [{ id: 'piece', title: 'External sample', composer: '', file: new URL('scores/samples/invention-8.sotto', base).href, instruments: 'Piano', license: 'Public Domain', credit: 'Allen Garvin' }] }) }));
   await page.getByRole('textbox', { name: 'Online library catalog URL' }).fill('https://catalog.example/catalog.json');
   await button('Connect online library').click();
   await find('External sample'); await page.locator('.library-open').click(); await heading('Invention No. 8 · BWV 779').waitFor();

@@ -1,6 +1,7 @@
+import { isScoreFile, readScoreFile } from './score-file';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import { ChevronRight, FolderOpen, Globe, Star, Trash2, X } from 'lucide-react';
-import { connectCatalog, fetchCatalog, fetchOnlineText, onlineUrl, SAMPLE_CATALOG } from './catalog';
+import { connectCatalog, fetchCatalog, fetchOnlineBytes, onlineUrl, SAMPLE_CATALOG } from './catalog';
 import { lastScore, rememberScore, exportPreferences, importPreferences, parsePreferences } from './preferences';
 import { validateScore } from './score';
 import { connectFolder, emptyLibrary, exportLibrary, filePickers, directoryTree, loadLastScore, loadLibrary, parseLibrary, readEntry, saveLibrary, scanDirectory,
@@ -50,9 +51,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     await ready.current;
     const expected = current.current.entries.find(entry => entry.id === entryId);
     if (expected && expected.name !== file.name) throw new Error(`Please select ${expected.name} to reconnect this bookmark. Use Add score for another piece.`);
-    if (file.size > 15_000_000) throw new Error('Please use a score bundle smaller than 15 MB.');
-    const score: unknown = JSON.parse(await file.text());
-    validateScore(score);
+    const score = await readScoreFile(file);
     let existing = current.current.entries.find(entry => entry.id === entryId);
     if (!existing && handle) {
       for (const entry of current.current.entries) {
@@ -78,7 +77,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     if (!filePickers.showOpenFilePicker) { input.current?.click(); return; }
     setBusy(true); setMessage('');
     try {
-      const [handle] = await filePickers.showOpenFilePicker({ multiple: false, types: [{ description: 'Sotto score', accept: { 'application/json': ['.json'] } }] });
+      const [handle] = await filePickers.showOpenFilePicker({ multiple: false, types: [{ description: 'Sotto score', accept: { 'application/octet-stream': ['.sotto'], 'application/json': ['.json'] } }] });
       if (handle) await accept(await handle.getFile(), handle, entryId);
     } catch (error) { report(error); }
     finally { setBusy(false); reconnectEntry.current = undefined; }
@@ -92,7 +91,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       if (!saved) rememberScore(`library:${entry.id}`);
       try {
         if (entry.online && navigator.onLine) {
-          const text = await fetchOnlineText(entry.online.url, 15_000_000, undefined, 5000);
+          const text = await fetchOnlineBytes(entry.online.url, 15_000_000, undefined, 5000);
           return await accept(new File([text], entry.name, { type: 'application/json' }), undefined, entry.id, isCurrent);
         }
         const file = await readEntry(entry, current.current, false);
@@ -119,7 +118,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     if (entry.online) {
       setBusy(true); setMessage('');
       try {
-        const text = await fetchOnlineText(entry.online.url, 15_000_000);
+        const text = await fetchOnlineBytes(entry.online.url, 15_000_000);
         await accept(new File([text], entry.name, { type: 'application/json' }), undefined, entry.id);
       } catch (error) {
         const cached = await loadLastScore().catch(() => null);
@@ -225,7 +224,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
   };
   async function change(update: (library: Library) => Library) { try { await commit(update); } catch (error) { report(error); } }
   return <>
-    <input ref={input} data-score-input aria-label="Open score file" type="file" accept=".json,.sotto.json" className="visually-hidden" onChange={event => {
+    <input ref={input} data-score-input aria-label="Open score file" type="file" accept=".sotto,.sotto.json,.json" className="visually-hidden" onChange={event => {
       const file = event.target.files?.[0]; event.target.value = '';
       if (file) { setBusy(true); void accept(file, undefined, reconnectEntry.current).catch(report).finally(() => { setBusy(false); reconnectEntry.current = undefined; }); }
     }}/>
@@ -246,7 +245,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       {busy && <p role="status">Loading library…</p>}
       <details className="library-help"><summary>Connect an online library</summary><form className="online-library-form" onSubmit={event => { event.preventDefault(); void connectOnline(catalogAddress); }}><label>Catalog URL<input type="url" aria-label="Online library catalog URL" placeholder="https://example.org/scores/catalog.json" value={catalogAddress} onChange={event => setCatalogAddress(event.target.value)} required/></label><button className="quiet-button" type="submit" disabled={busy}>Connect online library</button></form><p className="settings-note">Use a public Sotto catalog.json served over HTTPS. Other hosts must allow cross-origin requests (CORS). A OneDrive sharing-page link is not a catalog URL.</p></details>
       <div className="library-filters"><input aria-label="Search library" placeholder="Find a score…" value={search} onChange={event => setSearch(event.target.value)}/><label className="checkbox-row"><input type="checkbox" checked={favoritesOnly} onChange={event => setFavoritesOnly(event.target.checked)}/>Favorites</label></div>
-      <div className="library-list">{tree.loose.map(renderEntry)}{tree.directories.map(renderDirectory)}{!entries.length && <p className="settings-note">{library.entries.length ? 'No matching scores.' : 'Add a score or connect a folder containing .sotto.json files.'}</p>}</div>
+      <div className="library-list">{tree.loose.map(renderEntry)}{tree.directories.map(renderDirectory)}{!entries.length && <p className="settings-note">{library.entries.length ? 'No matching scores.' : 'Add a score or connect a folder containing .sotto or .sotto.json files.'}</p>}</div>
       {!!library.folders.length && <h3>Connected folders</h3>}
       {library.folders.map(folder => <div className="library-folder" key={folder.id}><span>{folder.catalogUrl ? <Globe size={16}/> : <FolderOpen size={16}/>} {folder.name}</span>{(folder.handle || folder.catalogUrl) && <button className="text-button" disabled={busy} onClick={() => void refreshFolder(folder)}>Refresh</button>}{!folder.catalogUrl && <button className="text-button" disabled={busy} onClick={() => void chooseFolder(folder.id)}>Reconnect</button>}<button className="icon-button" disabled={busy} aria-label={`Remove ${folder.name} folder bookmark`} onClick={() => void change(library => ({ entries: library.entries.filter(entry => entry.folderId !== folder.id), folders: library.folders.filter(item => item.id !== folder.id) }))}><Trash2 size={16}/></button></div>)}
       <details className="library-help"><summary>Library storage &amp; backups</summary>
@@ -256,8 +255,8 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       <p className="settings-note">Removing a bookmark leaves the original file untouched. Reconnecting uses the selected folder’s relative paths. File access may need permission again; bookmarks do not sync automatically.</p>
       </details>
       <input ref={folderInput} type="file" className="visually-hidden" aria-label="Connect score folder" {...{ webkitdirectory: '', directory: '' }} multiple onChange={event => {
-        const files = Array.from(event.target.files ?? []).filter(file => file.name.endsWith('.sotto.json')); event.target.value = '';
-        if (!files.length) { setMessage('No .sotto.json files were selected.'); return; }
+        const files = Array.from(event.target.files ?? []).filter(file => isScoreFile(file.name)); event.target.value = '';
+        if (!files.length) { setMessage('No .sotto or .sotto.json files were selected.'); return; }
         setBusy(true);
         void (async () => {
           await ready.current;

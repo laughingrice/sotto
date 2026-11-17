@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -7,7 +8,7 @@ const browser = await chromium.launch({ headless: true, ...(executablePath ? { e
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const instrumentArgument = process.argv.indexOf('--instrument');
 const instrument = instrumentArgument >= 0 ? process.argv[instrumentArgument + 1] : 'guitar';
-const source = JSON.parse(await readFile(new URL('../public/scores/samples/carcassi.sotto.json', import.meta.url), 'utf8'));
+const source = JSON.parse(gunzipSync(await readFile(new URL('../public/scores/samples/carcassi.sotto', import.meta.url))).toString('utf8'));
 const notes = source.notes.filter(note => note.voice === 'guitarMelody').slice(0, 8).map((note, i) => ({ ...note, voice: 'test', beat: i, midi: 60, duration: .3, grace: 0, tie: false, measure: Math.floor(i / 4), bar: Math.floor(i / 4) + 1 }));
 const fixture = { ...source, title: 'Timing fixture', bpm: 100, beatUnit: 1, beatsPerBar: 4, notes, voices: [{ id: 'test', name: 'Test instrument', color: '#31745e', instrument }], bars: [0, 1].map(i => ({ index: i, start: i * 4, duration: 4, label: String(i + 1), meter: [4, 4] })), sequence: [0, 1] };
 const scoreArgument = process.argv.indexOf('--score');

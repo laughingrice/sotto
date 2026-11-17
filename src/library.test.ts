@@ -41,18 +41,18 @@ it('enumerates arbitrarily nested score paths without touching score files', asy
   const getFile = vi.fn(async () => { throw new Error('A scan must not open a file'); });
   const leaf = { name: 'piece.sotto.json', kind: 'file', getFile };
   const directory = (name: string, children: unknown[]) => ({ kind: 'directory', name, async *values() { yield* children; } });
-  const root = directory('Scores', [directory('Violin', [directory('Vivaldi', [directory('Book 1', [directory('Spring', [directory('Movements', [leaf])])])])])]) as unknown as DirectoryHandle;
+  const root = directory('Scores', [directory('Violin', [directory('Vivaldi', [directory('Book 1', [directory('Spring', [directory('Movements', [leaf, { ...leaf, name: 'new.sotto' }, { ...leaf, name: 'catalog.json' }])])])])])]) as unknown as DirectoryHandle;
   const paths = await scanDirectory(root);
-  expect(paths).toEqual(['Violin/Vivaldi/Book 1/Spring/Movements/piece.sotto.json']);
+  expect(paths).toEqual(['Violin/Vivaldi/Book 1/Spring/Movements/piece.sotto.json', 'Violin/Vivaldi/Book 1/Spring/Movements/new.sotto']);
   expect(getFile).not.toHaveBeenCalled();
   const library = connectFolder(emptyLibrary(), { id: 'f', name: 'Scores', handle: root }, paths);
   const tree = directoryTree(library.entries, library.folders);
   let node = tree.directories[0];
   for (const name of ['Scores', 'Violin', 'Vivaldi', 'Book 1', 'Spring', 'Movements']) {
-    expect(node.name).toBe(name); expect(node.count).toBe(1);
+    expect(node.name).toBe(name); expect(node.count).toBe(2);
     if (node.children.length) node = node.children[0];
   }
-  expect(node.entries[0].title).toBe('piece');
+  expect(node.entries.map(entry => entry.title)).toEqual(['piece', 'new']);
   expect(node.entries[0].composer).toBe('');
   expect(tree.loose).toEqual([]);
 });

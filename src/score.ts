@@ -98,7 +98,7 @@ export function validateScore(value: unknown): asserts value is Score {
         (n.measure !== undefined && (!Number.isInteger(n.measure) || n.measure < 0 || n.measure >= score.bars.length || n.beat < barTiming(score, n.measure).start - 1e-5 || n.beat >= barTiming(score, n.measure).start + barTiming(score, n.measure).duration - 1e-5))) ||
       score.sequence.some(index => !Number.isInteger(index) || index < 0 || index >= score.bars.length) ||
       score.pages.some(page => typeof page !== 'string' || !page.includes('<svg'))) {
-    throw new Error('This is not a valid Sotto score bundle. Open a .sotto.json file created by the score exporter.');
+    throw new Error('This is not a valid Sotto score bundle. Open a .sotto or .sotto.json file created by the score exporter.');
   }
 }
 

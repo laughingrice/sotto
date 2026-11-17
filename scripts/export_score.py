@@ -8,6 +8,7 @@ Requires LilyPond 2.26 and Python 3; no Python packages are needed.
 """
 import argparse
 from collections import defaultdict
+import gzip
 import json
 import re
 import subprocess
@@ -106,6 +107,12 @@ def voice_labels(notes):
     return voices
 
 
+def write_bundle(output, bundle):
+    """Lossless gzip by default; explicit .json paths retain the legacy format."""
+    data = json.dumps(bundle, separators=(',', ':')).encode('utf-8')
+    output.write_bytes(data if output.suffix == '.json' else gzip.compress(data, mtime=0))
+
+
 def compile_score(source: Path, title: str, composer: str, output: Path, julia: bool,
                   beats_per_bar=None, beat_unit=None, bpm=None, transpose=None):
     beat_unit = beat_unit if beat_unit is not None else (1.5 if julia else 1)
@@ -164,7 +171,7 @@ def compile_score(source: Path, title: str, composer: str, output: Path, julia: 
                   description='Drop D tuning · sounds one octave below the written score' if julia else
                               f'LilyPond playback order · pitch offset {transpose:+d} semitones')
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(bundle, separators=(',', ':')))
+    write_bundle(output, bundle)
     print(f'Exported {len(notes)} noteheads, {len(pages)} pages, {measure_count} written bars, {len(sequence)} playback bars → {output}')
     return bundle
 
@@ -187,7 +194,7 @@ if __name__ == '__main__':
         main()
         raise SystemExit(0)
     julia = args.source.resolve() == DEFAULT_SOURCE.resolve()
-    output = args.output or args.source.with_suffix('.sotto.json')
+    output = args.output or args.source.with_suffix('.sotto')
     try:
         compile_score(args.source.resolve(), args.title or ('Julia Florida' if julia else args.source.stem),
                       args.composer or ('Agustín Barrios' if julia else ''), output, julia,
