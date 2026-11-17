@@ -9,12 +9,13 @@
       "composer": "Matteo Carcassi",
       "instruments": "Guitar",
       "file": "carcassi.sotto",
-      "bytes": 20273,
+      "bytes": 20374,
       "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=13",
       "license": "Public Domain",
+      "licenseUrl": "https://www.mutopiaproject.org/legal.html",
       "credit": "Jeff Covey",
       "sourceFile": "carcassi-source.zip",
-      "description": "Public-domain Mutopia edition · prepared for Sotto"
+      "description": "Mutopia edition · prepared for Sotto LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
     },
     {
       "id": "invention-2",
@@ -22,12 +23,13 @@
       "composer": "Johann Sebastian Bach",
       "instruments": "Piano",
       "file": "invention-2.sotto",
-      "bytes": 42747,
+      "bytes": 42855,
       "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=58",
       "license": "Public Domain",
+      "licenseUrl": "https://www.mutopiaproject.org/legal.html",
       "credit": "Allen Garvin",
       "sourceFile": "invention-2-source.zip",
-      "description": "Public-domain Mutopia edition · prepared for Sotto"
+      "description": "Mutopia edition · prepared for Sotto LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
     },
     {
       "id": "invention-8",
@@ -35,12 +37,13 @@
       "composer": "Johann Sebastian Bach",
       "instruments": "Piano",
       "file": "invention-8.sotto",
-      "bytes": 34913,
+      "bytes": 35017,
       "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=61",
       "license": "Public Domain",
+      "licenseUrl": "https://www.mutopiaproject.org/legal.html",
       "credit": "Allen Garvin",
       "sourceFile": "invention-8-source.zip",
-      "description": "Public-domain Mutopia edition · prepared for Sotto"
+      "description": "Mutopia edition · prepared for Sotto LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
     },
     {
       "id": "double-concerto",
@@ -48,12 +51,13 @@
       "composer": "Johann Sebastian Bach",
       "instruments": "Violins & strings",
       "file": "double-concerto.sotto",
-      "bytes": 250297,
+      "bytes": 250438,
       "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=3",
       "license": "Public Domain",
+      "licenseUrl": "https://www.mutopiaproject.org/legal.html",
       "credit": "David Chan",
       "sourceFile": "double-concerto-source.zip",
-      "description": "First movement · six independent string parts; viola and continuo use violin timbre."
+      "description": "First movement · six independent string parts; viola and continuo use violin timbre. LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
     },
     {
       "id": "entertainer",
@@ -61,12 +65,13 @@
       "composer": "Scott Joplin",
       "instruments": "Piano",
       "file": "entertainer.sotto",
-      "bytes": 90854,
+      "bytes": 90963,
       "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=263",
       "license": "Public Domain",
+      "licenseUrl": "https://www.mutopiaproject.org/legal.html",
       "credit": "Chris Sawer; revised by Simon Albrecht",
       "sourceFile": "entertainer-source.zip",
-      "description": "Public-domain Mutopia edition · prepared for Sotto"
+      "description": "Mutopia edition · prepared for Sotto LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
     },
     {
       "id": "lagrima",
@@ -74,12 +79,13 @@
       "composer": "Francisco Tárrega",
       "instruments": "Two guitars",
       "file": "lagrima.sotto",
-      "bytes": 17022,
+      "bytes": 17127,
       "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=2103",
       "license": "Public Domain",
+      "licenseUrl": "https://www.mutopiaproject.org/legal.html",
       "credit": "Jeffrey Olson (arranger and typesetter)",
       "sourceFile": "lagrima-source.zip",
-      "description": "Guitar duo · synchronized section repeats and D.S. al Fine playback."
+      "description": "Guitar duo · synchronized section repeats and D.S. al Fine playback. LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
     },
     {
       "id": "greensleeves",
@@ -87,12 +93,13 @@
       "composer": "Anonymous",
       "instruments": "Violin",
       "file": "greensleeves.sotto",
-      "bytes": 41120,
+      "bytes": 41230,
       "source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=1730",
       "license": "Public Domain",
+      "licenseUrl": "https://www.mutopiaproject.org/legal.html",
       "credit": "Allen Garvin",
       "sourceFile": "greensleeves-source.zip",
-      "description": "Public-domain Mutopia edition · prepared for Sotto"
+      "description": "Mutopia edition · prepared for Sotto LilyPond syntax updated; named practice voices, sounding pitches and playback order prepared for Sotto."
     },
     {
       "id": "adelita",
