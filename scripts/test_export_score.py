@@ -56,7 +56,7 @@ pieceTitle = "Étude \"No. 1\""
 \score { \new Voice = "melody" { \time 6/8 \tempo "Andante" 4. = 60 - 72 c'2. }
   \layout { } }
 ''', title=None, composer=None)
-        self.assertEqual(bundle['title'], 'Étude "No. 1"')
+        self.assertEqual(bundle['title'], 'Étude "No. 1" -- For two violins')
         self.assertEqual(bundle['composer'], 'A. Composer')
         self.assertEqual(bundle['subtitle'], 'For two violins')
         self.assertEqual((bundle['beatUnit'], bundle['bpm']), (1.5, 66))
@@ -71,6 +71,13 @@ pieceTitle = "Étude \"No. 1\""
         self.assertEqual(bundle['title'], 'Score title')
         self.assertEqual(bundle['composer'], 'Book composer')
 
+    def test_blank_subtitle_does_not_add_a_separator(self):
+        bundle = self.export(r'''
+\header { title = "Study book" subtitle = "   " }
+\score { \new Voice = "melody" { c'1 } \layout { } }
+''', title=None)
+        self.assertEqual(bundle['title'], 'Study book')
+
     def test_tempo_words_use_midpoints_and_keep_compound_pulse(self):
         bundle = self.export(r'''
 \score { \new Voice = "melody" { \time 6/8 \tempo \markup { \bold "Allegro con brio" } c'2. | \tempo 4 = 90 d'2. }
@@ -84,7 +91,7 @@ pieceTitle = "Étude \"No. 1\""
 
     def test_explicit_metadata_and_tempo_override_score(self):
         bundle = self.export(r'''
-\header { title = "Source title" composer = "Source composer" }
+\header { title = "Source title" subtitle = "Source passage" composer = "Source composer" }
 \score { \new Voice = "melody" { \tempo 4. = 60 c'1 } \layout { } }
 ''', title='Custom title', composer='', bpm=99, beat_unit=1)
         self.assertEqual((bundle['title'], bundle['composer']), ('Custom title', ''))
@@ -121,11 +128,11 @@ notes = \new Voice = "melody" { c'1 }
     def test_bookpart_inherits_outer_book_metadata(self):
         bundle = self.export(r'''
 \header { title = "Global title" composer = "Global composer" }
-\book { \header { composer = "Book composer" }
-  \bookpart { \header { title = "Part title" }
+\book { \header { title = "Study book" composer = "Book composer" }
+  \bookpart { \header { subtitle = \markup { \italic "Passage 2" } }
     \score { \new Voice = "melody" { c'1 } \layout { } } } }
 ''', title=None, composer=None)
-        self.assertEqual((bundle['title'], bundle['composer']), ('Part title', 'Book composer'))
+        self.assertEqual((bundle['title'], bundle['composer']), ('Study book -- Passage 2', 'Book composer'))
 
     def test_source_named_score_ly_does_not_shadow_instrumented_temporary_input(self):
         with tempfile.TemporaryDirectory(prefix='sotto-named-score-') as temp:

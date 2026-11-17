@@ -211,7 +211,11 @@ def compile_score(source: Path, title: str | None, composer: str | None, output:
         raise ValueError('No pages or notes were exported.')
     if not bars:
         raise ValueError('No measure timing was exported.')
-    title = title if title is not None else header.get('title') or ('Julia Florida' if julia else source.stem)
+    if title is None:
+        title = (header.get('title') or '').strip() or ('Julia Florida' if julia else source.stem)
+        subtitle = (header.get('subtitle') or '').strip()
+        if subtitle:
+            title += f' -- {subtitle}'
     composer = composer if composer is not None else header.get('composer') or ('Agustín Barrios' if julia else '')
     beat_unit, bpm = starting_tempo(tempos, bars[0]['meter'], julia, beat_unit, bpm, header.get('midiQuarterBpm'))
     beats_per_bar = bars[0]['meter'][0] * 4 / bars[0]['meter'][1]
@@ -246,7 +250,7 @@ def compile_score(source: Path, title: str | None, composer: str | None, output:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', nargs='?', type=Path, help='Source .ly file; omit only to rebuild the public sample library.')
-    parser.add_argument('--title', help='Override the title from the LilyPond header.')
+    parser.add_argument('--title', help='Override the extracted Title -- Subtitle (or Title when no subtitle is defined).')
     parser.add_argument('--composer', help='Override the composer from the LilyPond header.')
     parser.add_argument('--beats-per-bar', type=float, help='Deprecated: measure boundaries are read from LilyPond Timing.')
     parser.add_argument('--beat-unit', type=float, help='Override the score tempo pulse in quarter notes (e.g. 1.5 for dotted quarter).')
