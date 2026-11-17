@@ -53,6 +53,7 @@ The production build includes a service worker that caches the app, built-in sco
 - Actual LilyPond SVG pages with individual notehead IDs and voice membership.
 - Playback with a full-bar highlight, simultaneous active-note highlighting, and automatic scrolling. Bar highlights also work with existing score bundles.
 - Click-to-seek, pause/resume, restart, previous/next bar, and scrubber.
+- Score highlights and metronome flashes follow the estimated audible output clock, compensating for scheduling look-ahead and device output latency when reported by the browser. Audio scheduling and microphone timing use their original clocks.
 - Tempo control uses the exported pulse, including dotted-quarter and half-note beats.
 - Piece details in the settings panel; Open and Save score together in the top bar.
 - Hide/show all practice controls to give the score the full viewport, with compact restart, previous/next bar, play/pause and listening buttons. The ear button starts/stops the microphone directly; the microphone icon still shows/hides the feedback strip. The setting is remembered and playback continues while controls are hidden.
@@ -255,6 +256,10 @@ node scripts/layout-test.mjs
 node scripts/loop-scroll-test.mjs
 # Actual click scheduling, accents, subdivisions, instruments and offline audio:
 node scripts/sound-test.mjs
+# Compare rendered instrument/click attacks and output-aligned highlights at 100 BPM:
+node scripts/timing-test.mjs --instrument bass-electric --check-visual
+# Optionally use a local 4/4, quarter-pulse piece with attacks on the opening beats:
+node scripts/timing-test.mjs --instrument bass-electric --score path/to/piece.sotto.json --check-visual
 # Bass/drum identification, per-part recordings, muting, backups and offline playback:
 node scripts/part-instruments-test.mjs --score path/to/bass-and-drums.sotto.json
 # File/folder bookmarks, fresh reads, favorites, backup/import, and fallback:

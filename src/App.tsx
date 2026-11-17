@@ -242,7 +242,7 @@ export default function App() {
   useEffect(() => {
     if (!playing) return;
     let frame = 0;
-    const update = () => { setCountingIn(player.countingIn); setBeat(player.beat); frame = requestAnimationFrame(update); };
+    const update = () => { setCountingIn(player.displayCountingIn); setBeat(player.displayBeat); frame = requestAnimationFrame(update); };
     frame = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frame);
   }, [playing, player]);

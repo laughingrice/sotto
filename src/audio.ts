@@ -3,6 +3,7 @@ import { RecordingLibrary, isRecordedInstrument } from './recordings';
 import { measureAt, playbackMidi, type Performance, type Score } from './score';
 import { RecordedDrumKit } from './drum-kit';
 import { clickAccent, clickStep, countInPattern, metronomePattern, type ClickMode, type InstrumentId } from './sounds';
+import { audibleContextTime, audioOutputDelay } from './output-clock';
 
 /** Audio and UI share the Web Audio transport clock, not a JavaScript interval. */
 type Sound = Tone.Sampler | Tone.PolySynth<Tone.Synth> | RecordedDrumKit;
@@ -19,6 +20,7 @@ export class Player {
   private clickEventIds: number[] = [];
   private pitchOffset = 0;
   private clickCounter = 0;
+  private clickDrawGeneration = 0;
   private instrumentId: InstrumentId = 'guitar';
   private metronomeOn = false;
   private metronomeContinuous = false;
@@ -43,6 +45,12 @@ export class Player {
 
   get practiceLoop() { return this.loopBounds; }
   get beat() { if (this.countingIn) return this.countInBeat; return Number(Tone.getTransport().ticks) / Tone.getTransport().PPQ; }
+  get displayCountingIn() { return this.initialized && audibleContextTime(Tone.getContext().rawContext) < this.countInEnd; }
+  get displayBeat() {
+    if (!this.initialized) return this.beat;
+    const time = audibleContextTime(Tone.getContext().rawContext);
+    return time < this.countInEnd ? this.countInBeat : Tone.getTransport().getTicksAtTime(time) / Tone.getTransport().PPQ;
+  }
   get playing() { return this.countingIn || (this.initialized && Tone.getTransport().state === 'started'); }
   clockAt(time: number) {
     return { active: this.initialized && time >= this.captureStart && time < this.captureEnd,
@@ -253,7 +261,10 @@ export class Player {
     source.onended = () => { source.disconnect(); this.clickSources.delete(source); };
     source.start(time);
     const count = ++this.clickCounter;
-    Tone.getDraw().schedule(() => this.onMetronomeTick(count, accent), time);
+    const context = Tone.getContext().rawContext;
+    const outputDelay = audioOutputDelay(context);
+    const generation = this.clickDrawGeneration;
+    Tone.getDraw().schedule(() => { if (generation === this.clickDrawGeneration) this.onMetronomeTick(count, accent); }, time + outputDelay);
   }
   private playClick(time: number, beat: number) {
     if (!this.metronomeOn || !this.clicks) return;
@@ -273,6 +284,7 @@ export class Player {
     }
   }
   private stopStandalone() {
+    this.clickDrawGeneration++;
     this.standaloneClock?.stop(Tone.immediate());
     this.clickSources.forEach(source => source.stop(Tone.immediate()));
     this.clickSources.clear();
