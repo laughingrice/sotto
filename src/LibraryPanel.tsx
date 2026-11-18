@@ -1,9 +1,9 @@
-import { isScoreFile, readScoreFile } from './score-file';
+import { isScoreFile, readScoreFile, fileAccessError } from './score-file';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import { ChevronRight, FolderOpen, Globe, Star, Trash2, X } from 'lucide-react';
 import { connectCatalog, fetchCatalog, fetchOnlineBytes, onlineUrl, SAMPLE_CATALOG } from './catalog';
 import { lastScore, rememberScore, exportPreferences, importPreferences, parsePreferences } from './preferences';
-import { validateScore } from './score';
+import { validateScore, type Score } from './score';
 import { connectFolder, emptyLibrary, exportLibrary, filePickers, directoryTree, loadLastScore, loadLibrary, parseLibrary, readEntry, saveLibrary, scanDirectory,
   type Library, type LibraryDirectory, type LibraryEntry, type LibraryFolder, type ReadHandle } from './library';
 
@@ -16,6 +16,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
   const writes = useRef<Promise<void>>(Promise.resolve());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [unavailable, setUnavailable] = useState<Record<string, string>>({});
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [catalogAddress, setCatalogAddress] = useState('');
@@ -45,7 +46,6 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     return write;
   }
   function report(error: unknown) {
-    if (error instanceof DOMException && error.name === 'AbortError') return;
     const text = error instanceof Error ? error.message : 'The file could not be opened.';
     setMessage(text); onError(text);
   }
@@ -53,7 +53,16 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     await ready.current;
     const expected = current.current.entries.find(entry => entry.id === entryId);
     if (expected && expected.name !== file.name) throw new Error(`Please select ${expected.name} to reconnect this bookmark. Use Add score for another piece.`);
-    const score = await readScoreFile(file);
+    let score: Score;
+    try { score = await readScoreFile(file); }
+    catch (error) {
+      const access = fileAccessError(error, file.name);
+      if (access && entryId) {
+        sessionFiles.current.delete(entryId);
+        setUnavailable(previous => ({ ...previous, [entryId]: access.message }));
+      }
+      throw access ?? error;
+    }
     let existing = current.current.entries.find(entry => entry.id === entryId);
     if (!existing && handle) {
       for (const entry of current.current.entries) {
@@ -72,16 +81,19 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       { ...entry, favorite: library.entries.find(item => item.id === entry.id)?.favorite ?? entry.favorite }] })); }
     catch { setMessage('Score opened, but the bookmark could not be saved. Export your library index before closing.');
       current.current = { ...current.current, entries: [...current.current.entries.filter(item => item.id !== entry.id), entry] }; setLibrary(current.current); }
+    setUnavailable(previous => { const next = { ...previous }; delete next[entry.id]; return next; });
     onClose(); return true;
   }
   async function chooseFile(entryId?: string) {
     reconnectEntry.current = entryId;
     if (!filePickers.showOpenFilePicker) { input.current?.click(); return; }
     setBusy(true); setMessage('');
+    let choosing = true;
     try {
       const [handle] = await filePickers.showOpenFilePicker({ multiple: false, types: [{ description: 'Sotto score', accept: { 'application/octet-stream': ['.sotto'], 'application/json': ['.json'] } }] });
+      choosing = false;
       if (handle) await accept(await handle.getFile(), handle, entryId);
-    } catch (error) { report(error); }
+    } catch (error) { if (!(choosing && error instanceof DOMException && error.name === 'AbortError')) report(error); }
     finally { setBusy(false); reconnectEntry.current = undefined; }
   }
   async function restoreLastScore(isCurrent = () => true) {
@@ -133,8 +145,16 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     }
     if (!entry.handle && !current.current.folders.find(folder => folder.id === entry.folderId)?.handle) {
       const file = sessionFiles.current.get(entry.id);
-      if (file) { try { await accept(file, undefined, entry.id); } catch (error) { report(error); } return; }
-      if (entry.folderId) { setMessage('Reconnect this score’s folder below, then open the score again.'); return; }
+      if (file) {
+        setBusy(true); setMessage('');
+        try { await accept(file, undefined, entry.id); } catch (error) { report(error); }
+        finally { setBusy(false); }
+        return;
+      }
+      if (entry.folderId) {
+        const text = 'This browser needs the folder to be reconnected before it can read this score.';
+        setUnavailable(previous => ({ ...previous, [entry.id]: text })); report(new Error(text)); return;
+      }
       void chooseFile(entry.id); return;
     }
     setBusy(true); setMessage('');
@@ -142,20 +162,31 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       const file = await readEntry(entry, current.current);
       if (!file) throw new Error('Reconnect this file or its folder.');
       await accept(file, entry.handle, entry.id);
-    } catch (error) { report(error); }
+    } catch (error) {
+      const access = fileAccessError(error, entry.name);
+      if (access) { sessionFiles.current.delete(entry.id); setUnavailable(previous => ({ ...previous, [entry.id]: access.message })); }
+      report(access ?? error);
+    }
     finally { setBusy(false); }
+  }
+  function clearFolderErrors(id: string) {
+    const ids = new Set(current.current.entries.filter(entry => entry.folderId === id).map(entry => entry.id));
+    setUnavailable(previous => Object.fromEntries(Object.entries(previous).filter(([entryId]) => !ids.has(entryId))));
   }
   async function chooseFolder(id?: string) {
     reconnectFolder.current = id;
     if (!filePickers.showDirectoryPicker) { folderInput.current?.click(); return; }
     setBusy(true); setMessage('');
+    let choosing = true;
     try {
       const handle = await filePickers.showDirectoryPicker({ mode: 'read' });
+      choosing = false;
       await ready.current;
       const folder = { id: id ?? crypto.randomUUID(), name: handle.name, handle };
       const paths = await scanDirectory(handle);
       await commit(library => connectFolder(library, folder, paths));
-    } catch (error) { report(error); }
+      clearFolderErrors(folder.id);
+    } catch (error) { if (!(choosing && error instanceof DOMException && error.name === 'AbortError')) report(error); }
     finally { setBusy(false); reconnectFolder.current = undefined; }
   }
   async function refreshFolder(folder: LibraryFolder, request = true) {
@@ -214,6 +245,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
   const filtering = !!search.trim() || favoritesOnly;
   const renderEntry = (entry: LibraryEntry) => <div className="library-entry" key={entry.id}>
         <div className="library-entry-content"><button className="library-open" disabled={busy} onClick={() => void openEntry(entry)}><strong>{entry.title}</strong><span>{entry.composer}</span><small>{entry.online ? `${entry.online.instruments} · ${entry.online.license}` : `${folderNames.get(entry.folderId ?? '') ?? ''}${entry.folderId ? '/' : ''}${entry.path ?? entry.name}`}</small></button>
+        {unavailable[entry.id] && <div className="library-access-warning"><span>{unavailable[entry.id]}</span><button className="text-button" disabled={busy} onClick={() => entry.folderId ? void chooseFolder(entry.folderId) : void chooseFile(entry.id)}>{entry.folderId ? 'Reconnect folder' : 'Reconnect file'}</button></div>}
         {entry.online && <details className="online-score-credits"><summary>Source &amp; credits</summary><p>{entry.online.description}</p><p>{entry.online.credit} · {entry.online.licenseUrl ? <a href={entry.online.licenseUrl} target="_blank" rel="noreferrer">{entry.online.license}</a> : entry.online.license}</p><div>{entry.online.source && <a href={entry.online.source} target="_blank" rel="noreferrer">Original edition</a>}{entry.online.sourceFile && <a href={entry.online.sourceFile} target="_blank" rel="noreferrer">LilyPond source</a>}</div></details>}</div>
         <button className={`icon-button favorite-button ${entry.favorite ? 'selected' : ''}`} disabled={busy} aria-label={`Favorite ${entry.title}`} aria-pressed={entry.favorite} onClick={() => void change(library => ({ ...library, entries: library.entries.map(item => item.id === entry.id ? { ...item, favorite: !item.favorite } : item) }))}><Star size={17} fill={entry.favorite ? 'currentColor' : 'none'}/></button>
         <button className="icon-button" disabled={busy} aria-label={`Remove ${entry.title} bookmark`} onClick={() => void change(library => ({ ...library, entries: library.entries.filter(item => item.id !== entry.id) }))}><Trash2 size={16}/></button>
@@ -251,6 +283,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       <p className="settings-note">Backups include library references and practice settings, not sheet music.</p>
       {message && <p className="library-message" role="status">{message}</p>}
       {busy && <p role="status">Loading library…</p>}
+      {!filePickers.showDirectoryPicker && <p className="settings-note">This browser provides temporary file selections. A page reload or cloud-provider change may require reconnecting the folder; desktop Chrome/Edge can remember supported directory handles.</p>}
       <details className="library-help"><summary>Connect an online library</summary><form className="online-library-form" onSubmit={event => { event.preventDefault(); void connectOnline(catalogAddress); }}><label>Catalog URL<input type="url" aria-label="Online library catalog URL" placeholder="https://example.org/scores/catalog.json" value={catalogAddress} onChange={event => setCatalogAddress(event.target.value)} required/></label><button className="quiet-button" type="submit" disabled={busy}>Connect online library</button></form><p className="settings-note">Use a public Sotto catalog.json served over HTTPS. Other hosts must allow cross-origin requests (CORS). A OneDrive sharing-page link is not a catalog URL.</p></details>
       <div className="library-filters"><input aria-label="Search library" placeholder="Find a score…" value={search} onChange={event => setSearch(event.target.value)}/><label className="checkbox-row"><input type="checkbox" checked={favoritesOnly} onChange={event => setFavoritesOnly(event.target.checked)}/>Favorites</label></div>
       <div className="library-list">{tree.loose.map(renderEntry)}{tree.directories.map(renderDirectory)}{!entries.length && <p className="settings-note">{library.entries.length ? 'No matching scores.' : 'Add a score or connect a folder containing .sotto or .sotto.json files.'}</p>}</div>
@@ -276,6 +309,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
             files.forEach((file, i) => { const entry = next.entries.find(entry => entry.folderId === folder.id && entry.path === paths[i])!; sessionFiles.current.set(entry.id, file); });
             return next;
           });
+          clearFolderErrors(folder.id);
           if (!files.length) setMessage('This folder contains no Sotto scores. Removed its missing score bookmarks.');
         })().catch(report).finally(() => { setBusy(false); reconnectFolder.current = undefined; });
       }}/>
