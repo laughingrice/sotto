@@ -132,6 +132,7 @@ try {
   await page.locator('[data-score-input]').setInputFiles({ name: 'rhythm.sotto.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) });
   await page.getByRole('heading', { name: 'Rhythm test', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Rhythm feedback', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Feedback placement', exact: true }).selectOption('timeline');
   assert.equal(await page.getByRole('combobox', { name: 'Rhythm plot window', exact: true }).inputValue(), '24', 'Plot defaults to one quarter of the previous scrolling speed');
   assert.equal(await page.getByRole('combobox', { name: 'Microphone trace boost', exact: true }).inputValue(), '12');
   await page.locator('.rhythm-options summary').click();

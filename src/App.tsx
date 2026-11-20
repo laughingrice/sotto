@@ -8,6 +8,7 @@ import { saveLastScore } from './library';
 import RhythmPanel, { type RhythmControl } from './RhythmPanel';
 import { LibraryPanel, type LibraryControl } from './LibraryPanel';
 import { buildBarHighlights } from './bar-highlight';
+import { buildFeedbackLanes, type FeedbackLane } from './score-feedback-layout';
 import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, loopDisplayBeat, validateScore, type Score } from './score';
 import { INSTRUMENTS, clickStep, isInstrument, voiceInstrument, type ClickMode, type InstrumentId } from './sounds';
 
@@ -59,6 +60,7 @@ export default function App() {
   const [help, setHelp] = useState(isHelpLocation);
   const [rhythmVisible, setRhythmVisible] = useState(preferences.rhythmVisible);
   const [microphoneActive, setMicrophoneActive] = useState(false);
+  const [feedbackView, setFeedbackView] = useState<'score' | 'timeline'>(() => { try { return localStorage.getItem('sotto.feedbackView') === 'timeline' ? 'timeline' : 'score'; } catch { return 'score'; } });
   const [libraryVisible, setLibraryVisible] = useState(false);
   const [pitchOffset, setPitchOffset] = useState(0);
   const [starting, setStarting] = useState(false);
@@ -74,6 +76,8 @@ export default function App() {
   const readyInstrument = useRef(instrument);
   const previousActive = useRef(new Set<string>());
   const barElements = useRef(new Map<number, SVGRectElement>());
+  const feedbackLanes = useRef<FeedbackLane[]>([]);
+  const [followSize, setFollowSize] = useState(0);
   const previousBar = useRef<SVGRectElement | null>(null);
   const lastFollowed = useRef(-1);
   const performance = useMemo(() => score ? makePerformance(score, repeats) : null, [score, repeats]);
@@ -84,6 +88,11 @@ export default function App() {
   const active = useMemo(() => performance ? activeNotes(performance, displayBeat) : [], [performance, displayBeat]);
   const resolvedInstruments = useMemo(() => Object.fromEntries(score?.voices.map(voice => [voice.id, voiceInstrument(voice, instrument, partInstruments, score)]) ?? []), [score, instrument, partInstruments]);
   const effectivelyMuted = useMemo(() => new Set(score?.voices.filter(voice => muted.has(voice.id) || (solo !== null && solo !== voice.id)).map(voice => voice.id)), [score, muted, solo]);
+  useEffect(() => {
+    if (!scrollRoot.current) return;
+    const observer = new ResizeObserver(() => { lastFollowed.current = -1; setFollowSize(value => value + 1); });
+    observer.observe(scrollRoot.current); return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     try { localStorage.setItem('sotto.controlsCollapsed', String(controlsCollapsed)); } catch { /* Storage can be unavailable in private browsing. */ }
     lastFollowed.current = -1;
@@ -260,7 +269,12 @@ export default function App() {
     noteElements.current = elements; previousActive.current.clear();
     barElements.current = score && scoreRoot.current ? buildBarHighlights(scoreRoot.current, score) : new Map();
     previousBar.current = null;
-  }, [pages, score]);
+    const layout = score && scoreRoot.current && feedbackView === 'score' && (rhythmVisible || microphoneActive)
+      ? buildFeedbackLanes(scoreRoot.current, score, barElements.current, practiceVoice) : null;
+    feedbackLanes.current = layout?.lanes ?? [];
+    lastFollowed.current = -1;
+    return () => { layout?.dispose(); feedbackLanes.current = []; };
+  }, [pages, score, feedbackView, rhythmVisible, microphoneActive, practiceVoice]);
 
   useEffect(() => {
     for (const element of noteElements.current.values()) element.classList.toggle('voice-muted', effectivelyMuted.has(element.dataset.voice ?? ''));
@@ -282,18 +296,21 @@ export default function App() {
     if (anchor && scroller) {
       const bounds = anchor.getBoundingClientRect();
       const viewport = scroller.getBoundingClientRect();
-      const outsideY = bounds.top < viewport.top + 50 || bounds.bottom > viewport.bottom - 50;
+      const feedbackBottom = feedbackLanes.current.find(lane => lane.written === measure.written)?.element.getBoundingClientRect().bottom ?? bounds.bottom;
+      const outsideY = bounds.top < viewport.top + 50 || Math.max(bounds.bottom, feedbackBottom) > viewport.bottom - 25;
       const outsideX = bounds.left < viewport.left + 15 || bounds.right > viewport.right - 15;
       if (outsideY || outsideX) {
+        const rowHeight = Math.max(bounds.bottom, feedbackBottom) - bounds.top;
+        const inset = Math.max(8, Math.min(viewport.height * .2, (viewport.height - rowHeight) / 2));
         scroller.scrollTo({
-          top: outsideY ? scroller.scrollTop + bounds.top - viewport.top - viewport.height * .25 : scroller.scrollTop,
+          top: outsideY ? scroller.scrollTop + bounds.top - viewport.top - inset : scroller.scrollTop,
           left: outsideX ? scroller.scrollLeft + bounds.left - viewport.left - Math.max(15, (scroller.clientWidth - bounds.width) / 2) : scroller.scrollLeft,
           behavior: 'smooth',
         });
       }
       lastFollowed.current = measure.index;
     }
-  }, [active, effectivelyMuted, follow, measure, zoom, controlsCollapsed]);
+  }, [active, effectivelyMuted, follow, measure, zoom, controlsCollapsed, followSize]);
 
   const togglePlay = useCallback(async () => {
     if (starting || !performance) return;
@@ -416,6 +433,7 @@ export default function App() {
         </section>
 
         <RhythmPanel key={settingsGeneration} ref={rhythmControl} visible={rhythmVisible} onHide={() => setRhythmVisible(false)} player={player} score={score} performance={performance} playing={playing} bpm={bpm} clickMode={clickMode} practiceVoice={practiceVoice} onPracticeVoice={setPracticeVoice} onMicState={setMicrophoneActive}
+          feedbackView={feedbackView} onFeedbackView={setFeedbackView} feedbackLanes={feedbackLanes}
           prepareCalibration={() => { player.pause(); setPlaying(false); setBeat(player.beat); void player.setMetronome(false); setMetronomeMode('off'); }}
           pitchOffset={pitchOffset} instruments={resolvedInstruments} mutedVoices={effectivelyMuted} muteVoice={voice => {
             const selected = score?.voices.filter(item => voice === 'all' || item.id === voice) ?? [];
@@ -443,6 +461,7 @@ export default function App() {
         const saved = loadPreferences();
         setZoom(saved.zoom); setFollow(saved.follow); setClickVolume(saved.clickVolume); setClickMode(saved.clickMode); setMetronomeMode(saved.metronomeMode); setRhythmVisible(saved.rhythmVisible);
         try { const sound = localStorage.getItem('sotto.instrument'); if (isInstrument(sound)) setInstrument(sound);
+          setFeedbackView(localStorage.getItem('sotto.feedbackView') === 'timeline' ? 'timeline' : 'score');
           setCountIn(loadCountIn()); setControlsCollapsed(localStorage.getItem('sotto.controlsCollapsed') === 'true'); } catch { /* Optional preferences. */ }
         latestPractice.current = null;
         if (score) openScore(score, scoreKey, false);

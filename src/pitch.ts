@@ -11,7 +11,7 @@ export function pitchName(midi: number): string {
   const note = Math.round(midi);
   return `${['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][((note % 12) + 12) % 12]}${Math.floor(note / 12) - 1}`;
 }
-export type PitchTarget = { kind: 'note'; key: string; midi: number } | { kind: 'choose-voice' | 'rest' | 'transition' | 'chord' | 'percussion' };
+export type PitchTarget = { kind: 'note'; key: string; midi: number; beat: number } | { kind: 'choose-voice' | 'rest' | 'transition' | 'chord' | 'percussion' };
 
 /** Require one sustained sounding pitch throughout the analysis window.
  * Mixed transitions, chords and notes too short for the window stay unscored. */
@@ -28,7 +28,7 @@ export function targetPitch(notes: PerformanceNote[], voice: string, beat: numbe
   const held = active.filter(note => note.start <= left + 1e-6 && note.end >= right - 1e-6);
   if (held.length !== active.length) return { kind: 'transition' };
   const note = held[0];
-  return { kind: 'note', key: `${note.id}@${note.start}`, midi: note.midi + offset };
+  return { kind: 'note', key: `${note.id}@${note.start}`, midi: note.midi + offset, beat: note.start };
 }
 
 type Votes = { last: number; streak: number; matching: number; different: number; judgment?: keyof PitchStats };
@@ -37,6 +37,7 @@ type Votes = { last: number; streak: number; matching: number; different: number
 export class PitchPass {
   readonly stats = emptyPitchStats();
   private notes = new Map<string, Votes>();
+  judgment(key: string) { return this.notes.get(key)?.judgment; }
   push(target: PitchTarget, frame: PitchFrame, gateDb: number): void {
     if (target.kind !== 'note' || frame.frequency === null || !Number.isFinite(frame.frequency) || frame.frequency <= 0 || frame.clarity < .9 || frame.rms < 10 ** (gateDb / 20)) return;
     const heard = Math.round(frequencyMidi(frame.frequency));

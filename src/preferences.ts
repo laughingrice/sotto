@@ -43,7 +43,9 @@ export function savePractice(key: string, value: PracticeSettings) { remember(`s
 // Portable preferences intentionally omit input device IDs and route-specific latency.
 const portableOptions: Record<string, (value: string) => boolean> = {
   'sotto.instrument': isInstrument,
-  ...Object.fromEntries(['countIn', 'controlsCollapsed', 'hideBackground', 'pitchCheck'].map(key => [`sotto.${key}`, (value: string) => value === 'true' || value === 'false'])),
+  'sotto.feedbackView': value => value === 'score' || value === 'timeline',
+  'sotto.feedbackHistory': value => /^[0-5]$/.test(value),
+  ...Object.fromEntries(['countIn', 'controlsCollapsed', 'hideBackground', 'pitchCheck', 'adaptiveRange'].map(key => [`sotto.${key}`, (value: string) => value === 'true' || value === 'false'])),
   ...Object.fromEntries(Object.entries({ inputGate: [-65, -20], rhythmTolerance: [25, 150], plotWindow: [6, 48], lookAhead: [0, 40], traceBoost: [0, 36], highpass: [0, 150], lowpass: [0, 8000] })
     .map(([key, [min, max]]) => [`sotto.${key}`, (value: string) => value.trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max])),
 };

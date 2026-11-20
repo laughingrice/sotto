@@ -1,13 +1,16 @@
 import { PitchPass, addPitchStats, emptyPitchStats, frequencyMidi, pitchName, pitchGate, targetPitch, type PitchTarget, type PitchStats } from './pitch';
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type RefObject } from 'react';
 import { ChevronDown, Mic, MicOff, Volume2, VolumeX, X } from 'lucide-react';
 import type { Player } from './audio';
 import { metronomePattern, type ClickMode } from './sounds';
 import { MicrophoneInput } from './microphone';
 import { calibrationOffset, emptyStats, estimateBackground, expectedAttacks, OnsetDetector, RhythmPass, TRACE_HISTORY_SECONDS, LOOK_AHEAD_CHOICES, plotLookAhead, traceColumns, traceLevel, type Attack, type BackgroundLevel, type LevelFrame, type RhythmStats, type TimingMoments, emptyTiming, mergeTiming, rhythmReview, attackCooldown } from './rhythm';
-import type { Performance, Score } from './score';
+import { measureAt, barTiming, type Performance, type Score } from './score';
+import { AdaptiveTrace, adaptiveTraceLevel, ScoreFeedbackHistory } from './score-feedback';
+import { drawFeedbackLane, type FeedbackLane } from './score-feedback-layout';
 
 type Props = { visible: boolean; onHide(): void; player: Player; score: Score | null; performance: Performance | null;
+  feedbackView: 'score' | 'timeline'; onFeedbackView(view: 'score' | 'timeline'): void; feedbackLanes: RefObject<FeedbackLane[]>;
   practiceVoice: string; onPracticeVoice(voice: string): void; playing: boolean; bpm: number; clickMode: ClickMode; onMicState(active: boolean): void; prepareCalibration(): void; pitchOffset: number; instruments: Readonly<Record<string, string>>; mutedVoices: ReadonlySet<string>; muteVoice(voice: string): void };
 type Sample = LevelFrame;
 type Dot = Attack & { time: number };
@@ -32,6 +35,10 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   const [lookAhead, setLookAhead] = useState(() => setting('sotto.lookAhead', 4, 0, 40));
   const visibleLookAhead = plotLookAhead(plotWindow, lookAhead);
   const [traceBoost, setTraceBoost] = useState(() => setting('sotto.traceBoost', 12, 0, 36));
+  const [feedbackHistory, setFeedbackHistory] = useState(() => Math.round(setting('sotto.feedbackHistory', 1, 0, 5)));
+  const [adaptiveRange, setAdaptiveRange] = useState(() => { try { return localStorage.getItem('sotto.adaptiveRange') !== 'false'; } catch { return true; } });
+  const scoreFeedback = useRef(new ScoreFeedbackHistory());
+  const adaptive = useRef(new AdaptiveTrace());
   const [highpass, setHighpass] = useState(() => setting('sotto.highpass', 0, 0, 150));
   const [lowpass, setLowpass] = useState(() => setting('sotto.lowpass', 4000, 0, 8000));
   const [pitchEnabled, setPitchEnabled] = useState(() => { try { return localStorage.getItem('sotto.pitchCheck') === 'true'; } catch { return false; } });
@@ -71,10 +78,14 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   const practiceMuted = practiceVoices.length > 0 && practiceVoices.every(item => props.mutedVoices.has(item.id));
   const targets = useMemo(() => props.performance ? expectedAttacks(props.performance, actualVoice) : [], [props.performance, actualVoice]);
   const beatGrid = useMemo(() => props.performance ? metronomePattern(props.performance.measures, props.score?.beatUnit ?? 1, props.clickMode) : [], [props.performance, props.score?.beatUnit, props.clickMode]);
-  const current = useRef({ ...props, enabled, delay, gate, tolerance, targets, plotWindow, visibleLookAhead, traceBoost, background, hideBackground, beatGrid, pitchEnabled, actualVoice });
-  current.current = { ...props, enabled, delay, gate, tolerance, targets, plotWindow, visibleLookAhead, traceBoost, background, hideBackground, beatGrid, pitchEnabled, actualVoice };
+  const current = useRef({ ...props, enabled, delay, gate, tolerance, targets, plotWindow, visibleLookAhead, traceBoost, background, hideBackground, beatGrid, pitchEnabled, actualVoice, feedbackHistory, adaptiveRange, calibrating });
+  current.current = { ...props, enabled, delay, gate, tolerance, targets, plotWindow, visibleLookAhead, traceBoost, background, hideBackground, beatGrid, pitchEnabled, actualVoice, feedbackHistory, adaptiveRange, calibrating };
 
-  function reset() {
+  function reset(clearScore = false) {
+    if (clearScore) {
+      scoreFeedback.current.clear();
+      for (const lane of props.feedbackLanes.current) { lane.drawing.replaceChildren(); lane.element.dataset.visits = '0'; }
+    } else scoreFeedback.current.beginPass();
     pass.current = null; completedPasses.current = []; completedStats.current = emptyStats(); setLoopPasses(0); samples.current = []; dots.current = []; detector.current.reset();
     completedPitch.current = emptyPitchStats(); setPitchStats(emptyPitchStats()); setPitchReading(null);
     frozenTime.current = 0; setStats(emptyStats()); setTiming(emptyTiming()); completedTiming.current = emptyTiming(); setLastLoop(null); setLastAttack(null);
@@ -87,7 +98,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   }
   function beginBaseline(manual = false) {
     baselineCapture.current = { since: null, frames: [], manual };
-    setBackground(null); setLearningBaseline(true);
+    setBackground(null); setLearningBaseline(true); adaptive.current.reset();
     if (manual) { props.prepareCalibration(); setMessage('Listening to the background for two seconds. Keep your instrument quiet.'); }
   }
   function stop() {
@@ -101,7 +112,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   }
   useEffect(() => {
     try { localStorage.setItem('sotto.inputDelay', String(delay)); localStorage.setItem('sotto.inputGate', String(gate)); localStorage.setItem('sotto.rhythmTolerance', String(tolerance)); } catch { /* Optional settings. */ }
-    reset();
+    reset(true);
   }, [props.performance, actualVoice, props.bpm, props.pitchOffset, delay, gate, tolerance]);
   useEffect(() => {
     input.setPitchTracking(pitchEnabled);
@@ -112,12 +123,15 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   useEffect(() => {
     try { localStorage.setItem('sotto.plotWindow', String(plotWindow)); localStorage.setItem('sotto.lookAhead', String(lookAhead)); localStorage.setItem('sotto.traceBoost', String(traceBoost)); localStorage.setItem('sotto.hideBackground', String(hideBackground)); } catch { /* Optional display preferences. */ }
   }, [plotWindow, lookAhead, traceBoost, hideBackground]);
+  useEffect(() => {
+    try { localStorage.setItem('sotto.feedbackView', props.feedbackView); localStorage.setItem('sotto.feedbackHistory', String(feedbackHistory)); localStorage.setItem('sotto.adaptiveRange', String(adaptiveRange)); } catch { /* Optional display preferences. */ }
+  }, [props.feedbackView, feedbackHistory, adaptiveRange]);
   useEffect(() => { try { localStorage.setItem('sotto.inputDevice', device); } catch { /* Optional input preference. */ } }, [device]);
   useEffect(() => {
     input.setFilters(highpass, lowpass);
     if (current.current.enabled) beginBaseline(); else { setBackground(null); baselineCapture.current = null; setLearningBaseline(false); }
     try { localStorage.setItem('sotto.highpass', String(highpass)); localStorage.setItem('sotto.lowpass', String(lowpass)); } catch { /* Optional input preferences. */ }
-    reset();
+    reset(true);
   }, [input, highpass, lowpass]);
   useEffect(() => {
     if (props.playing) {
@@ -147,6 +161,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
           if (learning.manual) setMessage('');
         }
       }
+      if (!learning && !calibration.current && (clock.active || !pass.current)) adaptive.current.push(frame, state.background?.peak);
       levelPeak.current = Math.max(levelPeak.current, frame.rms);
       if (frame.peak >= .98) clipUntil.current = frame.time + .5;
       if (frame.time - latestLevelUpdate.current > .12) {
@@ -185,13 +200,15 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
           pass.current = { pitch: new PitchPass(), tracker: new RhythmPass(loop.enabled ? state.targets.filter(beat => beat >= loop.start && beat < loop.end) : state.targets,
             secondsPerBeat, wrapped ? loop.start : Math.max(0, clock.beat - .1 / secondsPerBeat), state.tolerance),
             origin: time - clock.beat * secondsPerBeat, capturedAt: time, lastBeat: clock.beat, lastTime: time };
+          scoreFeedback.current.beginPass();
         }
         pass.current!.lastBeat = clock.beat; pass.current!.lastTime = time;
         pass.current!.tracker.advance(clock.beat);
-        if (onset) {
-          const attack = pass.current!.tracker.attack(clock.beat);
+        const attack = onset ? pass.current!.tracker.attack(clock.beat) : undefined;
+        if (attack) {
           dots.current.push({ ...attack, time }); setLastAttack(attack);
         }
+        if (state.performance) scoreFeedback.current.push(measureAt(state.performance, clock.beat), clock.beat, frame, attack);
       } else if (pass.current) {
         // Input can arrive after pause due to device latency. Finish consuming
         // frames from the active audio interval before freezing the graph.
@@ -225,6 +242,10 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
       const target: PitchTarget = state.instruments[state.actualVoice] === 'drums' ? { kind: 'percussion' } : targetPitch(state.performance.sounds, state.actualVoice, clock.beat, frame.windowSeconds / secondsPerBeat, state.pitchOffset);
       setPitchReading({ frequency, target });
       take.pitch.push(target, frame, gate);
+      if (target.kind === 'note') {
+        const judgment = take.pitch.judgment(target.key);
+        if (judgment) scoreFeedback.current.pitch(measureAt(state.performance, target.beat), target.key, target.beat, judgment === 'matching');
+      }
       setPitchStats(addPitchStats(completedPitch.current, take.pitch.stats));
     };
     input.onPitchError = message => { setPitchEnabled(false); setMessage(message); };
@@ -235,9 +256,30 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
   }, [input]);
 
   useEffect(() => {
-    if (!props.visible) return;
     let animation = 0;
-    const draw = () => {
+    let lastDraw = -Infinity;
+    const draw = (stamp: number) => {
+      animation = requestAnimationFrame(draw);
+      if (stamp - lastDraw < 50) return;
+      lastDraw = stamp;
+      const state = current.current;
+      const level = (value: number, band: 'rms' | 'peak') => state.adaptiveRange
+        ? adaptiveTraceLevel(value, state.traceBoost, state.hideBackground ? state.background?.[band] : undefined, adaptive.current.ceilingDb)
+        : traceLevel(value, state.traceBoost, state.hideBackground ? state.background?.[band] : undefined);
+      if (state.feedbackView === 'score' && state.score && state.performance) {
+        const viewport = document.querySelector('.score-scroller')?.getBoundingClientRect();
+        for (const lane of state.feedbackLanes.current) {
+          const box = lane.element.getBoundingClientRect();
+          if (viewport && (box.bottom < viewport.top || box.top > viewport.bottom || box.right < viewport.left || box.left > viewport.right)) continue;
+          const timing = barTiming(state.score, lane.written);
+          const measure = state.performance.measures.find(item => item.written === lane.written);
+          const expected = measure ? state.targets.filter(beat => beat >= measure.start && beat < measure.end).map(beat => beat - measure.start) : [];
+          const clicks = measure ? state.beatGrid.filter(click => click.beat >= measure.start && click.beat < measure.end).map(click => ({ ...click, beat: click.beat - measure.start })) : [];
+          drawFeedbackLane(lane, scoreFeedback.current.visible(lane.written, state.feedbackHistory), level, expected.filter(beat => beat < timing.duration), clicks);
+          lane.element.dataset.ceilingDb = adaptive.current.ceilingDb.toFixed(1);
+        }
+      }
+      if (!state.visible || (state.feedbackView !== 'timeline' && !state.calibrating)) return;
       const element = canvas.current;
       const context = element?.getContext('2d');
       if (element && context) {
@@ -245,7 +287,6 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
         const scale = window.devicePixelRatio || 1;
         if (element.width !== Math.round(width * scale) || element.height !== Math.round(height * scale)) { element.width = Math.round(width * scale); element.height = Math.round(height * scale); }
         context.setTransform(scale, 0, 0, scale, 0, 0); context.clearRect(0, 0, width, height);
-        const state = current.current;
         const now = !state.playing && pass.current && frozenTime.current ? frozenTime.current : input.time;
         const span = state.plotWindow, future = state.visibleLookAhead, history = span - future;
         const left = now - history;
@@ -282,7 +323,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
         }
         const columns = traceColumns(samples.current, left, span, width);
         const baseline = height - 20;
-        const y = (value: number, band: 'rms' | 'peak') => baseline - traceLevel(value, state.traceBoost, state.hideBackground ? state.background?.[band] : undefined) * (height - 30);
+        const y = (value: number, band: 'rms' | 'peak') => baseline - level(value, band) * (height - 30);
         if (columns.length) {
           // Fill the volume envelope and preserve each pixel's maximum peak.
           // The visual boost never changes the input or onset detector.
@@ -305,10 +346,9 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
         }
         context.strokeStyle = '#315e47'; context.beginPath(); context.moveTo(x(now), 0); context.lineTo(x(now), height - 17); context.stroke();
       }
-      animation = requestAnimationFrame(draw);
     };
     animation = requestAnimationFrame(draw); return () => cancelAnimationFrame(animation);
-  }, [props.visible, input]);
+  }, [input]);
 
   async function start(nextDevice = device) {
     const version = ++requestVersion.current;
@@ -371,8 +411,8 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
       <span>{pitchPrompt ?? (pitchMatches ? `Matching note · ${pitchCents} cents` : 'Different note')}</span>
       <span className="pitch-totals">Checked: {pitchStats.matching} matching · {pitchStats.different} different</span>
     </div>}
-    <canvas ref={canvas} data-window-seconds={plotWindow} data-trace-boost={traceBoost} data-background-rms={background?.rms} data-background-ready={!!background} data-hide-background={hideBackground} data-metronome-beats={beatGrid.length} data-downbeats={beatGrid.filter(click => click.accent === 'downbeat').length} data-lookahead-seconds={visibleLookAhead} role="img" aria-label="Microphone volume with score attacks and metronome beats"/>
-    <div className="rhythm-footer"><div className="rhythm-stats" aria-label="Rhythm timing estimates" data-completed-loops={loopPasses} data-history-dots={dots.current.length} data-on-time={stats.onTime} data-early={stats.early} data-late={stats.late} data-missed={stats.missed} data-extra={stats.extra}><span>On time <strong>{stats.onTime}</strong></span><span>Early <strong>{stats.early}</strong></span><span>Late <strong>{stats.late}</strong></span><span>Missed <strong>{stats.missed}</strong></span><span>Unmatched <strong>{stats.extra}</strong></span></div><div className="rhythm-plot-controls"><label>Plot window<select aria-label="Rhythm plot window" value={plotWindow} onChange={event => setPlotWindow(Number(event.target.value))}>{[6, 12, 24, 48].map(seconds => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select></label><label>Look ahead<select aria-label="Rhythm look ahead" value={visibleLookAhead} onChange={event => setLookAhead(Number(event.target.value))}>{LOOK_AHEAD_CHOICES.filter(seconds => seconds <= plotWindow - 2).map(seconds => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select></label><label>Trace boost<select aria-label="Microphone trace boost" value={traceBoost} onChange={event => setTraceBoost(Number(event.target.value))}>{[0, 6, 12, 18, 24, 30, 36].map(db => <option key={db} value={db}>+{db} dB</option>)}</select></label></div><div className="rhythm-legend"><span>Volume fill · peak outline · green dashed notes</span><span className="beat-legend">Red: solid bar starts · dashed beats</span><span>Dots: green on time · amber early · blue late · gray unmatched</span></div></div>
+    <canvas ref={canvas} hidden={props.feedbackView !== 'timeline' && !calibrating} data-window-seconds={plotWindow} data-trace-boost={traceBoost} data-background-rms={background?.rms} data-background-ready={!!background} data-hide-background={hideBackground} data-metronome-beats={beatGrid.length} data-downbeats={beatGrid.filter(click => click.accent === 'downbeat').length} data-lookahead-seconds={visibleLookAhead} role="img" aria-label="Microphone volume with score attacks and metronome beats"/>
+    <div className="rhythm-footer"><div className="rhythm-stats" aria-label="Rhythm timing estimates" data-completed-loops={loopPasses} data-history-dots={dots.current.length} data-on-time={stats.onTime} data-early={stats.early} data-late={stats.late} data-missed={stats.missed} data-extra={stats.extra}><span>On time <strong>{stats.onTime}</strong></span><span>Early <strong>{stats.early}</strong></span><span>Late <strong>{stats.late}</strong></span><span>Missed <strong>{stats.missed}</strong></span><span>Unmatched <strong>{stats.extra}</strong></span></div><div className="rhythm-plot-controls"><label>Feedback<select aria-label="Feedback placement" value={props.feedbackView} onChange={event => props.onFeedbackView(event.target.value as 'score' | 'timeline')}><option value="score">Under score</option><option value="timeline">Timeline</option></select></label>{props.feedbackView === 'score' && <label>Previous attempts<select aria-label="Feedback history" value={feedbackHistory} onChange={event => setFeedbackHistory(Number(event.target.value))}>{[0, 1, 2, 3, 4, 5].map(count => <option key={count} value={count}>{count === 0 ? 'None' : count}</option>)}</select></label>}<label className={props.feedbackView === 'score' ? 'timeline-only-control' : ''}>Plot window<select aria-label="Rhythm plot window" value={plotWindow} onChange={event => setPlotWindow(Number(event.target.value))}>{[6, 12, 24, 48].map(seconds => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select></label><label className={props.feedbackView === 'score' ? 'timeline-only-control' : ''}>Look ahead<select aria-label="Rhythm look ahead" value={visibleLookAhead} onChange={event => setLookAhead(Number(event.target.value))}>{LOOK_AHEAD_CHOICES.filter(seconds => seconds <= plotWindow - 2).map(seconds => <option key={seconds} value={seconds}>{seconds} seconds</option>)}</select></label><label>Trace boost<select aria-label="Microphone trace boost" value={traceBoost} onChange={event => setTraceBoost(Number(event.target.value))}>{[0, 6, 12, 18, 24, 30, 36].map(db => <option key={db} value={db}>+{db} dB</option>)}</select></label></div><div className="rhythm-legend"><span>Volume fill · peak outline · green dashed notes</span><span className="beat-legend">Red: solid bar starts · dashed beats</span><span>Dots: green on time · amber early · blue late · gray unmatched</span>{props.feedbackView === 'score' && <span>Faded: previous attempts · ✓ / ×: pitch match / different</span>}</div></div>
     {review.assessed > 0 && <details className="rhythm-review" open={!props.playing}>
       <summary><span>Take review</span><strong>{review.onTimePercent}% on time</strong><span>{review.matched} / {review.expected} expected attacks matched</span></summary>
       <div className="rhythm-review-metrics" role="group" aria-label="Rhythm take review" data-assessed={review.assessed} data-offset-ms={review.offsetMs ?? ''} data-spread-ms={review.spreadMs ?? ''}>
@@ -385,6 +425,7 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
     </details>}
     {message && <p className="rhythm-message" role="status">{message}</p>}
     <details className="rhythm-options"><summary>Input, timing &amp; calibration <ChevronDown size={13}/></summary><div className="rhythm-fields">
+      <label className="baseline-option"><input type="checkbox" aria-label="Adaptive trace range" checked={adaptiveRange} onChange={event => setAdaptiveRange(event.target.checked)}/>Adaptive trace range (display only)</label>
       <label className="baseline-option"><input type="checkbox" aria-label="Check pitch for single notes" checked={pitchEnabled} disabled={calibrating} onChange={event => setPitchEnabled(event.target.checked)}/>Check pitch (single notes)</label>
       <label className="baseline-option"><input aria-label="Hide learned microphone background" type="checkbox" checked={hideBackground} onChange={event => setHideBackground(event.target.checked)}/>Hide learned background (display only)</label>
       <label>Practice voice<select aria-label="Rhythm practice voice" value={actualVoice} onChange={event => props.onPracticeVoice(event.target.value)} disabled={calibrating}>{props.score?.voices.map(voice => <option key={voice.id} value={voice.id}>{voice.name}</option>)}<option value="all">All voices</option></select></label>
@@ -395,8 +436,8 @@ const RhythmPanel = forwardRef<RhythmControl, Props>(function RhythmPanel(props,
       <label>High-pass filter<select aria-label="Microphone high-pass filter" value={highpass} disabled={calibrating} onChange={event => setHighpass(Number(event.target.value))}><option value={0}>Off</option>{[20, 40, 80, 150].map(hz => <option key={hz} value={hz}>{hz} Hz</option>)}</select></label>
       <label>Attack gate ({gate} dB)<input aria-label="Microphone attack gate" type="range" min="-65" max="-20" value={gate} disabled={calibrating} onChange={event => setGate(Number(event.target.value))}/></label>
       <label>On-time tolerance (ms)<input aria-label="Rhythm timing tolerance" type="number" min="25" max="150" step="5" value={tolerance} disabled={calibrating} onChange={event => setTolerance(Math.min(150, Math.max(25, Number(event.target.value))))}/></label>
-      <button className="quiet-button" disabled={!enabled || busy || calibrating || learningBaseline} onClick={calibrate}>{calibrating ? 'Calibrating…' : 'Calibrate speakers'}</button><button className="quiet-button" disabled={calibrating} onClick={reset}>Clear feedback</button>
-    </div>{enabled && <p className="capture-processing">{captureInfo}</p>}<p>Capture requests noise suppression, echo cancellation and automatic gain off; the browser may not expose all settings. AirPods and Apple’s system Mic Mode can still process sound. If available in Control Center, try Standard or Wide Spectrum for music. A device’s built-in microphone can be selected while keeping AirPods for listening.</p><p>The baseline is measured during the first two seconds of input. Use Learn baseline with your instrument quiet to measure it again; this pauses playback and the metronome. Baseline cropping and trace boost affect only the drawing. Red lines follow the metronome Pulse setting: Beat gives two lines in 6/8 (first and fourth eighths), while Subdivision gives all six. Each bar starts solid; the remaining lines are dashed. Look ahead is independent of the total plot window; the default shows 24 seconds total with 4 seconds ahead.</p><p>The 4 kHz low-pass reduces high-frequency noise before the volume plot and attack detector. The optional high-pass removes low rumble. Filters cannot recover sound already suppressed by the microphone. Trace boost changes only the drawing, not detection sensitivity.</p><p>Use headphones so Sotto’s playback does not trigger the microphone. Mute the voice you are playing. Timing estimates use detected attacks. Optional pitch checking compares one sustained note at a time with the selected practice voice, including playback-octave adjustment. It waits for two consistent, clear estimates above the Attack gate and 6 dB above learned background; chords, transitions, short notes and unclear input stay unscored. It uses A4 = 440 Hz and counts matching semitones; cents show tuning difference. Use headphones and play only your selected part. Pitch analysis stays on-device; brief sample windows are discarded after processing, and only results remain in memory. The detector adapts its cooldown to the nearby score attacks. Matching follows score order; a second attack closest to a consumed note is unmatched instead of taking the next note. Take review separates average offset from timing spread, so consistently late input is distinguished from uneven timing. Input latency can contribute to the offset; calibrate before judging it. Sustained or overlapping notes, strums and room noise can confuse this first detector.</p><p>A positive offset moves captured input earlier. Adjust it until attacks line up, or run speaker calibration in a quiet room. Calibration measures the current speaker/microphone route; headphones or Bluetooth can change the delay.</p><p>Feedback covers the current take. Loop repeats keep the recent graph and accumulate timing totals, so you can pause after a wrap to review earlier passes. Starting playback again, seeking or changing timing settings begins a new take. Pausing freezes the graph. Only level/pitch summaries are retained; microphone audio is never recorded or uploaded.</p></details>
+      <button className="quiet-button" disabled={!enabled || busy || calibrating || learningBaseline} onClick={calibrate}>{calibrating ? 'Calibrating…' : 'Calibrate speakers'}</button><button className="quiet-button" disabled={calibrating} onClick={() => reset(true)}>Clear feedback</button>
+    </div>{enabled && <p className="capture-processing">{captureInfo}</p>}<p>Capture requests noise suppression, echo cancellation and automatic gain off; the browser may not expose all settings. AirPods and Apple’s system Mic Mode can still process sound. If available in Control Center, try Standard or Wide Spectrum for music. A device’s built-in microphone can be selected while keeping AirPods for listening.</p><p>The baseline is measured during the first two seconds of input. Use Learn baseline with your instrument quiet to measure it again; this pauses playback and the metronome. Adaptive trace range follows recent playing levels, adding headroom quickly for louder notes and recovering slowly for quiet passages. Silence does not increase gain. It does not change recording gain, the learned noise floor, or attack/pitch detection. Baseline cropping and trace boost also affect only the drawing. Red lines follow the metronome Pulse setting: Beat gives two lines in 6/8 (first and fourth eighths), while Subdivision gives all six. Each bar starts solid; the remaining lines are dashed. Look ahead is independent of the total plot window; the default shows 24 seconds total with 4 seconds ahead.</p><p>The 4 kHz low-pass reduces high-frequency noise before the volume plot and attack detector. The optional high-pass removes low rumble. Filters cannot recover sound already suppressed by the microphone. Trace boost changes only the drawing, not detection sensitivity.</p><p>Use headphones so Sotto’s playback does not trigger the microphone. Mute the voice you are playing. Timing estimates use detected attacks. Optional pitch checking compares one sustained note at a time with the selected practice voice, including playback-octave adjustment. It waits for two consistent, clear estimates above the Attack gate and 6 dB above learned background; chords, transitions, short notes and unclear input stay unscored. It uses A4 = 440 Hz and counts matching semitones; cents show tuning difference. Use headphones and play only your selected part. Pitch analysis stays on-device; brief sample windows are discarded after processing, and only results remain in memory. The detector adapts its cooldown to the nearby score attacks. Matching follows score order; a second attack closest to a consumed note is unmatched instead of taking the next note. Take review separates average offset from timing spread, so consistently late input is distinguished from uneven timing. Input latency can contribute to the offset; calibrate before judging it. Sustained or overlapping notes, strums and room noise can confuse this first detector.</p><p>A positive offset moves captured input earlier. Adjust it until attacks line up, or run speaker calibration in a quiet room. Calibration measures the current speaker/microphone route; headphones or Bluetooth can change the delay.</p><p>Under score places a trace beneath each engraved system, aligned to note positions. Previous attempts fade behind the latest visit to each bar; choose zero to five previous attempts (one by default). Repeats, practice loops and restarting playback preserve these traces until Clear feedback, a different score/voice or detection settings change. Pitch checks stay on the score as ✓ or × after a stable judgment. The optional Timeline retains its scrolling window and separate Look ahead. Timing totals cover the current take: loop repeats accumulate totals, while restarting or seeking begins a new take. Pausing freezes captured feedback. Pausing freezes the graph. Only level/pitch summaries are retained; microphone audio is never recorded or uploaded.</p></details>
   </section>;
 });
 export default RhythmPanel;

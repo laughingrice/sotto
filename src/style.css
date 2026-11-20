@@ -70,3 +70,5 @@
 .pitch-feedback{display:flex;align-items:center;flex-wrap:wrap;gap:5px 14px;font-size:10px;margin:5px 0;color:#7a876d}.pitch-feedback strong{color:#416643;font-weight:500}.pitch-feedback.pitch-matching{color:#327257}.pitch-feedback.pitch-different{color:#a56c2a}.pitch-totals{margin-left:auto;font-size:9px}@media(max-width:650px){.pitch-feedback{font-size:9px;gap:4px 9px}.pitch-totals{margin-left:0;width:100%}}
 
 .library-access-warning{margin:5px;font-size:10px;line-height:1.6;color:#926b36}.library-access-warning .text-button{display:block;font-size:11px;margin-top:3px;text-decoration:underline}
+.rhythm-panel canvas[hidden],.rhythm-plot-controls .timeline-only-control{display:none}
+.score-feedback-lane{pointer-events:none}
