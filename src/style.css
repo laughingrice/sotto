@@ -72,3 +72,6 @@
 .library-access-warning{margin:5px;font-size:10px;line-height:1.6;color:#926b36}.library-access-warning .text-button{display:block;font-size:11px;margin-top:3px;text-decoration:underline}
 .rhythm-panel canvas[hidden],.rhythm-plot-controls .timeline-only-control{display:none}
 .score-feedback-lane{pointer-events:none}
+
+.notation-view-control{display:flex;align-items:center;gap:5px;font-size:10px;color:#647b54;margin-right:8px}.notation-view-control select{border:1px solid #dce4d1;border-radius:4px;padding:4px;color:#416643;background:white}.score-note.is-active text,.score-note:hover text{fill:currentColor!important}
+@media(max-width:650px){.notation-view-control{margin-right:3px;gap:2px}.notation-view-control>span{display:none}.notation-view-control select{max-width:66px;font-size:9px}}

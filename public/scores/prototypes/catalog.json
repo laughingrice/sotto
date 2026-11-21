@@ -1,0 +1,31 @@
+{
+  "format": "sotto-catalog",
+  "version": 1,
+  "title": "Sotto tab prototypes",
+  "scores": [
+    {
+      "id": "guitar",
+      "title": "Guitar \u00b7 four-bar tab prototype",
+      "composer": "Sotto",
+      "instruments": "Guitar",
+      "file": "guitar.sotto",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "credit": "Sotto original exercise",
+      "sourceFile": "guitar.ly",
+      "description": "Four bars: single notes, chord, tie, slide and silent bar. Notes / Tabs / Both share one performance. Prototype, not a full-piece transcription."
+    },
+    {
+      "id": "bass",
+      "title": "Bass \u00b7 four-bar tab prototype",
+      "composer": "Sotto",
+      "instruments": "Bass",
+      "file": "bass.sotto",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "credit": "Sotto original exercise",
+      "sourceFile": "bass.ly",
+      "description": "Four bars: single notes, chord, tie, slide and silent bar. Notes / Tabs / Both share one performance. Prototype, not a full-piece transcription."
+    }
+  ]
+}

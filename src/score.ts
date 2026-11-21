@@ -1,12 +1,23 @@
 export type Voice = { id: string; name: string; color: string; instrument?: string; midiInstrument?: string; percussion?: boolean };
-export type ScoreNote = { id: string; voice: string; beat: number; grace: number; midi: number; duration: number; bar: number; tie: boolean; measure?: number; percussion?: boolean };
+export type ScoreNote = { id: string; voice: string; beat: number; grace: number; midi: number; duration: number; bar: number; tie: boolean; measure?: number; percussion?: boolean; string?: number; fret?: number };
+export type NotationView = 'notation' | 'tabs' | 'both';
 export type ScoreBar = { index: number; label: string; start?: number; duration?: number; meter?: [number, number] };
 export type Score = {
   format: 'sotto-score'; version: 1; title: string; composer: string; subtitle: string;
   beatsPerBar: number; beatUnit: number; bpm: number; description: string;
   voices: Voice[]; notes: ScoreNote[]; pages: string[];
   bars: ScoreBar[]; sequence: number[];
+  renderings?: Partial<Record<NotationView, { pages: string[] }>>;
+  parts?: { id: string; voices: string[]; profile: string; tuning: number[]; capo: number }[];
 };
+export const notationViews: NotationView[] = ['notation', 'tabs', 'both'];
+export const visualEventId = (element: Element) => element.getAttribute('data-event-id') ?? element.id;
+export function availableViews(score: Score | null): NotationView[] {
+  return score?.renderings ? notationViews.filter(view => score.renderings?.[view]) : ['notation'];
+}
+export function renderingPages(score: Score, view: NotationView): string[] {
+  return score.renderings?.[view]?.pages ?? score.pages;
+}
 export type PerformanceNote = ScoreNote & { start: number; end: number };
 export type Measure = { index: number; written: number; label: string; occurrence: number; start: number; end: number; meter?: [number, number] };
 export type Performance = { notes: PerformanceNote[]; sounds: PerformanceNote[]; measures: Measure[]; duration: number };
@@ -99,6 +110,11 @@ export function validateScore(value: unknown): asserts value is Score {
       score.sequence.some(index => !Number.isInteger(index) || index < 0 || index >= score.bars.length) ||
       score.pages.some(page => typeof page !== 'string' || !page.includes('<svg'))) {
     throw new Error('This is not a valid Sotto score bundle. Open a .sotto or .sotto.json file created by the score exporter.');
+  }
+  if (score.renderings !== undefined && (!score.renderings || typeof score.renderings !== 'object' || Array.isArray(score.renderings) ||
+    !Object.keys(score.renderings).length || Object.entries(score.renderings).some(([view, rendering]) => !notationViews.includes(view as NotationView) ||
+      !rendering || !Array.isArray(rendering.pages) || !rendering.pages.length || rendering.pages.some((page: unknown) => typeof page !== 'string' || !page.includes('<svg'))))) {
+    throw new Error('This score contains an invalid notation/tablature rendering.');
   }
 }
 

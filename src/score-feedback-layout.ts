@@ -1,4 +1,4 @@
-import { barTiming, noteMeasure, type Score } from './score';
+import { barTiming, noteMeasure, visualEventId, type Score } from './score';
 import { feedbackX, type BeatAnchor, type FeedbackTake } from './score-feedback';
 import type { Attack } from './rhythm';
 
@@ -23,6 +23,8 @@ function boundsInPage(element: SVGGraphicsElement, svg: SVGSVGElement): Bounds {
  * coordinates. All transforms/viewBoxes are restored when the view is closed. */
 export function buildFeedbackLanes(root: HTMLElement, score: Score, bars: Map<number, SVGRectElement>, voice: string) {
   const lanes: FeedbackLane[] = [], restore: (() => void)[] = [];
+  const elements = new Map<string, SVGGraphicsElement>();
+  root.querySelectorAll<SVGGraphicsElement>('.score-note').forEach(element => { if (!elements.has(visualEventId(element))) elements.set(visualEventId(element), element); });
   for (const svg of root.querySelectorAll<SVGSVGElement>('.score-page svg')) {
     const boxes = new Map<SVGGraphicsElement, Bounds>();
     const boxOf = (element: SVGGraphicsElement) => { if (!boxes.has(element)) boxes.set(element, boundsInPage(element, svg)); return boxes.get(element)!; };
@@ -71,7 +73,7 @@ export function buildFeedbackLanes(root: HTMLElement, score: Score, bars: Map<nu
       const selected = notes.filter(note => voice === 'all' || note.voice === voice);
       const positions = new Map<number, number[]>();
       for (const note of selected.length ? selected : notes) {
-        const element = document.getElementById(note.id);
+        const element = elements.get(note.id);
         if (!(element instanceof SVGGraphicsElement) || !svg.contains(element)) continue;
         const box = boxOf(element), beat = note.beat - timing.start;
         positions.set(beat, [...(positions.get(beat) ?? []), box.x + box.width / 2]);
@@ -113,6 +115,9 @@ export function drawFeedbackLane(lane: FeedbackLane, takes: FeedbackTake[], leve
   for (const click of clicks) grid.append(make('path', { d: `M${x(click.beat)} 0V${height}`, stroke: '#b64e4e', 'stroke-width': .13, ...(click.accent === 'downbeat' ? {} : { 'stroke-dasharray': '.5 .5' }) }));
   drawing.replaceChildren();
   lane.element.dataset.visits = String(takes.length);
+  lane.element.dataset.feedbackPoints = String(takes.reduce((sum, take) => sum + take.points.size, 0));
+  lane.element.dataset.feedbackAttacks = String(takes.reduce((sum, take) => sum + take.attacks.length, 0));
+  lane.element.dataset.feedbackPitches = String(takes.reduce((sum, take) => sum + take.pitches.size, 0));
   takes.forEach((take, index) => {
     const age = takes.length - 1 - index, opacity = age ? .38 * .65 ** (age - 1) : 1;
     const group = make('g', { opacity, 'data-history-age': age });

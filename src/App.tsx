@@ -9,7 +9,7 @@ import RhythmPanel, { type RhythmControl } from './RhythmPanel';
 import { LibraryPanel, type LibraryControl } from './LibraryPanel';
 import { buildBarHighlights } from './bar-highlight';
 import { buildFeedbackLanes, type FeedbackLane } from './score-feedback-layout';
-import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, loopDisplayBeat, validateScore, type Score } from './score';
+import { activeNotes, cleanSvg, clockTime, makePerformance, measureAt, loopDisplayBeat, validateScore, availableViews, renderingPages, visualEventId, type NotationView, type Score } from './score';
 import { INSTRUMENTS, clickStep, isInstrument, voiceInstrument, type ClickMode, type InstrumentId } from './sounds';
 
 const DEFAULT_SCORE = `${import.meta.env.BASE_URL}scores/samples/carcassi.sotto`;
@@ -19,6 +19,7 @@ export default function App() {
   const [preferences] = useState(loadPreferences);
   const player = useMemo(() => new Player(), []);
   const [score, setScore] = useState<Score | null>(null);
+  const [notationView, setNotationView] = useState<NotationView>('notation');
   const [scoreKey, setScoreKey] = useState(DEFAULT_KEY);
   const [settingsGeneration, setSettingsGeneration] = useState(0);
   const [resumeNeeded, setResumeNeeded] = useState('');
@@ -72,7 +73,7 @@ export default function App() {
   const scoreRoot = useRef<HTMLDivElement>(null);
   const scrollRoot = useRef<HTMLDivElement>(null);
   const zoomAnchor = useRef<{ x: number; y: number } | null>(null);
-  const noteElements = useRef(new Map<string, SVGElement>());
+  const noteElements = useRef(new Map<string, SVGElement[]>());
   const readyInstrument = useRef(instrument);
   const previousActive = useRef(new Set<string>());
   const barElements = useRef(new Map<number, SVGRectElement>());
@@ -82,7 +83,9 @@ export default function App() {
   const lastFollowed = useRef(-1);
   const performance = useMemo(() => score ? makePerformance(score, repeats) : null, [score, repeats]);
   const maxTempo = Math.max(220, score?.bpm ?? 0, bpm);
-  const pages = useMemo(() => score?.pages.map(cleanSvg) ?? [], [score]);
+  const views = availableViews(score);
+  const selectedView = views.includes(notationView) ? notationView : views[0];
+  const pages = useMemo(() => score ? renderingPages(score, selectedView).map(cleanSvg) : [], [score, selectedView]);
   const displayBeat = loop && performance ? loopDisplayBeat(beat, performance.measures[loopStart]?.start ?? 0, performance.measures[loopEnd]?.end ?? performance.duration) : beat;
   const measure = performance ? measureAt(performance, displayBeat) : null;
   const active = useMemo(() => performance ? activeNotes(performance, displayBeat) : [], [performance, displayBeat]);
@@ -147,6 +150,8 @@ export default function App() {
   const openScore = useCallback((value: unknown, key = DEFAULT_KEY, persist = true) => {
     validateScore(value);
     value.pages.forEach(cleanSvg);
+    Object.values(value.renderings ?? {}).forEach(rendering => rendering.pages.forEach(cleanSvg));
+    setNotationView('notation');
     if (latestPractice.current) savePractice(latestPractice.current.key, latestPractice.current.settings);
     openedVersion.current++;
     const settings = loadPractice(key, value);
@@ -258,9 +263,10 @@ export default function App() {
   }, [playing, player]);
 
   useEffect(() => {
-    const elements = new Map<string, SVGElement>();
+    const elements = new Map<string, SVGElement[]>();
     scoreRoot.current?.querySelectorAll<SVGElement>('.score-note').forEach(element => {
-      elements.set(element.id, element);
+      const id = visualEventId(element);
+      elements.set(id, [...(elements.get(id) ?? []), element]);
       const voice = score?.voices.find(voice => voice.id === element.dataset.voice);
       element.style.setProperty('--note-color', voice?.color ?? '#31745e');
       element.setAttribute('role', 'button');
@@ -277,12 +283,12 @@ export default function App() {
   }, [pages, score, feedbackView, rhythmVisible, microphoneActive, practiceVoice]);
 
   useEffect(() => {
-    for (const element of noteElements.current.values()) element.classList.toggle('voice-muted', effectivelyMuted.has(element.dataset.voice ?? ''));
+    for (const group of noteElements.current.values()) for (const element of group) element.classList.toggle('voice-muted', effectivelyMuted.has(element.dataset.voice ?? ''));
   }, [effectivelyMuted, pages]);
   useEffect(() => {
     const ids = new Set(active.filter(note => !effectivelyMuted.has(note.voice)).map(note => note.id));
-    for (const id of previousActive.current) if (!ids.has(id)) noteElements.current.get(id)?.classList.remove('is-active');
-    for (const id of ids) noteElements.current.get(id)?.classList.add('is-active');
+    for (const id of previousActive.current) if (!ids.has(id)) noteElements.current.get(id)?.forEach(element => element.classList.remove('is-active'));
+    for (const id of ids) noteElements.current.get(id)?.forEach(element => element.classList.add('is-active'));
     previousActive.current = ids;
     const currentBar = measure ? barElements.current.get(measure.written) : undefined;
     if (currentBar !== previousBar.current) {
@@ -291,7 +297,7 @@ export default function App() {
       previousBar.current = currentBar ?? null;
     }
     if (!follow || !measure || measure.index === lastFollowed.current) return;
-    const anchor = currentBar ?? active.map(note => noteElements.current.get(note.id)).find(Boolean);
+    const anchor = currentBar ?? active.map(note => noteElements.current.get(note.id)?.[0]).find(Boolean);
     const scroller = scrollRoot.current;
     if (anchor && scroller) {
       const bounds = anchor.getBoundingClientRect();
@@ -310,7 +316,7 @@ export default function App() {
       }
       lastFollowed.current = measure.index;
     }
-  }, [active, effectivelyMuted, follow, measure, zoom, controlsCollapsed, followSize]);
+  }, [active, effectivelyMuted, follow, measure, zoom, controlsCollapsed, followSize, pages]);
 
   const togglePlay = useCallback(async () => {
     if (starting || !performance) return;
@@ -365,7 +371,7 @@ export default function App() {
   const scoreClick = (event: React.MouseEvent) => {
     const element = (event.target as Element).closest('.score-note');
     if (!element || !performance) return;
-    const candidates = performance.notes.filter(note => note.id === element.id);
+    const candidates = performance.notes.filter(note => note.id === visualEventId(element));
     const next = candidates.find(note => note.start >= beat - .05) ?? candidates[0];
     if (next) seek(next.start);
   };
@@ -424,10 +430,10 @@ export default function App() {
         {error && <div className="error-banner" role="alert"><span>{error}</span><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><X size={17}/></button></div>}
 
         <section className="score-frame" aria-label="Interactive sheet music">
-          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <div className="compact-transport" role="group" aria-label="Compact practice controls"><button className="icon-button" aria-label="Restart" title="Restart (R)" onClick={restart} disabled={!score}><RotateCcw size={15}/></button><button className="icon-button" aria-label="Previous measure" title="Previous measure (←)" onClick={() => stepMeasure(-1)} disabled={!score}><ArrowLeft size={15}/></button><button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button><button className="icon-button" aria-label="Next measure" title="Next measure (→)" onClick={() => stepMeasure(1)} disabled={!score}><ArrowRight size={15}/></button><button className={`icon-button compact-listen ${microphoneActive ? 'mic-active' : ''}`} aria-label={microphoneActive ? 'Stop listening' : 'Start listening'} aria-pressed={microphoneActive} title={microphoneActive ? 'Stop microphone listening' : 'Start microphone rhythm feedback'} onClick={() => { if (!microphoneActive) setRhythmVisible(true); rhythmControl.current?.toggleMicrophone(); }}><Ear size={16}/></button><button className={`compact-metronome ${metronome ? 'enabled' : ''} ${clickPulse && metronome ? 'is-ticking' : ''}`} aria-label="Metronome" aria-pressed={metronome} data-mode={metronomeMode} title={`Metronome: ${metronomeLabel} (M)`} disabled={metronomeStarting} onClick={() => void toggleMetronome()}><AudioLines size={15}/><span>{metronomeLabel}</span></button></div>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? countingIn ? 'Count in…' : 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools"><label className="follow-control" title="Follow score"><input aria-label="Follow score" type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className={`icon-button rhythm-toggle ${microphoneActive ? 'mic-active' : ''}`} aria-label="Rhythm feedback" aria-expanded={rhythmVisible} title={microphoneActive ? 'Microphone on · rhythm feedback' : 'Microphone rhythm feedback'} onClick={() => setRhythmVisible(value => !value)}><Mic size={16}/></button><button className="icon-button sound-settings-button" aria-label="Sound and metronome settings" title="Instrument and metronome settings" onClick={() => setSoundSettings(true)}><SlidersHorizontal size={16}/></button><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 50} onClick={() => changeZoom(zoom - 10)}><Minus size={15}/></button><button className="zoom-label" aria-label="Fit score to width" title="Fit score to width (100%)" onClick={() => changeZoom(100)}>{zoom}%</button><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 250} onClick={() => changeZoom(zoom + 10)}><Plus size={15}/></button></div></div>
+          <div className="score-toolbar"><div className="score-status">{controlsCollapsed && <div className="compact-transport" role="group" aria-label="Compact practice controls"><button className="icon-button" aria-label="Restart" title="Restart (R)" onClick={restart} disabled={!score}><RotateCcw size={15}/></button><button className="icon-button" aria-label="Previous measure" title="Previous measure (←)" onClick={() => stepMeasure(-1)} disabled={!score}><ArrowLeft size={15}/></button><button className="compact-play" aria-label={playing ? 'Pause playback' : 'Play score'} onClick={() => void togglePlay()} disabled={!score || starting || (soundLoading && !playing)}>{playing ? <Pause size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button><button className="icon-button" aria-label="Next measure" title="Next measure (→)" onClick={() => stepMeasure(1)} disabled={!score}><ArrowRight size={15}/></button><button className={`icon-button compact-listen ${microphoneActive ? 'mic-active' : ''}`} aria-label={microphoneActive ? 'Stop listening' : 'Start listening'} aria-pressed={microphoneActive} title={microphoneActive ? 'Stop microphone listening' : 'Start microphone rhythm feedback'} onClick={() => { if (!microphoneActive) setRhythmVisible(true); rhythmControl.current?.toggleMicrophone(); }}><Ear size={16}/></button><button className={`compact-metronome ${metronome ? 'enabled' : ''} ${clickPulse && metronome ? 'is-ticking' : ''}`} aria-label="Metronome" aria-pressed={metronome} data-mode={metronomeMode} title={`Metronome: ${metronomeLabel} (M)`} disabled={metronomeStarting} onClick={() => void toggleMetronome()}><AudioLines size={15}/><span>{metronomeLabel}</span></button></div>}<span className={`status-dot ${playing ? 'playing' : ''}`}/><span className="ready-label">{playing ? countingIn ? 'Count in…' : 'Playing' : 'Ready when you are'}</span>{controlsCollapsed && <span className="compact-piece-title">{score?.title}</span>}{loop && <span className="loop-badge"><Repeat2 size={12}/> Loop on</span>}</div><div className="score-tools">{views.length > 1 && <label className="notation-view-control"><span>Show</span><select aria-label="Score notation view" value={selectedView} onChange={event => setNotationView(event.target.value as NotationView)}>{views.map(view => <option key={view} value={view}>{{ notation: 'Notes', tabs: 'Tabs', both: 'Both' }[view]}</option>)}</select></label>}<label className="follow-control" title="Follow score"><input aria-label="Follow score" type="checkbox" checked={follow} onChange={event => { setFollow(event.target.checked); lastFollowed.current = -1; }}/><span>Follow score</span></label><span className="tool-divider"/><button className={`icon-button rhythm-toggle ${microphoneActive ? 'mic-active' : ''}`} aria-label="Rhythm feedback" aria-expanded={rhythmVisible} title={microphoneActive ? 'Microphone on · rhythm feedback' : 'Microphone rhythm feedback'} onClick={() => setRhythmVisible(value => !value)}><Mic size={16}/></button><button className="icon-button sound-settings-button" aria-label="Sound and metronome settings" title="Instrument and metronome settings" onClick={() => setSoundSettings(true)}><SlidersHorizontal size={16}/></button><button className="icon-button" aria-label="Zoom out" disabled={zoom <= 50} onClick={() => changeZoom(zoom - 10)}><Minus size={15}/></button><button className="zoom-label" aria-label="Fit score to width" title="Fit score to width (100%)" onClick={() => changeZoom(100)}>{zoom}%</button><button className="icon-button" aria-label="Zoom in" disabled={zoom >= 250} onClick={() => changeZoom(zoom + 10)}><Plus size={15}/></button></div></div>
           <div className="score-scroller" ref={scrollRoot}><div className="score-pages" ref={scoreRoot} style={{ '--score-zoom': zoom / 100 } as React.CSSProperties} onClick={scoreClick}>
             {!score && <div className="loading-score"><Music2 size={32}/><p>Putting your music on the stand…</p></div>}
-            {pages.map((page, index) => <div key={`${score?.title}-${index}`} className="score-page" aria-label={`Score page ${index + 1}`}><span className="page-number">{String(index + 1).padStart(2, '0')}</span><div dangerouslySetInnerHTML={{ __html: page }}/></div>)}
+            {pages.map((page, index) => <div key={`${score?.title}-${selectedView}-${index}`} className="score-page" aria-label={`Score page ${index + 1}`}><span className="page-number">{String(index + 1).padStart(2, '0')}</span><div dangerouslySetInnerHTML={{ __html: page }}/></div>)}
           </div><div className="score-end"><Music2 size={16}/><span>A good place to begin again.</span></div></div>
           <div className="score-footnote"><span>Click a note to start there.</span><span>{score?.description}</span></div>
         </section>

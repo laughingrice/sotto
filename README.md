@@ -1,10 +1,32 @@
-# Sotto v0.4
+# Sotto v0.5
 
 A local web practice player, starting with a public-domain Carcassi guitar study and ten ready-to-play openly licensed samples. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The bundled instrument recordings, synthesized timbres, and metronome work offline.
 
 **New piece? Start with [Prepare a new score](#prepare-a-new-score).**
 
 For the player’s features and step-by-step practice workflows, choose **? Help** in the top bar or open the [Sotto practice guide](https://laughingrice.github.io/sotto/#help). The searchable guide covers playback, per-part instruments, loops, metronome/count-in, screen space, folder libraries, backups, microphone rhythm feedback, score preparation and troubleshooting. It works offline after the app has cached and uses a topic selector on smaller screens. Each topic explains where to find its controls and how to use them.
+
+## Notes / tabs prototype
+
+The `v0.5` tag is the reference point **before** tablature prototype changes. In the current app, choose **Library → Tab prototypes**, search for guitar or bass, and open either original four-bar exercise. The **Show** selector above the score switches **Notes / Tabs / Both** during playback or paused review. The tab-only layout deliberately uses two pages; notation and combined views use one. Noteheads and tab numbers share semantic event IDs but have distinct SVG IDs. Switching views preserves playback, loops and microphone feedback, including faded attempts and pitch marks. Tap either representation to seek.
+
+Both exercises contain single notes, a chord, a cross-bar tie, a slide, a silent fourth bar and a four-bar repeat. Guitar uses six-string EADGBE; bass uses four-string EADG. Canonical MIDI values are sounding pitches (low E2 = 40 for guitar, E1 = 28 for bass). Each bundle has one performance regardless of view. String/fret metadata is independent of the playback sound. Slides are drawn with native LilyPond endpoints; continuous slide audio and string-choice detection are not implemented.
+
+Rebuild the **prototype fixtures only** with LilyPond 2.26 and Python:
+
+```sh
+python3 scripts/build_tab_prototypes.py --instrument guitar --instrument bass
+```
+
+The instrument flag is required. `--views notation,tabs,both` selects renderings; `--output <directory>` changes the destination. Sources are in `scores/tab-prototypes/`; bundles, their editable sources and a separate catalog are in `public/scores/prototypes/`. These original exercises are dedicated under CC0. No existing full pieces were converted. The general `export_score.py` workflow and PDF transcription skill are unchanged pending review of this prototype; this builder is not a general tab importer or automatic fingering generator. Violin is deferred.
+
+Prototype geometry uses exported StaffSymbol/system and BarLine markers, covering four/six tab strings, paired staves and silent measures. Legacy bundles retain their existing geometry fallback. The optional `renderings` field extends version-1 bundles while `pages` remains the compatible default rendering. The two compressed bundles are about 10 KB and 9 KB; only the opened song is retained by the existing resume cache.
+
+Verify the views with generated microphone input:
+
+```sh
+BASE_URL=http://localhost:4179/sotto/ node scripts/tab-prototype-test.mjs
+```
 
 ## Deploy to GitHub Pages
 

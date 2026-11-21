@@ -273,6 +273,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       <div className="eyebrow">YOUR MUSIC</div><h2 id="library-title">Score library</h2>
       <p className="settings-note">Browse folders at any depth. Scans list filenames; titles and composers are learned when you open a score.</p>
       <div className="sample-library-intro"><div><strong>Try the sample library</strong><p>Openly licensed guitar, piano and violin scores, ready to play.</p></div><button className="quiet-button" disabled={busy} onClick={() => void connectOnline(SAMPLE_CATALOG)}><Globe size={16}/>Sample scores</button></div>
+      <div className="sample-library-intro"><div><strong>Notes &amp; tabs prototype</strong><p>Original four-bar guitar and bass exercises with linked display views.</p></div><button className="quiet-button" disabled={busy} onClick={() => void connectOnline(`${import.meta.env.BASE_URL}scores/prototypes/catalog.json`)}>Tab prototypes</button></div>
       <div className="library-actions"><button className="quiet-button" disabled={busy} onClick={() => void chooseFile()}><FolderOpen size={16}/> Add score</button><button className="quiet-button" disabled={busy} onClick={() => void chooseFolder()}>Connect folder</button>
         <button className="quiet-button" disabled={busy} onClick={() => {
           onBeforeBackup();

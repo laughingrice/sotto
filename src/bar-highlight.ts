@@ -1,4 +1,4 @@
-import { noteMeasure, type Score } from './score';
+import { noteMeasure, visualEventId, type Score } from './score';
 
 type Box = { x: number; y: number; width: number; height: number };
 type LocatedMeasure = { index: number; svg: SVGSVGElement; box: Box; staffY: number };
@@ -22,8 +22,44 @@ function boxInPage(element: SVGGraphicsElement, svg: SVGSVGElement): Box | null 
 export function buildBarHighlights(root: HTMLElement, score: Score): Map<number, SVGRectElement> {
   root.querySelectorAll('.current-bar-highlight').forEach(element => element.remove());
   const result = new Map<number, SVGRectElement>();
-  const elements = new Map(Array.from(root.querySelectorAll<SVGGraphicsElement>('.score-note')).map(element => [element.id, element]));
+  const elements = new Map(Array.from(root.querySelectorAll<SVGGraphicsElement>('.score-note')).map(element => [visualEventId(element), element]));
   const pages = Array.from(root.querySelectorAll<SVGSVGElement>('.score-page svg'));
+  if (root.querySelector('.sotto-staff-geometry')) {
+    // New renderings provide explicit StaffSymbol/system and BarLine anchors.
+    // This works with four/six tab lines, paired staves, and silent measures.
+    for (const svg of pages) {
+      const staves = [...svg.querySelectorAll<SVGGraphicsElement>('.sotto-staff-geometry')];
+      for (const system of new Set(staves.map(staff => staff.dataset.system))) {
+        const staffBoxes = staves.filter(staff => staff.dataset.system === system).map(staff => boxInPage(staff, svg)).filter((box): box is Box => !!box);
+        if (!staffBoxes.length) continue;
+        const left = Math.min(...staffBoxes.map(box => box.x));
+        const boundaries = new Map<number, number>();
+        for (const line of svg.querySelectorAll<SVGGraphicsElement>('.sotto-bar-boundary')) if (line.dataset.system === system) {
+          const box = boxInPage(line, svg);
+          if (box) boundaries.set(Number(line.dataset.boundary), box.x);
+        }
+        const ends = [...boundaries].sort(([a], [b]) => a - b);
+        if (!ends.length) continue;
+        const start = ends[0][1] <= left + 1 ? ends[0][0] : ends[0][0] - 1;
+        boundaries.set(start, left);
+        const end = ends.at(-1)![0];
+        const noteBoxes = [...elements.values()].filter(element => element.ownerSVGElement === svg).flatMap(element => {
+          const note = score.notes.find(note => note.id === visualEventId(element));
+          if (!note || noteMeasure(score, note) < start || noteMeasure(score, note) >= end) return [];
+          const box = boxInPage(element, svg); return box ? [box] : [];
+        });
+        const top = Math.min(...staffBoxes.map(box => box.y - 3), ...noteBoxes.map(box => box.y - 2.5));
+        const bottom = Math.max(...staffBoxes.map(box => box.y + box.height + 3), ...noteBoxes.map(box => box.y + box.height + 2.5));
+        for (let written = start; written < end; written++) {
+          if (!score.bars[written] || !boundaries.has(written) || !boundaries.has(written + 1)) continue;
+          const rect = document.createElementNS(NS, 'rect');
+          for (const [key, value] of Object.entries({ class: 'current-bar-highlight', 'data-bar-index': written, 'data-system': system ?? '', x: boundaries.get(written)!, y: top, width: boundaries.get(written + 1)! - boundaries.get(written)!, height: bottom - top, rx: 1, 'aria-hidden': 'true' })) rect.setAttribute(key, String(value));
+          svg.prepend(rect); result.set(written, rect);
+        }
+      }
+    }
+    return result;
+  }
   const lines = new Map<SVGSVGElement, Box[]>();
   for (const svg of pages) {
     // LilyPond draws barlines as square-cornered, thin, full-staff rectangles.
