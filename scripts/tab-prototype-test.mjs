@@ -59,7 +59,7 @@ try {
       await select.selectOption(view);
       assert.equal(await page.locator('.current-bar-highlight').count(), 4, 'Silent fourth bar has a highlight in every view');
       assert.equal(await page.locator('.score-note').count(), score.notes.length * (view === 'both' ? 2 : 1));
-      assert.equal(await page.locator('.score-page').count(), view === 'tabs' ? 2 : 1, 'Tab layout deliberately has different page breaks');
+      assert.equal(await page.locator('.score-page').count(), 1, 'Natural pagination fits both systems on one page in every view');
       await page.locator(`[data-event-id="${score.notes[0].id}"]`).first().click();
       assert.equal(Number(await page.getByRole('slider', { name: 'Playback position', exact: true }).inputValue()), 0);
     }
@@ -113,13 +113,18 @@ try {
       await select.selectOption(view); await lane().scrollIntoViewIfNeeded();
       assert.deepEqual(await snapshot(), frozen, 'View switches preserve faded histories and timing/pitch judgments');
       assert.equal(await lane().locator('[data-history-age="1"]').getAttribute('opacity'), '0.38');
+      assert.ok(await page.evaluate(() => {
+        const lane = document.querySelector('.score-feedback-lane[data-bar-index="0"]').getBoundingClientRect();
+        const barNumber = [...document.querySelectorAll('.score-page text')].find(text => text.textContent.trim() === '3' && text.getBoundingClientRect().left < lane.left);
+        return barNumber && barNumber.getBoundingClientRect().top >= lane.bottom - 1;
+      }), 'The next system bar number stays below the preceding feedback lane');
       await page.screenshot({ path: `test-results/tab-${instrument}-${view}.png` });
     }
     await page.setViewportSize({ width: 768, height: 1024 });
     await select.selectOption('tabs'); await lane().scrollIntoViewIfNeeded();
     await page.screenshot({ path: `test-results/tab-${instrument}-tablet.png` });
     await button('Stop microphone').click(); await page.close();
-    console.log(`PASS ${instrument}: three genuine engravings, different page breaks, one playback stream, linked highlights/seek, silent bar, frozen history/pitch, repeat loops and tablet.`);
+    console.log(`PASS ${instrument}: general exporter, natural one-page layouts, one playback stream, linked highlights/seek, silent bar, frozen history/pitch, repeat loops and tablet.`);
   }
   assert.deepEqual(errors, []);
 } catch (error) {

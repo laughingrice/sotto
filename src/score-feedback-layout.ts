@@ -63,7 +63,12 @@ export function buildFeedbackLanes(root: HTMLElement, score: Score, bars: Map<nu
       const after = cuts.filter(cut => box.y + box.height > cut + .001).length;
       if (before !== after && element.children.length && !['text', 'use'].includes(element.localName)) {
         for (const child of element.children) if (child instanceof SVGGraphicsElement) collect(child);
-      } else if (before) moves.push({ element, dy: before * gap });
+      } else {
+        // Small text (especially a next-system bar number) can straddle a
+        // padded system boundary. Keep it with the side containing its center.
+        const shifts = before === after ? before : cuts.filter(cut => box.y + box.height / 2 >= cut).length;
+        if (shifts) moves.push({ element, dy: shifts * gap });
+      }
     }
     graphics.forEach(collect);
     // Compute note anchors before moving any engraving.

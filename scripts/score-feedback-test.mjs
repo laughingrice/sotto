@@ -11,7 +11,9 @@ await page.addInitScript(() => {
   localStorage.setItem('sotto.countIn', 'false');
   const NativeContext = window.AudioContext;
   window.contexts = [];
-  window.AudioContext = class extends NativeContext { constructor(...args) { super(...args); window.contexts.push(this); } };
+  // Fast-note fixture uses fixed analysis windows; do not inherit a host's
+  // low-rate Bluetooth/communications route for this synthetic input test.
+  window.AudioContext = class extends NativeContext { constructor(options) { super({ ...options, sampleRate: 48000 }); window.contexts.push(this); } };
   navigator.mediaDevices.getUserMedia = async () => {
     const context = window.contexts.findLast(context => context.state === 'running');
     const destination = context.createMediaStreamDestination();
@@ -24,8 +26,10 @@ await page.addInitScript(() => {
       const now = context.currentTime;
       gain.gain.cancelScheduledValues(now); gain.gain.setValueAtTime(.0001, now);
       gain.gain.linearRampToValueAtTime(window.testVolume ?? .12, now + .003);
-      gain.gain.setValueAtTime(window.testVolume ?? .12, now + .15);
-      gain.gain.exponentialRampToValueAtTime(.0001, now + .22);
+      // Leave enough sustained input for two complete pitch windows even
+      // when the worker is briefly delayed by concurrent browser tests.
+      gain.gain.setValueAtTime(window.testVolume ?? .12, now + .20);
+      gain.gain.exponentialRampToValueAtTime(.0001, now + .25);
     }, 280);
     return destination.stream;
   };
@@ -52,7 +56,7 @@ try {
   // Two staves per system, including an enclosing transformed group. Bar
   // spacing is deliberately nonuniform, and the second system needs shifting.
   const notes = Array.from({ length: 16 }, (_, n) => ({ id: `feedback-note-${n}`, voice: n % 2 ? 'lower' : 'upper',
-    beat: Math.floor(n / 2), duration: .7, grace: 0, midi: 60, bar: Math.floor(n / 8) + 1, measure: Math.floor(n / 8), tie: false }));
+    beat: Math.floor(n / 2), duration: .9, grace: 0, midi: 60, bar: Math.floor(n / 8) + 1, measure: Math.floor(n / 8), tie: false }));
   const fixture = { format: 'sotto-score', version: 1, title: 'Feedback ensemble', composer: '', subtitle: '', description: '', beatsPerBar: 4, beatUnit: 1, bpm: 220,
     voices: [{ id: 'upper', name: 'Upper', color: '#31745e' }, { id: 'lower', name: 'Lower', color: '#597eae' }], notes,
     bars: [0, 1].map(index => ({ index, label: String(index + 1), start: index * 4, duration: 4, meter: [4, 4] })), sequence: [0, 1],
@@ -99,4 +103,8 @@ try {
   await page.waitForFunction(() => !document.querySelector('.score-feedback-lane [data-history-age]'));
   assert.deepEqual(errors, []);
   console.log('PASS: score-aligned feedback, reserved system spacing, reversible layout, persistent pitch, six faded visits, frozen pause, hidden panel, zoom and tablet.');
+} catch (error) {
+  await page.screenshot({ path: 'test-results/score-feedback-failure.png' });
+  console.log(await page.locator('.rhythm-panel').innerText());
+  throw error;
 } finally { await browser.close(); }

@@ -6,25 +6,50 @@ A local web practice player, starting with a public-domain Carcassi guitar study
 
 For the player’s features and step-by-step practice workflows, choose **? Help** in the top bar or open the [Sotto practice guide](https://laughingrice.github.io/sotto/#help). The searchable guide covers playback, per-part instruments, loops, metronome/count-in, screen space, folder libraries, backups, microphone rhythm feedback, score preparation and troubleshooting. It works offline after the app has cached and uses a topic selector on smaller screens. Each topic explains where to find its controls and how to use them.
 
-## Notes / tabs prototype
+## Guitar and bass tablature
 
-The `v0.5` tag is the reference point **before** tablature prototype changes. In the current app, choose **Library → Tab prototypes**, search for guitar or bass, and open either original four-bar exercise. The **Show** selector above the score switches **Notes / Tabs / Both** during playback or paused review. The tab-only layout deliberately uses two pages; notation and combined views use one. Noteheads and tab numbers share semantic event IDs but have distinct SVG IDs. Switching views preserves playback, loops and microphone feedback, including faded attempts and pitch marks. Tap either representation to seek.
+The `v0.5` tag remains the reference point before tablature work. **Library → Tab prototypes** opens the original four-bar guitar and bass examples. These now use the general exporter and natural pagination: both systems fit on one page in Notes, Tabs and Both. The **Show** selector switches views without resetting playback, loops, timing/pitch feedback or faded attempts. Tap a notehead or tab number to seek. One musical performance drives every rendering.
 
-Both exercises contain single notes, a chord, a cross-bar tie, a slide, a silent fourth bar and a four-bar repeat. Guitar uses six-string EADGBE; bass uses four-string EADG. Canonical MIDI values are sounding pitches (low E2 = 40 for guitar, E1 = 28 for bass). Each bundle has one performance regardless of view. String/fret metadata is independent of the playback sound. Slides are drawn with native LilyPond endpoints; continuous slide audio and string-choice detection are not implemented.
+Tab generation is opt-in. Give each physical part a **named Staff** and its layers globally unique, named Voices; put a native string number on every pitched note/chord tone in a selected part. Keep one canonical music source. Do not manually duplicate it into TabStaff or add event IDs: the exporter assigns semantic identities before making display copies. A separate MIDI score, if present, defines playback order; visual duplication never duplicates audio. Existing notation-only exports are unchanged.
 
-Rebuild the **prototype fixtures only** with LilyPond 2.26 and Python:
+```sh
+# Named Staff = "guitar", standard six-string tuning:
+python3 scripts/export_score.py path/to/piece.ly --tab-part guitar=guitar-6
+
+# Bass plus drums: drums remain conventional notation in all views.
+python3 scripts/export_score.py path/to/piece.ly --tab-part bass=bass-4
+
+# Several parts; a five-string bass profile is available too.
+python3 scripts/export_score.py path/to/piece.ly \
+  --tab-part guitar=guitar-6 --tab-part bass=bass-5
+
+# Drop D: pitches are LOW TO HIGH, with explicit scientific octaves.
+python3 scripts/export_score.py path/to/piece.ly \
+  --tab-part guitar=guitar-6 --tab-tuning guitar=D2,A2,D3,G3,B3,E4
+
+# Optional capo and view selection (all three views are the default).
+python3 scripts/export_score.py path/to/piece.ly \
+  --tab-part guitar=guitar-6 --tab-capo guitar=2 --views notation,tabs,both
+```
+
+Profiles are `guitar-6`, `bass-4`, and `bass-5` (ordinary frets 0–24). A capo records the physical instrument; it does **not** transpose source pitches. Supply sounding pitches, retaining any correct LilyPond `\transposition` or explicit exporter `--transpose` correction exactly once. For instance, low E is MIDI 40 for guitar and 28 for bass. The playback sound selector is independent of the physical tab profile. The exporter rejects missing strings, impossible frets, string collisions, string changes across ties, and disagreements between views rather than silently inventing fingering. Source tabs must still be proofread against generated string/fret choices.
+
+By default, tab exports relax forced page turns and let LilyPond paginate naturally, retaining explicit system breaks. Use `--keep-page-breaks` for deliberate source page turns. Keep source paper settings reasonable and remove obsolete fixed page counts during transcription. Each view may otherwise have different spacing/page breaks; synchronization uses musical positions, not page numbers. Source includes, parsed timing, pickups, meter changes, grace notes and structured repeats are retained. Unselected parts stay in conventional notation.
+
+The local `pdf-to-lilypond` skill now has a guitar/bass tablature reference covering source evidence, string/fret verification, tuning/capo, canonical Staff/Voice structure, exact export commands and multi-view review. The exporter uses only Python's standard library and LilyPond 2.26. No full pieces were converted here. Violin fingering and continuous slide playback remain deferred. Complex bend/harmonic touch-fret conventions need separate support; they must not be treated as ordinary fretted pitches without review.
+
+The optional `renderings` field extends version-1 bundles; `pages` remains the notation fallback for older players. Exported StaffSymbol/system and BarLine anchors support four/six tab lines, paired staves and silent measures. The player retains its existing one-song resume cache.
+
+Rebuild the original CC0 examples through the same general exporter:
 
 ```sh
 python3 scripts/build_tab_prototypes.py --instrument guitar --instrument bass
 ```
 
-The instrument flag is required. `--views notation,tabs,both` selects renderings; `--output <directory>` changes the destination. Sources are in `scores/tab-prototypes/`; bundles, their editable sources and a separate catalog are in `public/scores/prototypes/`. These original exercises are dedicated under CC0. No existing full pieces were converted. The general `export_score.py` workflow and PDF transcription skill are unchanged pending review of this prototype; this builder is not a general tab importer or automatic fingering generator. Violin is deferred.
-
-Prototype geometry uses exported StaffSymbol/system and BarLine markers, covering four/six tab strings, paired staves and silent measures. Legacy bundles retain their existing geometry fallback. The optional `renderings` field extends version-1 bundles while `pages` remains the compatible default rendering. The two compressed bundles are about 10 KB and 9 KB; only the opened song is retained by the existing resume cache.
-
-Verify the views with generated microphone input:
+Canonical sources are in `scores/tab-prototypes/`; distributable sources, bundles and their catalog are in `public/scores/prototypes/`. Verify export and playback with:
 
 ```sh
+python3 -m unittest discover -s scripts -p 'test_tab_export.py' -v
 BASE_URL=http://localhost:4179/sotto/ node scripts/tab-prototype-test.mjs
 ```
 

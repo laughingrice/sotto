@@ -176,8 +176,16 @@ def starting_tempo(tempos, meter, julia, beat_unit=None, bpm=None, midi_quarter_
 
 
 def compile_score(source: Path, title: str | None, composer: str | None, output: Path, julia: bool,
-                  beats_per_bar=None, beat_unit=None, bpm=None, transpose=None, optimize_svg=True):
+                  beats_per_bar=None, beat_unit=None, bpm=None, transpose=None, optimize_svg=True,
+                  tab_parts=None, views=None, tab_tunings=None, tab_capos=None, keep_page_breaks=False):
     transpose = transpose if transpose is not None else (-12 if julia else 0)
+    if tab_parts:
+        from tab_export import compile_with_tabs
+        return compile_with_tabs(source, title, composer, output, parts=tab_parts, views=views,
+            tunings=tab_tunings, capos=tab_capos, beat_unit=beat_unit, bpm=bpm, transpose=transpose,
+            optimize_svg=optimize_svg, keep_page_breaks=keep_page_breaks)
+    if views is not None or tab_tunings or tab_capos or keep_page_breaks:
+        raise ValueError('Tab display/tuning options require --tab-part PART=guitar-6 (or bass-4/bass-5)')
     text = source.read_text()
     if '\\layout {' not in text:
         raise ValueError('The score needs an explicit \\layout { } block to install the exporter.')
@@ -257,10 +265,15 @@ if __name__ == '__main__':
     parser.add_argument('--bpm', type=float, help='Override the opening score tempo (numeric marking or tempo-word midpoint).')
     parser.add_argument('--transpose', type=int, help='Additional semitone offset after LilyPond transposition (default 0, built-in Julia -12). Do not lower already transposed guitar pitches twice.')
     parser.add_argument('--no-optimize-svg', action='store_true', help='Keep the original LilyPond SVG for comparison (gzip compression is still enabled).')
+    parser.add_argument('--tab-part', action='append', metavar='PART=PROFILE', help='Opt in a named Staff to guitar-6, bass-4 or bass-5 tabs. Repeat for multiple parts. Source notes require explicit strings.')
+    parser.add_argument('--views', help='Comma-separated notation,tabs,both renderings (default: all three when --tab-part is used).')
+    parser.add_argument('--tab-tuning', action='append', metavar='PART=PITCHES', help='Open strings low to high in scientific pitch, e.g. guitar=D2,A2,D3,G3,B3,E4.')
+    parser.add_argument('--tab-capo', action='append', metavar='PART=FRET', help='Capo fret 0–12. Source/export pitches remain sounding pitches; capo does not transpose music.')
+    parser.add_argument('--keep-page-breaks', action='store_true', help='Keep deliberate source page turns for tab exports; default lets LilyPond paginate naturally, retaining line breaks.')
     parser.add_argument('--output', type=Path, help='Output path (default: source.sotto, gzip compressed). A .json extension explicitly selects uncompressed legacy JSON.')
     args = parser.parse_args()
     if args.source is None:
-        if args.no_optimize_svg or any(value is not None for value in (args.title, args.composer, args.output, args.beats_per_bar, args.beat_unit, args.bpm, args.transpose)):
+        if args.no_optimize_svg or args.keep_page_breaks or any(value is not None for value in (args.title, args.composer, args.output, args.beats_per_bar, args.beat_unit, args.bpm, args.transpose, args.tab_part, args.views, args.tab_tuning, args.tab_capo)):
             parser.error('Provide the .ly source path when exporting a custom score. Omitting the source rebuilds the public sample library; changing the title or output does not change the music.')
         from build_samples import main
         main()
@@ -268,8 +281,11 @@ if __name__ == '__main__':
     julia = args.source.resolve() == DEFAULT_SOURCE.resolve()
     output = args.output or args.source.with_suffix('.sotto')
     try:
+        from tab_export import assignments
         compile_score(args.source.resolve(), args.title, args.composer, output, julia,
-                      args.beats_per_bar, args.beat_unit, args.bpm, args.transpose, not args.no_optimize_svg)
+                      args.beats_per_bar, args.beat_unit, args.bpm, args.transpose, not args.no_optimize_svg,
+                      assignments(args.tab_part, '--tab-part'), args.views.split(',') if args.views is not None else None,
+                      assignments(args.tab_tuning, '--tab-tuning'), assignments(args.tab_capo, '--tab-capo'), args.keep_page_breaks)
     except subprocess.CalledProcessError as exc:
         print(exc.stdout or '')
         print(exc.stderr or '')
