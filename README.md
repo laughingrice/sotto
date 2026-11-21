@@ -346,3 +346,5 @@ python3 scripts/fetch-samples.py
 ```
 
 A normal checkout/build already includes them. The service worker precaches all five banks so an instrument first selected offline can still load. Runtime gain matching balances the sampled instruments; attack/release envelopes and pitch interpolation are applied during playback.
+
+The `v0.5` reference release records score-aligned microphone feedback, faded previous attempts, persistent single-note pitch marks, adaptive trace scaling, and explicit library reconnection errors. It precedes the notation/tablature switching prototype.
