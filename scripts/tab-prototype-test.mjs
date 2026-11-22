@@ -66,6 +66,7 @@ try {
     await button('Rhythm feedback').click(); await page.locator('.rhythm-options summary').click();
     await button('Enable microphone').click(); await button('Stop microphone').waitFor();
     await page.waitForFunction(() => document.querySelector('.rhythm-panel canvas').dataset.backgroundReady === 'true');
+    await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).selectOption('all');
     await page.locator('.rhythm-options summary').click();
     const sounding = score.notes.filter(note => note.beat !== 8); // The tied continuation is not reattacked.
     await page.evaluate(midi => { window.midi = [...midi, ...midi]; window.starts = []; window.inject = true; }, sounding.map(note => note.midi));
@@ -90,11 +91,15 @@ try {
     await button('Play score').waitFor({ timeout: 20000 });
     assert.equal(await page.evaluate(() => window.starts.length), sounding.length * 2, 'Both draws twice but schedules every sounding event exactly once');
     assert.equal(await page.evaluate(() => window.mediaRequests), 1, 'Changing views does not restart microphone capture');
+    await page.waitForTimeout(400);
+    const extraAttacks = await page.locator('.score-feedback-lane circle').evaluateAll(nodes => nodes.filter(node => node.textContent.includes('Unmatched')).map(node => ({ source: node.dataset.attackSource, x: node.getAttribute('cx'), text: node.textContent })));
+    assert.ok(extraAttacks.every(attack => attack.source !== 'legato'), 'Legato must not add duplicate pluck attacks: ' + JSON.stringify(extraAttacks));
     const pitch = page.locator('.pitch-feedback');
     assert.ok(Number(await pitch.getAttribute('data-matching')) > 0, 'Real worklet checks generated input against canonical sounding pitches');
+    assert.ok(await page.locator('[data-pitch-result="matching"] path').count() > 0, 'Correct notes leave visible green vector checks');
     await page.getByRole('combobox', { name: 'Loop end measure', exact: true }).selectOption('0');
     await page.getByRole('switch', { name: 'Practice loop', exact: true }).click(); await button('Restart').click();
-    await page.evaluate(midi => { window.midi = midi; window.starts = []; }, score.notes.slice(0, 4).map(note => note.midi));
+    await page.evaluate(midi => { window.midi = midi; window.starts = []; }, score.notes.slice(0, 4).map(note => note.midi + 1));
     await button('Play score').click();
     await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.completedLoops) >= 2);
     await button('Pause playback').click(); await page.waitForTimeout(350);
@@ -104,6 +109,7 @@ try {
       return page.evaluate(() => {
         const lane = document.querySelector('.score-feedback-lane[data-bar-index="0"]');
         return { visits: lane.dataset.visits, points: lane.dataset.feedbackPoints, attacks: lane.dataset.feedbackAttacks, pitches: lane.dataset.feedbackPitches,
+          position: lane.dataset.position,
           matching: document.querySelector('.pitch-feedback').dataset.matching, different: document.querySelector('.pitch-feedback').dataset.different,
           onTime: document.querySelector('.rhythm-stats').dataset.onTime, late: document.querySelector('.rhythm-stats').dataset.late };
       });
@@ -112,6 +118,9 @@ try {
     for (const view of ['notation', 'tabs', 'both']) {
       await select.selectOption(view); await lane().scrollIntoViewIfNeeded();
       assert.deepEqual(await snapshot(), frozen, 'View switches preserve faded histories and timing/pitch judgments');
+      assert.equal(await lane().locator('.score-feedback-playhead').count(), 1, 'Captured position remains visible after pausing and changing views');
+      assert.ok(await lane().locator('[data-pitch-result="different"] path').count() > 0, 'Incorrect notes leave red crosses in every view');
+      assert.equal(await lane().locator(':scope > g:last-child > .score-feedback-pitch-marks:last-child').count(), 1, 'Pitch markers are painted above traces and the playhead');
       assert.equal(await lane().locator('[data-history-age="1"]').getAttribute('opacity'), '0.38');
       assert.ok(await page.evaluate(() => {
         const lane = document.querySelector('.score-feedback-lane[data-bar-index="0"]').getBoundingClientRect();
@@ -123,8 +132,31 @@ try {
     await page.setViewportSize({ width: 768, height: 1024 });
     await select.selectOption('tabs'); await lane().scrollIntoViewIfNeeded();
     await page.screenshot({ path: `test-results/tab-${instrument}-tablet.png` });
+    // A paused take must freeze judgments, but not freeze the independent
+    // tuner at its last note. Include nylon low E and drop D below G2.
+    const judgments = await pitch.getAttribute('data-matching') + '/' + await pitch.getAttribute('data-different');
+    await page.evaluate(() => {
+      const context = window.destination.context;
+      window.liveOscillator = context.createOscillator(); window.liveGain = context.createGain();
+      window.liveGain.gain.value = .12;
+      window.liveOscillator.connect(window.liveGain); window.liveGain.connect(window.destination); window.liveOscillator.start();
+    });
+    for (const midi of [45, 43, 40, 38, 45]) {
+      await page.evaluate(midi => { window.liveOscillator.frequency.value = 440 * 2 ** ((midi - 69) / 12); }, midi);
+      await page.waitForFunction(midi => {
+        const panel = document.querySelector('.pitch-feedback');
+        return panel.dataset.targetKind === 'input' && Math.abs(Number(panel.dataset.heardMidi) - midi) < .2;
+      }, midi);
+      assert.equal(await pitch.getAttribute('data-matching') + '/' + await pitch.getAttribute('data-different'), judgments, 'Paused tuner never changes pitch judgments');
+    }
+    await page.evaluate(() => { window.liveGain.gain.value = .002; window.liveOscillator.frequency.value = 82.4069; });
+    await page.waitForFunction(() => {
+      const panel = document.querySelector('.pitch-feedback');
+      return Math.abs(Number(panel.dataset.heardMidi) - 40) < .2 && panel.textContent.includes('Below scoring gate');
+    });
+    await page.evaluate(() => window.liveOscillator.stop());
     await button('Stop microphone').click(); await page.close();
-    console.log(`PASS ${instrument}: general exporter, natural one-page layouts, one playback stream, linked highlights/seek, silent bar, frozen history/pitch, repeat loops and tablet.`);
+    console.log(`PASS ${instrument}: general exporter, natural one-page layouts, one playback stream, linked highlights/seek, silent bar, All voices pitch judgments, frozen history, live low-string tuner after pause, quiet-input readout, repeat loops and tablet.`);
   }
   assert.deepEqual(errors, []);
 } catch (error) {

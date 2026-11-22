@@ -79,7 +79,7 @@ try {
   await page.waitForFunction(() => !!document.querySelector('[data-pitch-result]'));
   await select('Feedback history').selectOption('5');
   await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.completedLoops) >= 6);
-  await button('Pause playback').click(); await page.waitForTimeout(300);
+  await button('Pause playback').click(); await page.waitForTimeout(500); // Drain scheduled audio plus the legato merge buffer.
   assert.equal(await lane.locator('[data-history-age]').count(), 6);
   const snapshot = await lane.innerHTML(); await page.waitForTimeout(250); assert.equal(await lane.innerHTML(), snapshot, 'Pause freezes score feedback');
   const geometry = await page.evaluate(() => {

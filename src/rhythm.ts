@@ -39,7 +39,7 @@ export function traceLevel(amplitude: number, boostDb: number, background?: numb
   const db = 20 * Math.log10(Math.max(amplitude, 1e-6)) + boostDb;
   return Math.max(0, Math.min(1, (db + 70) / 70));
 }
-export type Attack = { beat: number; expectedBeat?: number; errorMs: number | null; kind: 'on-time' | 'early' | 'late' | 'extra' };
+export type Attack = { beat: number; expectedBeat?: number; errorMs: number | null; kind: 'on-time' | 'early' | 'late' | 'extra'; source?: 'energy' | 'legato' };
 export type RhythmStats = { onTime: number; early: number; late: number; missed: number; extra: number };
 export const emptyStats = (): RhythmStats => ({ onTime: 0, early: 0, late: 0, missed: 0, extra: 0 });
 

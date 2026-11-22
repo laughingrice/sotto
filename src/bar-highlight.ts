@@ -22,7 +22,16 @@ function boxInPage(element: SVGGraphicsElement, svg: SVGSVGElement): Box | null 
 export function buildBarHighlights(root: HTMLElement, score: Score): Map<number, SVGRectElement> {
   root.querySelectorAll('.current-bar-highlight').forEach(element => element.remove());
   const result = new Map<number, SVGRectElement>();
-  const elements = new Map(Array.from(root.querySelectorAll<SVGGraphicsElement>('.score-note')).map(element => [visualEventId(element), element]));
+  // Both renders two glyphs for the same event. Include both staves' ledger
+  // notes when finding system bounds; keeping only the last glyph loses the
+  // upper notation staff's high notes and can put feedback through its ink.
+  const elements = [...root.querySelectorAll<SVGGraphicsElement>('.score-note')];
+  const elementsById = new Map<string, SVGGraphicsElement[]>();
+  for (const element of elements) {
+    const id = visualEventId(element);
+    elementsById.set(id, [...(elementsById.get(id) ?? []), element]);
+  }
+  const notesById = new Map(score.notes.map(note => [note.id, note]));
   const pages = Array.from(root.querySelectorAll<SVGSVGElement>('.score-page svg'));
   if (root.querySelector('.sotto-staff-geometry')) {
     // New renderings provide explicit StaffSymbol/system and BarLine anchors.
@@ -43,8 +52,8 @@ export function buildBarHighlights(root: HTMLElement, score: Score): Map<number,
         const start = ends[0][1] <= left + 1 ? ends[0][0] : ends[0][0] - 1;
         boundaries.set(start, left);
         const end = ends.at(-1)![0];
-        const noteBoxes = [...elements.values()].filter(element => element.ownerSVGElement === svg).flatMap(element => {
-          const note = score.notes.find(note => note.id === visualEventId(element));
+        const noteBoxes = elements.filter(element => element.ownerSVGElement === svg).flatMap(element => {
+          const note = notesById.get(visualEventId(element));
           if (!note || noteMeasure(score, note) < start || noteMeasure(score, note) >= end) return [];
           const box = boxInPage(element, svg); return box ? [box] : [];
         });
@@ -73,13 +82,12 @@ export function buildBarHighlights(root: HTMLElement, score: Score): Map<number,
   const measures: LocatedMeasure[] = [];
   for (const bar of score.bars) {
     const notes = score.notes.filter(note => noteMeasure(score, note) === bar.index);
-    const geometry = notes.flatMap(note => {
-      const element = elements.get(note.id);
-      const svg = element?.ownerSVGElement;
-      if (!element || !svg) return [];
+    const geometry = notes.flatMap(note => (elementsById.get(note.id) ?? []).flatMap(element => {
+      const svg = element.ownerSVGElement;
+      if (!svg) return [];
       const box = boxInPage(element, svg);
       return box ? [{ svg, box }] : [];
-    });
+    }));
     if (!geometry.length) continue;
     const svg = geometry[0].svg;
     const boxes = geometry.filter(item => item.svg === svg).map(item => item.box);

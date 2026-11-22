@@ -112,7 +112,7 @@ export function buildFeedbackLanes(root: HTMLElement, score: Score, bars: Map<nu
 
 const colors: Record<Attack['kind'], string> = { 'on-time': '#327257', early: '#b17b27', late: '#597eae', extra: '#92998c' };
 export function drawFeedbackLane(lane: FeedbackLane, takes: FeedbackTake[], level: (value: number, band: 'rms' | 'peak') => number,
-  expected: number[], clicks: { beat: number; accent: string }[]) {
+  expected: number[], clicks: { beat: number; accent: string }[], position?: number) {
   const { drawing, grid, height, anchors } = lane;
   const x = (beat: number) => feedbackX(anchors, beat);
   grid.replaceChildren();
@@ -123,6 +123,7 @@ export function drawFeedbackLane(lane: FeedbackLane, takes: FeedbackTake[], leve
   lane.element.dataset.feedbackPoints = String(takes.reduce((sum, take) => sum + take.points.size, 0));
   lane.element.dataset.feedbackAttacks = String(takes.reduce((sum, take) => sum + take.attacks.length, 0));
   lane.element.dataset.feedbackPitches = String(takes.reduce((sum, take) => sum + take.pitches.size, 0));
+  const pitchMarks = make('g', { class: 'score-feedback-pitch-marks' });
   takes.forEach((take, index) => {
     const age = takes.length - 1 - index, opacity = age ? .38 * .65 ** (age - 1) : 1;
     const group = make('g', { opacity, 'data-history-age': age });
@@ -134,13 +135,31 @@ export function drawFeedbackLane(lane: FeedbackLane, takes: FeedbackTake[], leve
       group.append(make('path', { d: line('peak'), fill: 'none', stroke: age ? '#789573' : '#285d40', 'stroke-width': .18 }));
     }
     for (const attack of take.attacks) {
-      const dot = make('circle', { cx: x(attack.position), cy: 1, r: .32, fill: colors[attack.kind] });
-      const title = make('title'); title.textContent = attack.errorMs === null ? 'Unmatched attack' : `${attack.kind}: ${Math.round(attack.errorMs)} ms`; dot.append(title); group.append(dot);
+      const dot = make('circle', { cx: x(attack.position), cy: 1, r: attack.source === 'legato' ? .4 : .32,
+        fill: attack.source === 'legato' ? '#fff' : colors[attack.kind], stroke: colors[attack.kind], 'stroke-width': attack.source === 'legato' ? .2 : 0,
+        'data-attack-source': attack.source ?? 'energy' });
+      const title = make('title'); title.textContent = `${attack.source === 'legato' ? 'Pitch change · ' : ''}${attack.errorMs === null ? 'Unmatched attack' : `${attack.kind}: ${Math.round(attack.errorMs)} ms`}`; dot.append(title); group.append(dot);
     }
     for (const pitch of take.pitches.values()) {
-      const mark = make('text', { x: x(pitch.beat), y: height - .6, fill: pitch.matching ? '#327257' : '#ad4f4f', 'font-size': 1.8, 'text-anchor': 'middle', 'data-pitch-result': pitch.matching ? 'matching' : 'different' });
-      mark.textContent = pitch.matching ? '✓' : '×'; group.append(mark);
+      // Keep judgments above every trace/history fill and the playhead. Use
+      // vector marks with a light backing so dense waveforms and font choices
+      // cannot obscure the green check or red cross.
+      const mark = make('g', { transform: `translate(${x(pitch.beat)} ${height - 1.2})`, opacity,
+        'data-pitch-result': pitch.matching ? 'matching' : 'different', role: 'img',
+        'aria-label': pitch.matching ? 'Matching pitch' : 'Different pitch' });
+      const title = make('title'); title.textContent = pitch.matching ? 'Matching pitch' : 'Different pitch';
+      mark.append(title, make('circle', { r: 1.05, fill: '#fff', 'fill-opacity': .95 }),
+        make('path', { d: pitch.matching ? 'M-.55 0L-.15 .45L.6-.5' : 'M-.45-.45L.45 .45M-.45 .45L.45-.45',
+          fill: 'none', stroke: pitch.matching ? '#327257' : '#ad4f4f', 'stroke-width': .26,
+          'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+      pitchMarks.append(mark);
     }
     drawing.append(group);
   });
+  if (position !== undefined) {
+    lane.element.dataset.position = String(position);
+    drawing.append(make('path', { class: 'score-feedback-playhead', d: `M${x(position)} 0V${height}`,
+      stroke: '#285d40', 'stroke-width': .2 }));
+  } else delete lane.element.dataset.position;
+  drawing.append(pitchMarks);
 }

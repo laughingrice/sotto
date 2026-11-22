@@ -75,3 +75,5 @@
 
 .notation-view-control{display:flex;align-items:center;gap:5px;font-size:10px;color:#647b54;margin-right:8px}.notation-view-control select{border:1px solid #dce4d1;border-radius:4px;padding:4px;color:#416643;background:white}.score-note.is-active text,.score-note:hover text{fill:currentColor!important}
 @media(max-width:650px){.notation-view-control{margin-right:3px;gap:2px}.notation-view-control>span{display:none}.notation-view-control select{max-width:66px;font-size:9px}}
+
+.pitch-check-toggle{display:flex;align-items:center;gap:4px;font-size:10px;color:#416643;white-space:nowrap;margin-right:6px}.pitch-check-toggle input{accent-color:var(--green);margin:0}

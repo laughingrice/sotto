@@ -10,11 +10,15 @@ export type FeedbackTake = { visit: string; points: Map<number, FeedbackPoint>; 
 export class ScoreFeedbackHistory {
   readonly bars = new Map<number, FeedbackTake[]>();
   private run = 0;
-  beginPass() { this.run++; }
+  beginPass() { return ++this.run; }
   clear() { this.bars.clear(); this.beginPass(); }
-  private take(measure: Measure) {
-    const visit = `${this.run}:${measure.index}`;
+  private take(measure: Measure, run = this.run) {
+    const visit = `${run}:${measure.index}`;
     const takes = this.bars.get(measure.written) ?? [];
+    const existing = takes.find(take => take.visit === visit);
+    if (existing) return existing;
+    // A delayed worker result cannot resurrect an evicted earlier loop.
+    if (run < this.run) return undefined;
     if (takes.at(-1)?.visit !== visit) {
       takes.push({ visit, points: new Map(), attacks: [], pitches: new Map() });
       if (takes.length > 6) takes.shift();
@@ -22,15 +26,20 @@ export class ScoreFeedbackHistory {
     }
     return takes.at(-1)!;
   }
-  push(measure: Measure, beat: number, frame: LevelFrame, attack?: Attack) {
-    const take = this.take(measure), position = Math.max(0, Math.min(measure.end - measure.start, beat - measure.start));
+  push(measure: Measure, beat: number, frame: LevelFrame, attack?: Attack, run = this.run) {
+    const take = this.take(measure, run), position = Math.max(0, Math.min(measure.end - measure.start, beat - measure.start));
+    if (!take) return;
     const bin = Math.min(255, Math.floor(position / (measure.end - measure.start) * 256));
     const previous = take.points.get(bin);
     take.points.set(bin, { beat: previous?.beat ?? position, rms: Math.max(previous?.rms ?? 0, frame.rms), peak: Math.max(previous?.peak ?? 0, frame.peak) });
-    if (attack && take.attacks.length < 256) take.attacks.push({ ...attack, position });
+    if (attack) this.attack(measure, beat, attack, run);
   }
-  pitch(measure: Measure, key: string, beat: number, matching: boolean) {
-    this.take(measure).pitches.set(key, { beat: beat - measure.start, matching });
+  attack(measure: Measure, beat: number, attack: Attack, run = this.run) {
+    const take = this.take(measure, run);
+    if (take && take.attacks.length < 256) take.attacks.push({ ...attack, position: Math.max(0, Math.min(measure.end - measure.start, beat - measure.start)) });
+  }
+  pitch(measure: Measure, key: string, beat: number, matching: boolean, run = this.run) {
+    this.take(measure, run)?.pitches.set(key, { beat: beat - measure.start, matching });
   }
   visible(written: number, history: number) {
     return (this.bars.get(written) ?? []).slice(-(history + 1));
@@ -60,14 +69,20 @@ export class AdaptiveTrace {
   push(frame: LevelFrame, backgroundPeak = 1e-5) {
     this.frames = this.frames.filter(item => item.time > frame.time - 4);
     if (frame.peak < backgroundPeak * 2 || frame.peak < 1e-5) return;
-    this.frames.push({ time: frame.time, db: 20 * Math.log10(frame.peak) });
+    const db = 20 * Math.log10(frame.peak);
+    // A single pluck can be much louder than the recent playing range. Give
+    // that very first transient headroom, even between percentile estimates.
+    // The rolling estimate below controls the slower return to quiet playing.
+    this.ceilingDb = Math.max(this.ceilingDb, Math.min(0, db + 6));
+    this.frames.push({ time: frame.time, db });
     if (this.lastEstimate !== null && frame.time - this.lastEstimate < .1 && this.frames.length > 1) return;
-    const dt = this.lastEstimate === null ? .1 : Math.max(0, Math.min(.2, frame.time - this.lastEstimate));
+    const firstEstimate = this.lastEstimate === null;
+    const dt = firstEstimate ? .1 : Math.max(0, Math.min(.2, frame.time - this.lastEstimate!));
     this.lastEstimate = frame.time;
     // Re-estimate at most every 100 ms, rather than for each audio block.
     const values = this.frames.filter((_, i) => i % 4 === 0).map(item => item.db).sort((a, b) => a - b);
     const target = Math.min(0, Math.max(20 * Math.log10(backgroundPeak) + 15, values[Math.floor((values.length - 1) * .95)] + 6));
-    if (this.frames.length === 1) this.ceilingDb = target;
+    if (firstEstimate) this.ceilingDb = target;
     else if (target > this.ceilingDb) this.ceilingDb = Math.min(target, this.ceilingDb + dt * 60);
     else this.ceilingDb = Math.max(target, this.ceilingDb - dt * 3);
   }

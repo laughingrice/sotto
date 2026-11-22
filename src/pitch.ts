@@ -11,16 +11,27 @@ export function pitchName(midi: number): string {
   const note = Math.round(midi);
   return `${['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][((note % 12) + 12) % 12]}${Math.floor(note / 12) - 1}`;
 }
-export type PitchTarget = { kind: 'note'; key: string; midi: number; beat: number } | { kind: 'choose-voice' | 'rest' | 'transition' | 'chord' | 'percussion' };
+export type PitchTarget = { kind: 'note'; key: string; midi: number; beat: number }
+  | { kind: 'notes'; key: string; midis: number[]; beat: number }
+  | { kind: 'rest' | 'transition' | 'chord' | 'percussion' };
 
-/** Require one sustained sounding pitch throughout the analysis window.
- * Mixed transitions, chords and notes too short for the window stay unscored. */
+/** Require a stable target throughout the analysis window. Individual voices
+ * score a single pitch; All accepts one heard member of the sounding pitch set.
+ * This is not polyphonic chord recognition. Transitions stay unscored. */
 export function targetPitch(notes: PerformanceNote[], voice: string, beat: number, windowBeats: number, offset = 0): PitchTarget {
-  if (voice === 'all') return { kind: 'choose-voice' };
   const left = beat - windowBeats / 2, right = beat + windowBeats / 2;
-  const active = notes.filter(note => note.voice === voice && !note.grace && note.start < right && note.end > left);
-  if (!active.length) return { kind: 'rest' };
-  if (active.some(note => note.percussion)) return { kind: 'percussion' };
+  const sounding = notes.filter(note => (voice === 'all' || note.voice === voice) && !note.grace && note.start < right && note.end > left);
+  if (!sounding.length) return { kind: 'rest' };
+  const active = sounding.filter(note => !note.percussion);
+  if (!active.length || (voice !== 'all' && sounding.some(note => note.percussion))) return { kind: 'percussion' };
+  if (voice === 'all') {
+    if (active.some(note => note.start > left + 1e-6 || note.end < right - 1e-6)) return { kind: 'transition' };
+    // Detect the played pitch independently, then test membership of this
+    // stable sounding set. This never claims that a complete chord was heard.
+    return { kind: 'notes', key: active.map(note => `${note.id}@${note.start}`).sort().join('|'),
+      midis: [...new Set(active.map(note => note.midi + offset))].sort((a, b) => a - b),
+      beat: Math.max(...active.map(note => note.start)) };
+  }
   if (new Set(active.map(note => note.midi)).size > 1) {
     const sounding = active.filter(note => note.start <= beat && note.end > beat);
     return { kind: new Set(sounding.map(note => note.midi)).size > 1 ? 'chord' : 'transition' };
@@ -39,13 +50,14 @@ export class PitchPass {
   private notes = new Map<string, Votes>();
   judgment(key: string) { return this.notes.get(key)?.judgment; }
   push(target: PitchTarget, frame: PitchFrame, gateDb: number): void {
-    if (target.kind !== 'note' || frame.frequency === null || !Number.isFinite(frame.frequency) || frame.frequency <= 0 || frame.clarity < .9 || frame.rms < 10 ** (gateDb / 20)) return;
+    if ((target.kind !== 'note' && target.kind !== 'notes') || frame.frequency === null || !Number.isFinite(frame.frequency) || frame.frequency <= 0 || frame.clarity < .9 || frame.rms < 10 ** (gateDb / 20)) return;
     const heard = Math.round(frequencyMidi(frame.frequency));
     const votes = this.notes.get(target.key) ?? { last: heard, streak: 0, matching: 0, different: 0 };
     votes.streak = votes.last === heard ? votes.streak + 1 : 1; votes.last = heard;
     this.notes.set(target.key, votes);
     if (votes.streak < 2) return;
-    votes[heard === Math.round(target.midi) ? 'matching' : 'different']++;
+    const expected = target.kind === 'notes' ? target.midis : [target.midi];
+    votes[expected.some(midi => heard === Math.round(midi)) ? 'matching' : 'different']++;
     const judgment = votes.matching >= votes.different ? 'matching' : 'different';
     if (votes.judgment === judgment) return;
     if (votes.judgment) this.stats[votes.judgment]--;

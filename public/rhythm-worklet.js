@@ -5,7 +5,8 @@ class SottoLevelProcessor extends AudioWorkletProcessor {
     this.sum = 0; this.peak = 0; this.count = 0;
     this.window = Math.round(sampleRate * .01);
     this.pitchEnabled = false; this.pitchEpoch = 0;
-    this.pitchRing = new Float32Array(sampleRate > 64000 ? 8192 : 4096);
+    this.pitchShortLength = 2 ** Math.ceil(Math.log2(sampleRate * .075));
+    this.pitchRing = new Float32Array(this.pitchShortLength * 2);
     this.pitchIndex = 0; this.pitchCount = 0; this.pitchSince = 0;
     this.port.onmessage = ({ data }) => {
       if (data.type !== 'pitch') return;
@@ -25,10 +26,13 @@ class SottoLevelProcessor extends AudioWorkletProcessor {
         this.pitchRing[this.pitchIndex] = sample;
         this.pitchIndex = (this.pitchIndex + 1) % this.pitchRing.length;
         this.pitchCount++; this.pitchSince++;
-        if (this.pitchCount >= this.pitchRing.length && this.pitchSince >= sampleRate * .04) {
-          const samples = new Float32Array(this.pitchRing.length);
-          const tail = this.pitchRing.subarray(this.pitchIndex);
-          samples.set(tail); samples.set(this.pitchRing.subarray(0, this.pitchIndex), tail.length);
+        if (this.pitchCount >= this.pitchShortLength && this.pitchSince >= sampleRate * .04) {
+          const length = this.pitchCount >= this.pitchRing.length ? this.pitchRing.length : this.pitchShortLength;
+          const samples = new Float32Array(length);
+          const start = (this.pitchIndex - length + this.pitchRing.length) % this.pitchRing.length;
+          const first = Math.min(length, this.pitchRing.length - start);
+          samples.set(this.pitchRing.subarray(start, start + first));
+          samples.set(this.pitchRing.subarray(0, length - first), first);
           this.port.postMessage({ type: 'pitch', epoch: this.pitchEpoch, samples, sampleRate,
             time: (currentFrame + i + 1 - samples.length / 2) / sampleRate }, [samples.buffer]);
           this.pitchSince = 0;

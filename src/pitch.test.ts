@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { PitchAnalysis } from './pitch-detect';
+import { PitchAnalysis, shortPitchWindow } from './pitch-detect';
 import { PitchPass, targetPitch, frequencyMidi, pitchName, pitchGate, type PitchFrame } from './pitch';
 import type { PerformanceNote } from './score';
 const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
@@ -34,6 +34,32 @@ describe('single-note pitch estimates', () => {
     expect((frequencyMidi(result.frequency!) - 69) * 100).toBeCloseTo(23, 0);
     expect(pitchName(40)).toBe('E2'); expect(pitchName(61)).toBe('C♯4');
   });
+  it.each([28, 40])('recovers a decaying low E (MIDI %s) with room noise using the longer window', midi => {
+    const rate = 48000, frequency = hz(midi); let seed = 123;
+    const samples = Float32Array.from({ length: 8192 }, (_, i) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      const t = i / rate, phase = 2 * Math.PI * frequency * t;
+      return (.04 * Math.sin(phase) + .12 * Math.sin(2 * phase) + .05 * Math.sin(3 * phase)) * Math.exp(-12 * t) + (seed / 4294967296 - .5) * .03;
+    });
+    const analysis = new PitchAnalysis();
+    expect(analysis.analyze(samples.subarray(4096), rate, 1).frequency).toBeNull();
+    const recovered = analysis.analyze(samples, rate, 1);
+    expect(frequencyMidi(recovered.frequency!)).toBeCloseTo(midi, 1);
+    expect(recovered.windowSeconds).toBe(8192 / rate);
+    expect(recovered.time).toBe(1);
+    // Longer analysis must also require a longer sustained score target.
+    expect(targetPitch([note(.95, 1.05, midi)], 'solo', recovered.time, recovered.windowSeconds)).toEqual({ kind: 'transition' });
+  });
+  it('keeps short-window timing for clear notes, without imposing bass latency on quick passages', () => {
+    for (const rate of [16000, 44100, 48000, 96000]) {
+      const size = shortPitchWindow(rate);
+      const samples = Float32Array.from({ length: size * 2 }, (_, i) => .2 * Math.sin(2 * Math.PI * 440 * i / rate));
+      const result = new PitchAnalysis().analyze(samples, rate, 2);
+      expect(result.windowSeconds).toBe(size / rate);
+      expect(result.time).toBeCloseTo(2 + size / (2 * rate));
+      expect(frequencyMidi(result.frequency!)).toBeCloseTo(69, 1);
+    }
+  });
   it('does not guess from silence, clipping, quiet input or noise', () => {
     const analysis = new PitchAnalysis();
     const quiet = tone(440, 48000).map(n => n * .00001);
@@ -46,9 +72,24 @@ describe('single-note pitch estimates', () => {
     expect(targetPitch([note(0, 1), note(0, 1, 64)], 'solo', .5, .2)).toEqual({ kind: 'chord' });
     expect(targetPitch([note(0, 1), note(1, 2, 64)], 'solo', .98, .2)).toEqual({ kind: 'transition' });
     expect(targetPitch([note(0, .05)], 'solo', .025, .09)).toEqual({ kind: 'transition' });
-    expect(targetPitch([note(0, 1)], 'all', .5, .2)).toEqual({ kind: 'choose-voice' });
+    expect(targetPitch([note(0, 1)], 'all', .5, .2)).toMatchObject({ kind: 'notes', midis: [60] });
     expect(targetPitch([note(0, 1, 35, { percussion: true })], 'solo', .5, .2)).toEqual({ kind: 'percussion' });
     expect(targetPitch([note(0, 1)], 'solo', 2, .2)).toEqual({ kind: 'rest' });
+  });
+  it('scores one heard pitch against all sounding voices without claiming a complete chord', () => {
+    const notes = [note(0, 2, 48, { voice: 'bass' }), note(.5, 1.5, 64), note(.5, 1.5, 67, { voice: 'inner' }), note(.5, 1.5, 35, { voice: 'drums', percussion: true })];
+    const target = targetPitch(notes, 'all', 1, .2);
+    expect(target).toMatchObject({ kind: 'notes', midis: [48, 64, 67], beat: .5 });
+    const pass = new PitchPass();
+    pass.push(target, frame(67), -42); pass.push(target, frame(67), -42);
+    expect(pass.stats).toEqual({ matching: 1, different: 0 });
+    const wrong = new PitchPass();
+    wrong.push(target, frame(66), -42); wrong.push(target, frame(66), -42);
+    expect(wrong.stats).toEqual({ matching: 0, different: 1 });
+    expect(targetPitch(notes, 'all', .5, .2)).toEqual({ kind: 'transition' });
+    expect(targetPitch(notes, 'all', 1, .2, 12)).toMatchObject({ midis: [60, 76, 79] });
+    expect(targetPitch([notes[3]], 'all', 1, .2)).toEqual({ kind: 'percussion' });
+    expect(targetPitch(notes, 'solo', 1, .2)).toMatchObject({ kind: 'note', midi: 64 });
   });
   it('counts targets once after stable frames and leaves ambiguous or missing input unscored', () => {
     const pass = new PitchPass(), target = targetPitch([note(0, 1)], 'solo', .5, .2);
@@ -103,6 +144,12 @@ describe('single-note pitch estimates', () => {
     expect(window.time).toBeCloseTo((start + 2048) / 48000);
     expect(window.samples[0]).toBeCloseTo((start % 1000) / 1000);
     expect(window.samples[4095]).toBeCloseTo(((start + 4095) % 1000) / 1000);
+    run(50);
+    const extended = messages.find(message => message.type === 'pitch' && message.samples.length === 8192);
+    expect(extended).toBeDefined();
+    const leftSample = Math.round(extended.time * 48000 - 4096);
+    expect(extended.samples[0]).toBeCloseTo((leftSample % 1000) / 1000);
+    expect(extended.samples[8191]).toBeCloseTo(((leftSample + 8191) % 1000) / 1000);
     processor.port.onmessage({ data: { type: 'pitch', enabled: false, epoch: 8 } });
     const count = messages.filter(message => message.type === 'pitch').length;
     run(50); expect(messages.filter(message => message.type === 'pitch')).toHaveLength(count);
