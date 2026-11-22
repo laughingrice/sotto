@@ -1,3 +1,4 @@
+import { selectPartInstrument, expandPartSounds } from './parts-controls.mjs';
 import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -49,12 +50,12 @@ try {
   await button('Sound and metronome settings').click(); await select('Playback octave').selectOption('12'); await button('Back to the music').click();
   await reset(); await page.waitForTimeout(600); assert.ok((await hits()).filter(hit => hit.url.includes('/drums/')).every(hit => hit.rate === 1));
   await button('Unmute bass').click(); await page.waitForTimeout(600);
-  await select('Bass instrument').selectOption('piano'); await ready(); await reset(); await page.waitForTimeout(700);
+  await selectPartInstrument(page, 'Bass', 'piano'); await ready(); await reset(); await page.waitForTimeout(700);
   events = await hits(); assert.ok(events.some(hit => hit.url.includes('/piano/')), 'Manual per-part override takes effect');
   assert.ok(events.some(hit => hit.url.includes('/drums/')), 'Changing bass sound retains drum accompaniment');
   assert.equal(await button('Pause playback').count(), 1, 'Instrument changes keep transport running');
   await button('Pause playback').click();
-  await select('Bass instrument').selectOption('bass-electric'); await ready(); await select('Drums instrument').selectOption('drums'); await ready();
+  await selectPartInstrument(page, 'Bass', 'bass-electric'); await ready(); await selectPartInstrument(page, 'Drums', 'drums'); await ready();
   await button('Sound and metronome settings').click(); await select('Playback octave').selectOption('0'); await button('Back to the music').click();
   await page.waitForTimeout(600);
   await button('Score library').click();
@@ -63,7 +64,7 @@ try {
   assert.ok(Object.values(backup.settings.songs).some(song => song.instruments?.bass === 'bass-electric' && song.instruments?.drums === 'drums'), 'Backups include each part’s instrument');
   await button('Close library').click(); await page.screenshot({ path: 'test-results/bass-drums-parts.png' });
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => true)); await page.context().setOffline(true); await page.reload();
-  await page.getByRole('heading', { name: score.title, exact: true }).waitFor(); await ready();
+  await page.getByRole('heading', { name: score.title, exact: true }).waitFor(); await ready(); await expandPartSounds(page);
   assert.equal(await select('Bass instrument').inputValue(), 'bass-electric'); assert.equal(await select('Drums instrument').inputValue(), 'drums');
   await button('Restart').click(); await button('Play score').click(); await button('Pause playback').waitFor(); await page.waitForTimeout(850);
   events = await hits(); assert.ok(events.some(hit => hit.url.includes('/bass-electric/')) && events.some(hit => hit.url.includes('/drums/')), 'Both sample banks work offline');

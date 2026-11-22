@@ -16,7 +16,7 @@ try {
     const urls = (await Promise.all(keys.map(async key => (await (await caches.open(key)).keys()).map(request => request.url)))).flat();
     return { keys, urls };
   });
-  assert.ok(results.keys.some(key => key.endsWith('v0.5.7')));
+  assert.ok(results.keys.some(key => key.endsWith('v0.5.8')));
   assert.ok(!results.urls.some(url => /\/(?:dropbox-)?redirect\.html/.test(url)), 'OAuth callbacks must never be cached');
   await page.goto(new URL('dropbox-redirect.html?code=synthetic-test-code&state=invalid', base).href);
   await page.getByRole('status').filter({ hasText: 'Dropbox sign-in expired' }).waitFor(); assert.ok(!page.url().includes('code='));

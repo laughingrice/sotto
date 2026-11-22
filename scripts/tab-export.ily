@@ -43,6 +43,17 @@
 #(define (sotto-note-tie? event)
    (any (lambda (item) (if (ly:music? item) (eq? (ly:music-property item 'name) 'TieEvent)
      (memq 'tie-event (ly:event-property item 'class)))) (ly:event-property event 'articulations)))
+#(define (sotto-property item key)
+   (if (ly:music? item) (ly:music-property item key) (ly:event-property item key)))
+#(define (sotto-guide-direction event)
+   (let ((tags (append (sotto-property event 'tags)
+                 (append-map (lambda (item) (sotto-property item 'tags))
+                   (sotto-property event 'articulations))
+                 (if (and (ly:music? event) (eq? (ly:music-property event 'name) 'EventChord))
+                   (append-map (lambda (item)
+                     (if (eq? (ly:music-property item 'name) 'FingeringEvent) (ly:music-property item 'tags) '()))
+                     (ly:music-property event 'elements)) '()))))
+     (cond ((memq 'sotto-guide-up tags) 1) ((memq 'sotto-guide-down tags) -1) (else 0))))
 #(define sotto-note-engraver
    (lambda (context)
      (let ((pending '()) (tied #f))
@@ -66,11 +77,34 @@
                     (voice (practice-voice-id context)) (staff (sotto-staff context))
                     (part (if staff (ly:context-id staff) ""))
                     (tab (eq? (grob::name grob) 'TabNoteHead))
+                    ;; Explicit source touch positions are different from a
+                    ;; stopped fret calculated from the sounding pitch.
+                    (touch (or (assoc-ref (ly:event-property event 'tweaks) '(#t details sotto-touch-fret))
+                               (assoc-ref (ly:grob-property grob 'details) 'sotto-touch-fret)))
+                    (sounding-octaves (or (assoc-ref (ly:event-property event 'tweaks) '(#t details sotto-sounding-octaves))
+                                          (assoc-ref (ly:grob-property grob 'details) 'sotto-sounding-octaves) 0))
+                    (base (or (assoc-ref (ly:event-property event 'tweaks) '(#t details sotto-base-fret))
+                              (assoc-ref (ly:grob-property grob 'details) 'sotto-base-fret)))
+                    (guide (sotto-guide-direction event))
                     (drum (symbol? (ly:event-property event 'drum-type)))
                     (moment (ly:context-current-moment context))
                     (string (if tab
                       (inexact->exact (round (/ (- (+ 1 (length (ly:context-property context 'stringTunings))) (ly:grob-property grob 'staff-position)) 2)))
                       (sotto-source-string event))))
+               (if (and tab (number? touch))
+                 (ly:grob-set-property! grob 'text
+                   ;; Native \harmonic already adds its angle brackets.
+                   (if (number? base)
+                     (make-concat-markup (list (number->string base) "<" (number->string touch) ">"))
+                   (if (any (lambda (item)
+                         (if (ly:music? item) (eq? (ly:music-property item 'name) 'HarmonicEvent)
+                           (memq 'harmonic-event (ly:event-property item 'class))))
+                       (ly:event-property event 'articulations))
+                     (number->string touch)
+                     (make-concat-markup (list "<" (number->string touch) ">"))))))
+               (if (and tab (not (= guide 0)))
+                 (ly:grob-set-property! grob 'text
+                   (make-concat-markup (list (if (> guide 0) "/" "\\") (ly:grob-property grob 'text)))))
                (ly:grob-set-property! grob 'output-attributes
                  `((id . ,(if tab (string-append "tabs-" identity) identity)) (class . "score-note")
                    (data-event-id . ,identity) (data-voice . ,voice) (data-representation . ,(if tab "tabs" "notation"))))
@@ -78,18 +112,19 @@
                  (* 4.0 (/ (ly:moment-grace-numerator moment) (ly:moment-grace-denominator moment)))
                  (if tab (+ 60 (ly:pitch-semitones (ly:event-property event 'pitch))) (practice-midi-pitch context event))
                  (practice-beats (ly:duration->moment (ly:event-property event 'duration)))
-                 string tab drum (if tab (markup->string (ly:grob-property grob 'text)) "") (sotto-note-tie? event)) pending)))))
+                 string tab drum (if tab (markup->string (ly:grob-property grob 'text)) "")
+                 (if (number? touch) touch #f) sounding-octaves (if (number? base) base #f) guide (sotto-note-tie? event)) pending)))))
          ((stop-translation-timestep engraver)
            (for-each (lambda (row)
-             (let ((keys '(id voice part beat grace midi duration string tab percussion fretText)))
+             (let ((keys '(id voice part beat grace midi duration string tab percussion fretText touchFret soundingOctaves baseFret slideIn)))
                (display "{" sotto-visual-port)
                (for-each (lambda (key value)
                  (if (not (eq? key 'id)) (display "," sotto-visual-port))
                  (practice-json-string (symbol->string key) sotto-visual-port) (display ":" sotto-visual-port)
                  (cond ((string? value) (practice-json-string value sotto-visual-port))
                        ((boolean? value) (display (if value "true" "false") sotto-visual-port))
-                       (else (display (if (and (number? value) (not (integer? value))) (exact->inexact value) value) sotto-visual-port)))) keys (take row 11))
-               (format sotto-visual-port ",\"tie\":~a}\n" (if (or tied (list-ref row 11)) "true" "false")))) (reverse pending))
+                       (else (display (if (and (number? value) (not (integer? value))) (exact->inexact value) value) sotto-visual-port)))) keys (take row 15))
+               (format sotto-visual-port ",\"tie\":~a}\n" (if (or tied (list-ref row 15)) "true" "false")))) (reverse pending))
            (force-output sotto-visual-port) (set! pending '()) (set! tied #f))))))
 
 #(define (sotto-children music)
@@ -98,6 +133,16 @@
 #(define (sotto-tag-music music)
    (let ((counter 0))
      (define (visit node)
+       ;; Fingering post-events can be siblings of a NoteEvent in an
+       ;; EventChord. Resolve their guide tags before interpretation separates
+       ;; those events, including in the canonical notation pass.
+       (let ((guide (sotto-guide-direction node)))
+         (if (not (= guide 0))
+           (for-each (lambda (item)
+             (if (eq? (ly:music-property item 'name) 'NoteEvent)
+               (ly:music-set-property! item 'tags
+                 (cons (if (> guide 0) 'sotto-guide-up 'sotto-guide-down) (ly:music-property item 'tags)))))
+             (if (eq? (ly:music-property node 'name) 'NoteEvent) (list node) (ly:music-property node 'elements)))))
        (if (eq? (ly:music-property node 'name) 'NoteEvent)
          (begin (ly:music-set-property! node 'tags
            (cons (string->symbol (format #f "sotto-event-~a" counter)) (ly:music-property node 'tags)))
@@ -114,6 +159,30 @@
              (or (eq? symbol 'instrumentTransposition) (string-prefix? "clef" (symbol->string symbol))
                  (memq symbol '(middleCPosition middleCClefPosition)))) (make-music 'SequentialMusic))
            (else
+             ;; Fret numbers replace LH finger digits in the tab copy. Leaving
+             ;; digits here lets LilyPond's automatic fingering allocator move
+             ;; explicit strings (notably a source digit 0). Notes retains them.
+             (if (eq? name 'NoteEvent)
+               (begin
+                 (let ((guide (sotto-guide-direction node)))
+                   (if (not (= guide 0))
+                     (ly:music-set-property! node 'tags
+                       (cons (if (> guide 0) 'sotto-guide-up 'sotto-guide-down) (ly:music-property node 'tags)))))
+                 (ly:music-set-property! node 'articulations
+                 (filter (lambda (item) (not (eq? (ly:music-property item 'name) 'FingeringEvent)))
+                   (ly:music-property node 'articulations)))))
+             (if (eq? name 'EventChord)
+               (begin
+                 (let ((guide (sotto-guide-direction node)))
+                   (if (not (= guide 0))
+                     (for-each (lambda (item)
+                       (if (eq? (ly:music-property item 'name) 'NoteEvent)
+                         (ly:music-set-property! item 'tags
+                           (cons (if (> guide 0) 'sotto-guide-up 'sotto-guide-down) (ly:music-property item 'tags)))))
+                       (ly:music-property node 'elements))))
+                 (ly:music-set-property! node 'elements
+                 (filter (lambda (item) (not (eq? (ly:music-property item 'name) 'FingeringEvent)))
+                   (ly:music-property node 'elements)))))
              (if (eq? (ly:music-property node 'context-type) 'Staff) (ly:music-set-property! node 'context-type 'TabStaff))
              (if (eq? (ly:music-property node 'context-type) 'Voice) (ly:music-set-property! node 'context-type 'TabVoice))
              node)))) body))

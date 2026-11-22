@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "group": [
+    5,
+    6,
+    7,
+    8
+  ],
+  "uncertainties": [],
+  "artifacts": {
+    "original": {
+      "path": "original-page.pdf",
+      "sha256": "87337c3eb38cd93c997046a107b56a57087f417328bb5bcef42cc3e592228079"
+    },
+    "lilypond": {
+      "path": "checked.ly",
+      "sha256": "4d0e00bc72e2917b2db6a2a9aef7af9223433233d6c4b5fae7af7b3cd1d04479"
+    },
+    "rendered": {
+      "path": "checked.pdf",
+      "sha256": "e59679572fbf76782b70e4b18a8685cf82b589a1f52f00e6e85751c3f11e9eee"
+    },
+    "midi": {
+      "path": "checked.midi",
+      "sha256": "c1957ecb881758ebb1cbdb17e74e82d5dda3211fcab3b9f6d030a7be749ac7fb"
+    },
+    "comparison": {
+      "path": "comparison.png",
+      "sha256": "df325d957b71c20b98a1028836c642499886d7431e0552cb1d9b94694e10c272"
+    },
+    "comparison_evidence": {
+      "path": "comparison.evidence.json",
+      "sha256": "3c5278097f9ed6342edf8a021825d548877c18f8d3b2c1810b87bf51def8ac08"
+    }
+  },
+  "measures": [
+    {
+      "number": 5,
+      "assistant_checked": [
+        "pitches",
+        "durations",
+        "accidentals",
+        "ties",
+        "voices",
+        "slides",
+        "fingerings",
+        "strings"
+      ],
+      "assistant_review_complete": true,
+      "full_measure_user_verified": false,
+      "user_verified": []
+    },
+    {
+      "number": 6,
+      "assistant_checked": [
+        "pitches",
+        "durations",
+        "accidentals",
+        "ties",
+        "voices",
+        "slides",
+        "fingerings",
+        "strings"
+      ],
+      "assistant_review_complete": true,
+      "full_measure_user_verified": false,
+      "user_verified": []
+    },
+    {
+      "number": 7,
+      "assistant_checked": [
+        "pitches",
+        "durations",
+        "accidentals",
+        "ties",
+        "voices",
+        "slides",
+        "fingerings",
+        "strings"
+      ],
+      "assistant_review_complete": true,
+      "full_measure_user_verified": false,
+      "user_verified": [
+        {
+          "measure_numbers": [
+            7
+          ],
+          "aspects": [
+            "pitches",
+            "slides"
+          ],
+          "extent": "detail",
+          "scope": "Last written E3 slides up to small Bb3 inside measure 7",
+          "date": "2026-11-08",
+          "evidence": "User: \"My mistake, Bar 7 ends with a slide from E up to Bb, bar 8 starts with a Bb then an A\""
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "assistant_checked": [
+        "pitches",
+        "durations",
+        "accidentals",
+        "ties",
+        "voices",
+        "slides",
+        "fingerings",
+        "strings"
+      ],
+      "assistant_review_complete": true,
+      "full_measure_user_verified": false,
+      "user_verified": [
+        {
+          "measure_numbers": [
+            8
+          ],
+          "aspects": [
+            "pitches"
+          ],
+          "extent": "detail",
+          "scope": "Written Bb3 followed by A3",
+          "date": "2026-11-08",
+          "evidence": "User: \"My mistake, Bar 7 ends with a slide from E up to Bb, bar 8 starts with a Bb then an A\""
+        }
+      ]
+    }
+  ]
+}

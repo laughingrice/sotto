@@ -1,3 +1,4 @@
+import { expandPartSounds } from './parts-controls.mjs';
 import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -51,7 +52,7 @@ try {
   assert.ok(desktopFocused.height > desktopScore.height + 70, 'Hiding playback gives the score more height');
   await page.getByRole('button', { name: 'Pause playback', exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/desktop-focus.png' });
-  await page.getByRole('button', { name: 'Show controls', exact: true }).click();
+  await page.getByRole('button', { name: 'Show controls', exact: true }).click(); await expandPartSounds(page);
   await page.getByRole('button', { name: 'Pause playback', exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/playing.png' });
   await page.getByRole('button', { name: 'Pause playback', exact: true }).click();
@@ -62,7 +63,7 @@ try {
   assert.ok(await page.locator('.score-note.voice-muted[data-voice="bass"]').count() > 0);
   await page.getByRole('button', { name: 'Solo melody', exact: true }).click();
   assert.ok(await page.locator('.score-note.voice-muted[data-voice="middle"]').count() > 0);
-  await page.getByRole('button', { name: 'Restore all voices', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Parts playback', exact: true }).selectOption('all');
   assert.equal(await page.locator('.score-note.voice-muted').count(), 0);
   await page.getByRole('button', { name: 'Next measure', exact: true }).click();
   assert.equal(await page.locator('.measure-readout strong').innerText(), '2 / 59');
@@ -117,7 +118,7 @@ try {
   await page.setViewportSize({ width: 768, height: 1024 });
   await page.screenshot({ path: 'test-results/tablet.png' });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Tablet has no page overflow');
-  await page.getByRole('slider', { name: 'Melody volume', exact: true }).fill('55');
+  await expandPartSounds(page); await page.getByRole('slider', { name: 'Melody volume', exact: true }).fill('55');
   const tabletScore = await page.locator('.score-frame').boundingBox();
   await page.getByRole('button', { name: 'Hide controls', exact: true }).click();
   const tabletFocused = await page.locator('.score-frame').boundingBox();
@@ -127,7 +128,7 @@ try {
   await page.getByRole('button', { name: 'Play score', exact: true }).click();
   await page.getByRole('button', { name: 'Pause playback', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Pause playback', exact: true }).click();
-  await page.getByRole('button', { name: 'Show controls', exact: true }).click();
+  await page.getByRole('button', { name: 'Show controls', exact: true }).click(); await expandPartSounds(page);
   assert.equal(await page.getByRole('slider', { name: 'Melody volume', exact: true }).inputValue(), '55', 'Collapsing controls preserves settings');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/mobile.png' });
@@ -135,7 +136,7 @@ try {
   await page.getByRole('button', { name: 'Hide controls', exact: true }).click();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Phone focus mode has no overflow');
   await page.screenshot({ path: 'test-results/mobile-focus.png' });
-  await page.getByRole('button', { name: 'Show controls', exact: true }).click();
+  await page.getByRole('button', { name: 'Show controls', exact: true }).click(); await expandPartSounds(page);
   await page.getByRole('button', { name: 'Play score', exact: true }).click();
   await page.waitForTimeout(200);
   await page.getByRole('button', { name: 'Pause playback', exact: true }).click();

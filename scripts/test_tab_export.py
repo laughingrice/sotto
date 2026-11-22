@@ -50,6 +50,43 @@ class TabExportTests(unittest.TestCase):
         self.assertEqual((capo['notes'][0]['midi'], capo['notes'][0]['fret']), (42, 0))
         self.assertEqual(capo['parts'][0]['capo'], 2)
 
+    def test_harmonic_touch_fret_is_explicit_and_does_not_change_pitch(self):
+        score = self.export(self.guitar(r"\tweak details.sotto-touch-fret #7 b'1\5 |"))
+        note = score['notes'][0]
+        self.assertEqual((note['midi'], note['string'], note['fret'], note['touchFret']), (71, 5, 7, 7))
+        for view in ('tabs', 'both'):
+            self.assertIn('&lt;', ''.join(score['renderings'][view]['pages']))
+        with self.assertRaisesRegex(ValueError, 'touch fret'):
+            self.export(self.guitar(r"\tweak details.sotto-touch-fret #25 b'1\5 |"))
+
+    def test_source_lh_digits_do_not_override_explicit_tab_strings(self):
+        score = self.export(self.guitar(r"e'2-3\2 e'2-0\1 |"))
+        self.assertEqual([(n['midi'], n['string'], n['fret']) for n in score['notes']], [(64, 2, 5), (64, 1, 0)])
+
+    def test_printed_harmonic_octave_is_applied_once_in_all_views(self):
+        score = self.export(self.guitar(r"\tweak details.sotto-touch-fret #12 \tweak details.sotto-sounding-octaves #1 e'1\1 |"))
+        self.assertEqual((score['notes'][0]['midi'], score['notes'][0]['touchFret']), (76, 12))
+        with tempfile.TemporaryDirectory(prefix='sotto-harmonic-test-') as temp:
+            source = Path(temp) / 'harmonic.ly'
+            source.write_text('\\version "2.26.0"\n' + self.guitar(r"\tweak details.sotto-sounding-octaves #1 e'1\1 |"))
+            legacy = compile_score(source, None, None, Path(temp) / 'out.sotto', False)
+            self.assertEqual(legacy['notes'][0]['midi'], 76)
+
+    def test_artificial_octave_harmonics_separate_stopped_and_touched_frets(self):
+        score = self.export(self.guitar(r"\tweak details.sotto-base-fret #10 \tweak details.sotto-touch-fret #22 a''2\2 \tweak details.sotto-base-fret #3 \tweak details.sotto-touch-fret #15 d''2\2 |"))
+        self.assertEqual([(n['midi'], n['fret'], n['touchFret'], n['harmonicKind']) for n in score['notes']], [(81, 10, 22, 'artificial'), (74, 3, 15, 'artificial')])
+        with self.assertRaisesRegex(ValueError, 'sounding pitch'):
+            self.export(self.guitar(r"\tweak details.sotto-base-fret #3 \tweak details.sotto-touch-fret #15 e''1\2 |"))
+
+    def test_guide_approaches_survive_tab_copy_without_adding_sounding_notes(self):
+        music = r'''up = #(define-event-function () () (make-music 'FingeringEvent 'digit 2 'tags '(sotto-guide-up)))
+down = #(define-event-function () () (make-music 'FingeringEvent 'digit 2 'tags '(sotto-guide-down)))
+'''
+        score = self.export(music + self.guitar(r"fis'2\1\up f'2\1\down |"))
+        self.assertEqual([(n['midi'], n['fret'], n['slideIn']) for n in score['notes']], [(66, 2, 1), (65, 1, -1)])
+        chord = self.export(music + self.guitar(r"<fis'\1\up b\2>1 |"))
+        self.assertEqual(sum(bool(n.get('slideIn')) for n in chord['notes']), 1)
+
     def test_includes_pickup_changing_meter_grace_repeats_and_multiple_voices(self):
         # Chord/post-events, rational timing and distinct source voices all
         # survive copied Staff/TabStaff rendering and unfolded playback.

@@ -1,3 +1,4 @@
+import { setPracticeParts } from './parts-controls.mjs';
 import { chromium } from '@playwright/test';
 import { readFile, mkdir } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
@@ -66,7 +67,7 @@ try {
     await button('Rhythm feedback').click(); await page.locator('.rhythm-options summary').click();
     await button('Enable microphone').click(); await button('Stop microphone').waitFor();
     await page.waitForFunction(() => document.querySelector('.rhythm-panel canvas').dataset.backgroundReady === 'true');
-    await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).selectOption('all');
+    await setPracticeParts(page, 'all');
     await page.locator('.rhythm-options summary').click();
     const sounding = score.notes.filter(note => note.beat !== 8); // The tied continuation is not reattacked.
     await page.evaluate(midi => { window.midi = [...midi, ...midi]; window.starts = []; window.inject = true; }, sounding.map(note => note.midi));

@@ -1,5 +1,5 @@
 export type Voice = { id: string; name: string; color: string; instrument?: string; midiInstrument?: string; percussion?: boolean };
-export type ScoreNote = { id: string; voice: string; beat: number; grace: number; midi: number; duration: number; bar: number; tie: boolean; measure?: number; percussion?: boolean; string?: number; fret?: number };
+export type ScoreNote = { id: string; voice: string; beat: number; grace: number; midi: number; duration: number; bar: number; tie: boolean; measure?: number; percussion?: boolean; string?: number; fret?: number; touchFret?: number; baseFret?: number; harmonicKind?: 'artificial'; slideIn?: -1 | 1 };
 export type NotationView = 'notation' | 'tabs' | 'both';
 export type ScoreBar = { index: number; label: string; start?: number; duration?: number; meter?: [number, number] };
 export type Score = {

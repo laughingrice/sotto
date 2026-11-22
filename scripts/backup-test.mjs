@@ -1,3 +1,4 @@
+import { selectPartInstrument, expandPartSounds } from './parts-controls.mjs';
 import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -19,7 +20,7 @@ await mkdir('test-results', { recursive: true });
 try {
   await source.goto(base); await openPracticeFixture(source); await heading(source, 'Julia Florida');
   await source.locator('[data-score-input]').setInputFiles(file); await heading(source, fixture.title);
-  await source.getByRole('combobox', { name: 'Melody instrument', exact: true }).selectOption('flute');
+  await expandPartSounds(source); await selectPartInstrument(source, 'Melody', 'flute');
   await slider(source, 'Tempo').fill('62'); await button(source, 'Mute bass').click(); await slider(source, 'Melody volume').fill('55');
   await select(source, 'Loop start measure').selectOption('3'); await select(source, 'Loop end measure').selectOption('5');
   await source.getByRole('switch', { name: 'Practice loop', exact: true }).click(); await slider(source, 'Playback position').fill('12');
@@ -38,12 +39,12 @@ try {
   await target.evaluate(() => { localStorage.setItem('sotto.inputDelay', '25'); localStorage.setItem('sotto.inputDevice', 'target-mic'); localStorage.setItem('unrelated', 'keep'); });
   await button(target, 'Score library').click();
   await target.getByLabel('Import library backup', { exact: true }).setInputFiles({ name: 'sotto-library.json', mimeType: 'application/json', buffer: Buffer.from(text) });
-  await target.getByText('Library and settings restored. Reconnect the score files or folders on a new device.', { exact: true }).waitFor();
+  await target.getByText(/^Library and settings restored\./).waitFor();
   assert.equal(await button(target, `Favorite ${fixture.title}`).getAttribute('aria-pressed'), 'true');
   await target.evaluate(() => { window.showOpenFilePicker = undefined; });
   const chooser = target.waitForEvent('filechooser');
   await target.locator('.library-entry').filter({ has: button(target, `Favorite ${fixture.title}`) }).locator('.library-open').click();
-  await (await chooser).setFiles(file); await heading(target, fixture.title);
+  await (await chooser).setFiles(file); await heading(target, fixture.title); await expandPartSounds(target);
   assert.equal(await target.getByRole('combobox', { name: 'Melody instrument', exact: true }).inputValue(), 'flute', 'Per-part sound is restored on another computer');
   assert.equal(await slider(target, 'Tempo').inputValue(), '62'); assert.equal(await slider(target, 'Playback position').inputValue(), '12');
   assert.equal(await slider(target, 'Melody volume').inputValue(), '55'); assert.equal(await button(target, 'Unmute bass').getAttribute('aria-pressed'), 'true');
@@ -55,7 +56,7 @@ try {
   assert.equal(await slider(target, 'Metronome volume').inputValue(), '37'); assert.equal(await target.getByRole('checkbox', { name: 'One-bar count-in', exact: true }).isChecked(), true);
   await button(target, 'Back to the music').click();
   assert.deepEqual(await target.evaluate(() => [localStorage.getItem('sotto.inputDelay'), localStorage.getItem('sotto.inputDevice'), localStorage.getItem('unrelated')]), ['25', 'target-mic', 'keep']);
-  await target.waitForTimeout(600); await target.reload(); await heading(target, fixture.title);
+  await target.waitForTimeout(600); await target.reload(); await heading(target, fixture.title); await expandPartSounds(target);
   assert.equal(await slider(target, 'Tempo').inputValue(), '62');
   await target.screenshot({ path: 'test-results/restored-backup.png' });
   assert.deepEqual(errors, []);

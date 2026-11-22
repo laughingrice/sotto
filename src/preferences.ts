@@ -4,7 +4,8 @@ import { isInstrument, type ClickMode, type InstrumentId } from './sounds';
 export type MetronomeMode = 'off' | 'playback' | 'continuous';
 export type Preferences = { zoom: number; follow: boolean; clickVolume: number; clickMode: ClickMode; metronomeMode: MetronomeMode; rhythmVisible: boolean };
 export type PracticeSettings = { bpm: number; beat: number; repeats: boolean; loop: boolean; loopStart: number; loopEnd: number;
-  muted: string[]; solo: string | null; volumes: Record<string, number>; pitchOffset: number; practiceVoice: string; instruments?: Record<string, InstrumentId> };
+  muted: string[]; solo: string | null; volumes: Record<string, number>; pitchOffset: number; practiceVoice: string; instruments?: Record<string, InstrumentId>;
+  practiceVoices?: string[]; hiddenVoices?: string[]; playbackMode?: 'all' | 'accompaniment' };
 type PracticeEvent = { kind: 'load' | 'save'; key: string; settings: Partial<PracticeSettings> };
 const practiceListeners = new Set<(event: PracticeEvent) => void>();
 export function subscribePractice(listener: (event: PracticeEvent) => void) { practiceListeners.add(listener); return () => { practiceListeners.delete(listener); }; }
@@ -36,11 +37,16 @@ export function loadPractice(key: string, score: Score): PracticeSettings {
     return typeof saved === 'number' && Number.isFinite(saved) ? [[item.id, number(saved, 1, 0, 1)]] : [];
   }));
   const beat = number(value.beat, 0, 0, Math.max(0, performance.duration - .001));
+  const practiceVoice = value.practiceVoice === 'all' || voice(value.practiceVoice) ? value.practiceVoice : score.voices.find(item => item.id === 'melody')?.id ?? score.voices[0]?.id ?? 'all';
+  const hidden = Array.isArray(value.hiddenVoices) ? [...new Set(value.hiddenVoices.filter(voice))] : [];
   const settings: PracticeSettings = { bpm: number(value.bpm, score.bpm, 15, 300), beat: loop ? Math.max(performance.measures[loopStart].start, Math.min(beat, performance.measures[loopEnd].end - .001)) : beat,
     repeats, loop, loopStart, loopEnd, muted: Array.isArray(value.muted) ? value.muted.filter(voice) : [], solo: voice(value.solo) ? value.solo : null, volumes,
     ...(value.instruments && typeof value.instruments === 'object' ? { instruments: Object.fromEntries(Object.entries(value.instruments).filter(([id, instrument]) => voice(id) && isInstrument(instrument))) as Record<string, InstrumentId> } : {}),
     pitchOffset: value.pitchOffset === -12 || value.pitchOffset === 12 ? value.pitchOffset : 0,
-    practiceVoice: value.practiceVoice === 'all' || voice(value.practiceVoice) ? value.practiceVoice : score.voices.find(item => item.id === 'melody')?.id ?? score.voices[0]?.id ?? 'all' };
+    practiceVoice,
+    practiceVoices: Array.isArray(value.practiceVoices) ? [...new Set(value.practiceVoices.filter(voice))] : score.voices.filter(item => practiceVoice === 'all' || item.id === practiceVoice).map(item => item.id),
+    hiddenVoices: hidden.length < score.voices.length ? hidden : [],
+    playbackMode: value.playbackMode === 'accompaniment' ? 'accompaniment' : 'all' };
   practiceEvent({ kind: 'load', key, settings });
   return settings;
 }
@@ -101,6 +107,8 @@ export function parsePreferences(value: unknown, songKeys: string[]): PortablePr
     if (item.muted !== undefined) { if (!Array.isArray(item.muted) || item.muted.length > 1000 || !item.muted.every(id)) throw invalid(); saved.muted = item.muted; }
     if (item.solo !== undefined) { if (item.solo !== null && !id(item.solo)) throw invalid(); saved.solo = item.solo; }
     if (item.practiceVoice !== undefined) { if (!id(item.practiceVoice)) throw invalid(); saved.practiceVoice = item.practiceVoice; }
+    for (const field of ['practiceVoices', 'hiddenVoices']) if (item[field] !== undefined) { if (!Array.isArray(item[field]) || item[field].length > 1000 || !item[field].every(id)) throw invalid(); saved[field] = [...new Set(item[field])]; }
+    if (item.playbackMode !== undefined) { if (!['all', 'accompaniment'].includes(item.playbackMode as string)) throw invalid(); saved.playbackMode = item.playbackMode; }
     if (item.pitchOffset !== undefined) { if (![-12, 0, 12].includes(item.pitchOffset as number)) throw invalid(); saved.pitchOffset = item.pitchOffset; }
     if (item.instruments !== undefined) {
       if (!record(item.instruments) || Object.keys(item.instruments).length > 1000) throw invalid();

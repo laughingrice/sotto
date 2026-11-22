@@ -1,6 +1,7 @@
 import { barTiming, noteMeasure, visualEventId, type Score } from './score';
 import { feedbackX, type BeatAnchor, type FeedbackTake } from './score-feedback';
 import type { Attack } from './rhythm';
+import { includesVoice, type VoiceSelection } from './parts';
 
 const NS = 'http://www.w3.org/2000/svg';
 const make = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}) => {
@@ -21,10 +22,10 @@ function boundsInPage(element: SVGGraphicsElement, svg: SVGSVGElement): Bounds {
 
 /** Insert real space below each engraved system, preserving note IDs and SVG
  * coordinates. All transforms/viewBoxes are restored when the view is closed. */
-export function buildFeedbackLanes(root: HTMLElement, score: Score, bars: Map<number, SVGRectElement>, voice: string) {
+export function buildFeedbackLanes(root: HTMLElement, score: Score, bars: Map<number, SVGRectElement>, voice: VoiceSelection) {
   const lanes: FeedbackLane[] = [], restore: (() => void)[] = [];
   const elements = new Map<string, SVGGraphicsElement>();
-  root.querySelectorAll<SVGGraphicsElement>('.score-note').forEach(element => { if (!elements.has(visualEventId(element))) elements.set(visualEventId(element), element); });
+  root.querySelectorAll<SVGGraphicsElement>('.score-note').forEach(element => { if (!element.closest('[data-part-hidden]') && !elements.has(visualEventId(element))) elements.set(visualEventId(element), element); });
   for (const svg of root.querySelectorAll<SVGSVGElement>('.score-page svg')) {
     const boxes = new Map<SVGGraphicsElement, Bounds>();
     const boxOf = (element: SVGGraphicsElement) => { if (!boxes.has(element)) boxes.set(element, boundsInPage(element, svg)); return boxes.get(element)!; };
@@ -38,7 +39,7 @@ export function buildFeedbackLanes(root: HTMLElement, score: Score, bars: Map<nu
       if (row) { row.top = Math.min(row.top, item.box.y); row.bottom = Math.max(row.bottom, item.box.y + item.box.height); row.measures.push(item); }
       else rows.push({ top: item.box.y, bottom: item.box.y + item.box.height, measures: [item] });
     }
-    const graphics = [...svg.children].filter((element): element is SVGGraphicsElement => element instanceof SVGGraphicsElement && !['defs', 'style'].includes(element.localName));
+    const graphics = [...svg.children].filter((element): element is SVGGraphicsElement => element instanceof SVGGraphicsElement && !element.hasAttribute('data-part-hidden') && !['defs', 'style'].includes(element.localName));
     const ink: Bounds[] = [];
     const collectInk = (element: SVGGraphicsElement) => {
       if (['g', 'a'].includes(element.localName)) { for (const child of element.children) if (child instanceof SVGGraphicsElement) collectInk(child); }
@@ -75,9 +76,10 @@ export function buildFeedbackLanes(root: HTMLElement, score: Score, bars: Map<nu
     for (const [i, row] of rows.entries()) for (const measure of row.measures) {
       const timing = barTiming(score, measure.written);
       const notes = score.notes.filter(note => noteMeasure(score, note) === measure.written && !note.grace);
-      const selected = notes.filter(note => voice === 'all' || note.voice === voice);
+      const visible = notes.filter(note => { const element = elements.get(note.id); return element && svg.contains(element); });
+      const selected = visible.filter(note => includesVoice(voice, note.voice));
       const positions = new Map<number, number[]>();
-      for (const note of selected.length ? selected : notes) {
+      for (const note of selected.length ? selected : visible) {
         const element = elements.get(note.id);
         if (!(element instanceof SVGGraphicsElement) || !svg.contains(element)) continue;
         const box = boxOf(element), beat = note.beat - timing.start;

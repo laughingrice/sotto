@@ -19,7 +19,7 @@ function boxInPage(element: SVGGraphicsElement, svg: SVGSVGElement): Box | null 
  * This also works with bundles exported before bar highlighting was added.
  * Rectangles live inside the SVG, so they scale with zoom without drift.
  */
-export function buildBarHighlights(root: HTMLElement, score: Score): Map<number, SVGRectElement> {
+export function buildBarHighlights(root: HTMLElement, score: Score, fallback = new Map<number, { svg: SVGSVGElement; box: Box }>()): Map<number, SVGRectElement> {
   root.querySelectorAll('.current-bar-highlight').forEach(element => element.remove());
   const result = new Map<number, SVGRectElement>();
   // Both renders two glyphs for the same event. Include both staves' ledger
@@ -88,7 +88,11 @@ export function buildBarHighlights(root: HTMLElement, score: Score): Map<number,
       const box = boxInPage(element, svg);
       return box ? [{ svg, box }] : [];
     }));
-    if (!geometry.length) continue;
+    if (!geometry.length) {
+      const anchor = fallback.get(bar.index);
+      if (anchor) measures.push({ index: bar.index, svg: anchor.svg, box: anchor.box, staffY: anchor.box.y + anchor.box.height / 2 });
+      continue;
+    }
     const svg = geometry[0].svg;
     const boxes = geometry.filter(item => item.svg === svg).map(item => item.box);
     const minX = Math.min(...boxes.map(box => box.x));

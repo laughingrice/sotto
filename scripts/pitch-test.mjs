@@ -1,3 +1,4 @@
+import { selectPartInstrument } from './parts-controls.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -95,7 +96,7 @@ try {
   await page.getByText('Chord or overlapping pitches: not scored.', { exact: true }).waitFor();
   assert.equal(await pitch.getAttribute('data-matching'), '0'); assert.equal(await pitch.getAttribute('data-different'), '0');
   await button('Pause playback').click();
-  await page.getByRole('combobox', { name: 'Solo instrument', exact: true }).selectOption('drums');
+  await selectPartInstrument(page, 'Solo', 'drums');
   await button('Play score').click();
   await page.getByText('Percussion is not pitch-scored.', { exact: true }).waitFor();
   assert.equal(await pitch.getAttribute('data-different'), '0');

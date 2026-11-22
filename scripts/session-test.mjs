@@ -1,3 +1,4 @@
+import { setPracticeParts, selectedPracticeParts, expandPartSounds } from './parts-controls.mjs';
 import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -39,7 +40,7 @@ try {
   await select('Loop start measure').selectOption('5'); await select('Loop end measure').selectOption('8');
   await page.getByRole('switch', { name: 'Practice loop', exact: true }).click();
   await slider('Playback position').fill('21');
-  await button('Mute bass').click(); await button('Solo melody').click(); await slider('Melody volume').fill('55');
+  await expandPartSounds(page); await button('Mute bass').click(); await button('Solo melody').click(); await slider('Melody volume').fill('55');
   await page.getByRole('checkbox', { name: 'Follow score', exact: true }).uncheck();
   for (let i = 0; i < 3; i++) await button('Zoom in').click();
   await openSettings();
@@ -49,7 +50,7 @@ try {
   await page.getByRole('checkbox', { name: 'One-bar count-in', exact: true }).check();
   await button('Metronome mode').click(); await button('Metronome mode').click(); await closeSettings();
   await button('Rhythm feedback').click(); await page.locator('.rhythm-options summary').click();
-  await select('Rhythm practice voice').selectOption('bass');
+  await setPracticeParts(page, ['bass']);
   await button('Hide controls').click();
   await page.waitForTimeout(650);
   await page.reload(); await heading('Practice A');
@@ -58,7 +59,7 @@ try {
   assert.equal(await button('Metronome').getAttribute('data-mode'), 'continuous');
   assert.ok(await page.locator('.rhythm-panel').isVisible());
   assert.deepEqual(await page.evaluate(() => [window.instrumentStarts, window.micRequests, window.clickStarts]), [0, 0, 0], 'Resume never starts audio or the microphone');
-  await button('Show controls').click();
+  await button('Show controls').click(); await expandPartSounds(page);
   assert.equal(await slider('Tempo').inputValue(), '63');
   assert.equal(await slider('Playback position').inputValue(), '21');
   assert.equal(await select('Loop start measure').inputValue(), '5'); assert.equal(await select('Loop end measure').inputValue(), '8');
@@ -67,7 +68,7 @@ try {
   assert.equal(await page.getByRole('checkbox', { name: 'Follow score', exact: true }).isChecked(), false);
   assert.equal(await button('Unmute bass').getAttribute('aria-pressed'), 'true');
   assert.equal(await button('Solo melody').getAttribute('aria-pressed'), 'true'); assert.equal(await slider('Melody volume').inputValue(), '55');
-  await page.locator('.rhythm-options summary').click(); assert.equal(await select('Rhythm practice voice').inputValue(), 'bass');
+  await page.locator('.rhythm-options summary').click(); assert.deepEqual(await selectedPracticeParts(page), ['bass']);
   await openSettings();
   for (const [name, value] of [['Playback instrument', 'piano'], ['Playback octave', '-12'], ['Metronome pulse', 'subdivision']]) assert.equal(await select(name).inputValue(), value);
   assert.equal(await slider('Metronome volume').inputValue(), '38');

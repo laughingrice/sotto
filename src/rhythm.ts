@@ -1,3 +1,4 @@
+import { includesVoice, type VoiceSelection } from './parts';
 import type { Performance } from './score';
 
 export type LevelFrame = { time: number; rms: number; peak: number };
@@ -103,8 +104,8 @@ export class OnsetDetector {
 
 /** Chords count as one attack. Tied continuations and ornamental grace notes
  * are not extra expected attacks in the first rhythm-feedback version. */
-export function expectedAttacks(performance: Performance, voice: string): number[] {
-  const beats = performance.sounds.filter(note => !note.grace && (voice === 'all' || note.voice === voice))
+export function expectedAttacks(performance: Performance, voice: VoiceSelection): number[] {
+  const beats = performance.sounds.filter(note => !note.grace && includesVoice(voice, note.voice))
     .map(note => note.start).sort((a, b) => a - b);
   return beats.filter((beat, index) => !index || beat - beats[index - 1] > .015);
 }

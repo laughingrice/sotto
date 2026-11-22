@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "tags": [
+    "print",
+    "midi"
+  ],
+  "measures": [
+    {
+      "number": 5,
+      "variable": "mE",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange540x5": "annotation"
+      }
+    },
+    {
+      "number": 6,
+      "variable": "mF",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange540x5": "annotation"
+      }
+    },
+    {
+      "number": 7,
+      "variable": "mG",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange540x5": "annotation",
+        "stringRange7511x24": "annotation",
+        "stringRange7621x32": "annotation",
+        "stringReturnFive": "annotation"
+      }
+    },
+    {
+      "number": 8,
+      "variable": "mH",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange860": "annotation"
+      }
+    }
+  ]
+}

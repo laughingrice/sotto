@@ -1,0 +1,4 @@
+interface:
+  display_name: "PDF to LilyPond"
+  short_description: "Transcribe and verify musical scores from PDF"
+  default_prompt: "Use $pdf-to-lilypond to transcribe this score and review four measures at a time."

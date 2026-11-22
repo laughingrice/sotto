@@ -1,0 +1,37 @@
+{
+  "original": {
+    "pdf": "original-page.pdf",
+    "page": 1,
+    "crops": [
+      [
+        46.8,
+        234,
+        529.2,
+        88.2
+      ],
+      [
+        46.8,
+        342,
+        122.8,
+        79.2
+      ]
+    ],
+    "sha256": "87337c3eb38cd93c997046a107b56a57087f417328bb5bcef42cc3e592228079"
+  },
+  "corrected": {
+    "pdf": "checked.pdf",
+    "page": 1,
+    "crops": [
+      [
+        7,
+        83,
+        624,
+        145
+      ]
+    ],
+    "sha256": "e59679572fbf76782b70e4b18a8685cf82b589a1f52f00e6e85751c3f11e9eee"
+  },
+  "uncertainties": [],
+  "image_sha256": "df325d957b71c20b98a1028836c642499886d7431e0552cb1d9b94694e10c272",
+  "note": "Human must inspect pitches, notation, endpoints and page layout; this script only renders."
+}

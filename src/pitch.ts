@@ -1,3 +1,4 @@
+import { includesVoice, multipleVoices, type VoiceSelection } from './parts';
 import type { PerformanceNote } from './score';
 
 export type PitchFrame = { time: number; windowSeconds: number; frequency: number | null; clarity: number; rms: number };
@@ -18,13 +19,13 @@ export type PitchTarget = { kind: 'note'; key: string; midi: number; beat: numbe
 /** Require a stable target throughout the analysis window. Individual voices
  * score a single pitch; All accepts one heard member of the sounding pitch set.
  * This is not polyphonic chord recognition. Transitions stay unscored. */
-export function targetPitch(notes: PerformanceNote[], voice: string, beat: number, windowBeats: number, offset = 0): PitchTarget {
+export function targetPitch(notes: PerformanceNote[], voice: VoiceSelection, beat: number, windowBeats: number, offset = 0): PitchTarget {
   const left = beat - windowBeats / 2, right = beat + windowBeats / 2;
-  const sounding = notes.filter(note => (voice === 'all' || note.voice === voice) && !note.grace && note.start < right && note.end > left);
+  const sounding = notes.filter(note => includesVoice(voice, note.voice) && !note.grace && note.start < right && note.end > left);
   if (!sounding.length) return { kind: 'rest' };
   const active = sounding.filter(note => !note.percussion);
-  if (!active.length || (voice !== 'all' && sounding.some(note => note.percussion))) return { kind: 'percussion' };
-  if (voice === 'all') {
+  if (!active.length || (!multipleVoices(voice) && sounding.some(note => note.percussion))) return { kind: 'percussion' };
+  if (multipleVoices(voice)) {
     if (active.some(note => note.start > left + 1e-6 || note.end < right - 1e-6)) return { kind: 'transition' };
     // Detect the played pitch independently, then test membership of this
     // stable sounding set. This never claims that a complete chord was heard.

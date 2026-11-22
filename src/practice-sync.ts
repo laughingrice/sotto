@@ -1,7 +1,7 @@
 import { parsePreferences, type PracticeSettings, type Preferences } from './preferences';
 
 // Playhead, screen preferences and microphone calibration belong to the device.
-export const PRACTICE_SYNC_FIELDS = ['bpm', 'repeats', 'loop', 'loopStart', 'loopEnd', 'muted', 'solo', 'volumes', 'pitchOffset', 'practiceVoice', 'instruments'] as const;
+export const PRACTICE_SYNC_FIELDS = ['bpm', 'repeats', 'loop', 'loopStart', 'loopEnd', 'muted', 'solo', 'volumes', 'pitchOffset', 'practiceVoice', 'instruments', 'practiceVoices', 'hiddenVoices', 'playbackMode'] as const;
 export type PracticeField = typeof PRACTICE_SYNC_FIELDS[number];
 export type SyncedPractice = Partial<Pick<PracticeSettings, PracticeField>>;
 export type Stamp = [number, string];

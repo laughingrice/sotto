@@ -1,0 +1,522 @@
+{
+  "schema_version": 1,
+  "tags": [
+    "print",
+    "midi"
+  ],
+  "measures": [
+    {
+      "number": 1,
+      "variable": "mA",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music"
+      }
+    },
+    {
+      "number": 2,
+      "variable": "mB",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "introStringTwo": "annotation"
+      }
+    },
+    {
+      "number": 3,
+      "variable": "mC",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation",
+        "introStringTwo": "annotation"
+      }
+    },
+    {
+      "number": 4,
+      "variable": "mD",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 5,
+      "variable": "mE",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange540x5": "annotation"
+      }
+    },
+    {
+      "number": 6,
+      "variable": "mF",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange540x5": "annotation"
+      }
+    },
+    {
+      "number": 7,
+      "variable": "mG",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange540x5": "annotation",
+        "stringRange7511x24": "annotation",
+        "stringRange7621x32": "annotation",
+        "stringReturnFive": "annotation"
+      }
+    },
+    {
+      "number": 8,
+      "variable": "mH",
+      "meter": "3/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange860": "annotation"
+      }
+    },
+    {
+      "number": 9,
+      "variable": "mI",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 10,
+      "variable": "mJ",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 11,
+      "variable": "mK",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music"
+      }
+    },
+    {
+      "number": 12,
+      "variable": "mL",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music"
+      }
+    },
+    {
+      "number": 13,
+      "variable": "mM",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music"
+      }
+    },
+    {
+      "number": 14,
+      "variable": "mN",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 15,
+      "variable": "mO",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 16,
+      "variable": "mP",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation",
+        "stringRange16113x16": "annotation"
+      }
+    },
+    {
+      "number": 17,
+      "variable": "mQ",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation",
+        "accelOne": "annotation"
+      }
+    },
+    {
+      "number": 18,
+      "variable": "mR",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange1820x625": "annotation",
+        "accelOne": "annotation",
+        "ritOne": "annotation"
+      }
+    },
+    {
+      "number": 19,
+      "variable": "mS",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 20,
+      "variable": "mT",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music"
+      }
+    },
+    {
+      "number": 21,
+      "variable": "mU",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "longBarres21": "annotation"
+      }
+    },
+    {
+      "number": 22,
+      "variable": "mV",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "longBarres21": "annotation"
+      }
+    },
+    {
+      "number": 23,
+      "variable": "mW",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "longBarres21": "annotation",
+        "longBarres23": "annotation"
+      }
+    },
+    {
+      "number": 24,
+      "variable": "mX",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation",
+        "longBarres23": "annotation",
+        "longBarres24": "annotation"
+      }
+    },
+    {
+      "number": 25,
+      "variable": "mY",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "innerLower": "music",
+        "longBarres24": "annotation"
+      }
+    },
+    {
+      "number": 26,
+      "variable": "mZ",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "longBarres26": "annotation"
+      }
+    },
+    {
+      "number": 27,
+      "variable": "mZA",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation",
+        "longBarres26": "annotation"
+      }
+    },
+    {
+      "number": 28,
+      "variable": "mZB",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 29,
+      "variable": "mZC",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 30,
+      "variable": "mZD",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation",
+        "stringRange3059x16": "annotation"
+      }
+    },
+    {
+      "number": 31,
+      "variable": "mZE",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange3140": "annotation",
+        "stringRange3130x25": "annotation",
+        "stringRange3120x5": "annotation"
+      }
+    },
+    {
+      "number": 32,
+      "variable": "mZF",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "longBarres32": "annotation"
+      }
+    },
+    {
+      "number": 33,
+      "variable": "mZG",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "longBarres32": "annotation"
+      }
+    },
+    {
+      "number": 34,
+      "variable": "mZH",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 35,
+      "variable": "mZI",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation",
+        "stringRange3520x625": "annotation",
+        "stringRange3510x75": "annotation"
+      }
+    },
+    {
+      "number": 36,
+      "variable": "mZJ",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "longBarres36": "annotation"
+      }
+    },
+    {
+      "number": 37,
+      "variable": "mZK",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "longBarres36": "annotation"
+      }
+    },
+    {
+      "number": 38,
+      "variable": "mZL",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation",
+        "stringRange3810x5625": "annotation",
+        "stringRange3820x75": "annotation"
+      }
+    },
+    {
+      "number": 39,
+      "variable": "mZM",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "stringRange3910x125": "annotation",
+        "stringRange3920x5": "annotation",
+        "stringRange3930x75": "annotation",
+        "accelTwo": "annotation",
+        "ritTwo": "annotation"
+      }
+    },
+    {
+      "number": 40,
+      "variable": "mZN",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 41,
+      "variable": "mZO",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music"
+      }
+    },
+    {
+      "number": 42,
+      "variable": "mZP",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music"
+      }
+    },
+    {
+      "number": 43,
+      "variable": "mZQ",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music",
+        "barres": "annotation"
+      }
+    },
+    {
+      "number": 44,
+      "variable": "mZR",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music"
+      }
+    },
+    {
+      "number": 45,
+      "variable": "mZS",
+      "meter": "4/4",
+      "voices": {
+        "melody": "music",
+        "inner": "music",
+        "bass": "music"
+      },
+      "expected_duration": "5/4",
+      "unmetered": true,
+      "exception_reason": "Unmetered coda: dotted half plus half; source numbering 45 is local."
+    }
+  ]
+}

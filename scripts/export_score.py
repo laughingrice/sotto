@@ -183,7 +183,7 @@ def compile_score(source: Path, title: str | None, composer: str | None, output:
         from tab_export import compile_with_tabs
         return compile_with_tabs(source, title, composer, output, parts=tab_parts, views=views,
             tunings=tab_tunings, capos=tab_capos, beat_unit=beat_unit, bpm=bpm, transpose=transpose,
-            optimize_svg=optimize_svg, keep_page_breaks=keep_page_breaks)
+            optimize_svg=optimize_svg, keep_page_breaks=keep_page_breaks, julia=julia)
     if views is not None or tab_tunings or tab_capos or keep_page_breaks:
         raise ValueError('Tab display/tuning options require --tab-part PART=guitar-6 (or bass-4/bass-5)')
     text = source.read_text()

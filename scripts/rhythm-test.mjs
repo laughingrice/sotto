@@ -1,3 +1,4 @@
+import { setPracticeParts, selectedPracticeParts } from './parts-controls.mjs';
 import { openPracticeFixture } from './practice-fixture.mjs';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -172,7 +173,7 @@ try {
   await play().click();
   await page.waitForFunction(() => Number(document.querySelector('.rhythm-stats').dataset.late) >= 3);
   assert.ok(Number(await page.getByRole('meter', { name: 'Microphone input level', exact: true }).getAttribute('aria-valuenow')) > -90, 'Real worklet receives generated audio');
-  await pause().click(); await page.waitForTimeout(300);
+  await pause().click(); await page.waitForTimeout(650); // Let the ordered onset/pitch merge buffer settle.
   const takeReview = page.locator('[aria-label="Rhythm take review"]');
   assert.ok(await takeReview.isVisible(), 'Take review opens when paused');
   assert.ok(Number(await takeReview.getAttribute('data-offset-ms')) > 70, 'Review shows the known uncalibrated delay');
@@ -200,21 +201,21 @@ try {
   await page.getByRole('combobox', { name: 'Microphone trace boost', exact: true }).selectOption('12');
   await page.screenshot({ path: 'test-results/rhythm-desktop.png' });
   // Muting suppresses actual sampler starts, and the same action restores them.
-  await page.getByRole('button', { name: 'Mute practice voice', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: 'Unmute practice voice', exact: true }).getAttribute('aria-pressed'), 'true');
+  await page.getByRole('combobox', { name: 'Parts playback', exact: true }).selectOption('accompaniment');
+  assert.equal(await page.getByRole('combobox', { name: 'Parts playback', exact: true }).inputValue(), 'accompaniment');
   assert.equal(await page.getByRole('button', { name: 'Unmute melody', exact: true }).getAttribute('aria-pressed'), 'true');
   await page.getByRole('button', { name: 'Restart', exact: true }).click();
   const mutedStarts = await page.evaluate(() => window.instrumentStarts.length);
   await play().click(); await page.waitForTimeout(1100); await pause().click();
   assert.equal(await page.evaluate(() => window.instrumentStarts.length), mutedStarts, 'Practice mute prevents actual instrument attacks');
-  await page.getByRole('button', { name: 'Unmute practice voice', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Parts playback', exact: true }).selectOption('all');
   await play().click(); await page.waitForTimeout(800); await pause().click();
   assert.ok(await page.evaluate(() => window.instrumentStarts.length) > mutedStarts, 'Unmute restores actual instrument attacks');
-  await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).selectOption('all');
-  assert.equal(await page.getByRole('combobox', { name: 'Rhythm practice voice', exact: true }).inputValue(), 'all');
-  await page.getByRole('button', { name: 'Mute practice voice', exact: true }).click();
+  await setPracticeParts(page, 'all');
+  assert.ok((await selectedPracticeParts(page)).length > 0);
+  await page.getByRole('combobox', { name: 'Parts playback', exact: true }).selectOption('accompaniment');
   assert.equal(await page.getByRole('button', { name: 'Unmute melody', exact: true }).count(), 1, 'All voices selection can mute playback');
-  await page.getByRole('button', { name: 'Unmute practice voice', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Parts playback', exact: true }).selectOption('all');
   // A 4/4 bar at 120 bpm counts four clicks, with a 2 s gap to the first note.
   await page.getByRole('button', { name: 'Sound and metronome settings', exact: true }).click();
   await page.getByRole('checkbox', { name: 'One-bar count-in', exact: true }).check();

@@ -1,0 +1,34 @@
+{
+  "title": "Capricho arabe: measures 5-8 (assistant-reviewed; user confirmed pitches in 7-8)",
+  "original": {
+    "pdf": "original-page.pdf",
+    "page": 1,
+    "crops": [
+      [
+        46.8,
+        234,
+        529.2,
+        88.2
+      ],
+      [
+        46.8,
+        342,
+        122.8,
+        79.2
+      ]
+    ]
+  },
+  "corrected": {
+    "pdf": "checked.pdf",
+    "page": 1,
+    "crops": [
+      [
+        7,
+        83,
+        624,
+        145
+      ]
+    ]
+  },
+  "uncertainties": []
+}
