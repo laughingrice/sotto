@@ -264,7 +264,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
   };
   async function change(update: (library: Library) => Library) { try { await commit(update); } catch (error) { report(error); } }
   return <>
-    <input ref={input} data-score-input aria-label="Open score file" type="file" accept=".sotto,.sotto.json,.json" className="visually-hidden" onChange={event => {
+    <input ref={input} data-score-input aria-label="Open score file" type="file" className="visually-hidden" onChange={event => {
       const file = event.target.files?.[0]; event.target.value = '';
       if (file) { setBusy(true); void accept(file, undefined, reconnectEntry.current).catch(report).finally(() => { setBusy(false); reconnectEntry.current = undefined; }); }
     }}/>
