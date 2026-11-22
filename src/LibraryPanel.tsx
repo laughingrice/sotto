@@ -1,6 +1,7 @@
 import DropboxPanel from './DropboxPanel';
 import { dropboxClient } from './dropbox-auth';
 import { connectDropbox } from './dropbox';
+import { useDropboxSync } from './useDropboxSync';
 import OneDrivePanel from './OneDrivePanel';
 import { oneDriveClient } from './onedrive-auth';
 import { connectOneDrive } from './onedrive';
@@ -14,8 +15,9 @@ import { connectFolder, emptyLibrary, exportLibrary, filePickers, directoryTree,
   type Library, type LibraryDirectory, type LibraryEntry, type LibraryFolder, type ReadHandle } from './library';
 
 export type LibraryControl = { chooseFile(): void; restoreLastScore(isCurrent?: () => boolean): Promise<boolean>; reconnectLastScore(): void };
-export const LibraryPanel = forwardRef<LibraryControl, { visible: boolean; onClose(): void; onOpen(value: unknown, key: string): void; onResumeNeeded(title: string): void; onBeforeBackup(): void; onSettingsImported(): void; onError(message: string): void }>(
-function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup, onSettingsImported, onError }, ref) {
+export const LibraryPanel = forwardRef<LibraryControl, { visible: boolean; onClose(): void; onOpen(value: unknown, key: string): void; onResumeNeeded(title: string): void; onBeforeBackup(): void; onSettingsImported(): void; onError(message: string): void;
+  activeKey: string; practiceBusy: boolean; onPracticeSynced(keys: string[]): void }>(
+function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup, onSettingsImported, onError, activeKey, practiceBusy, onPracticeSynced }, ref) {
   const [library, setLibrary] = useState<Library>(emptyLibrary);
   const current = useRef(library);
   const ready = useRef<Promise<void>>(Promise.resolve());
@@ -36,6 +38,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
   const indexInput = useRef<HTMLInputElement>(null);
   const reconnectEntry = useRef<string | undefined>(undefined);
   const reconnectFolder = useRef<string | undefined>(undefined);
+  const syncNotify = useRef<(() => void) | null>(null);
   // Files selected through Safari's picker last only for this page session.
   const sessionFiles = useRef(new Map<string, File>());
 
@@ -43,18 +46,21 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     ready.current = loadLibrary().then(value => { current.current = value; setLibrary(value); })
       .catch(() => { setMessage('Browser storage is unavailable. Files still open, but bookmarks cannot be remembered here.'); });
   }, []);
-  function commit(update: (library: Library) => Library) {
+  function commit(update: (library: Library) => Library, notify = true) {
     const write = writes.current.catch(() => {}).then(async () => {
       await ready.current;
       const next = update(current.current);
       await saveLibrary(next);
       current.current = next; setLibrary(next);
+      if (notify) syncNotify.current?.();
       const retained = new Set(next.entries.map(entry => entry.id));
       for (const id of sessionFiles.current.keys()) if (!retained.has(id) || next.entries.find(entry => entry.id === id)?.oneDrive || next.entries.find(entry => entry.id === id)?.dropbox || next.entries.find(entry => entry.id === id)?.online) sessionFiles.current.delete(id);
     });
     writes.current = write;
     return write;
   }
+  const settingsSync = useDropboxSync({ library: current, ready, commit, flush: onBeforeBackup, activeKey, practiceBusy, onPracticeSynced });
+  syncNotify.current = settingsSync.libraryChanged;
   function report(error: unknown) {
     const text = error instanceof Error ? error.message : 'The file could not be opened.';
     setMessage(text); onError(text);
@@ -86,6 +92,9 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     };
     if (!isCurrent()) return false;
     onOpen(score, `library:${entry.id}`);
+    // Finish the navigation before the asynchronous bookmark write. A late
+    // save must not close a library that the user has already reopened.
+    if (close) onClose();
     if (!entry.oneDrive && !entry.dropbox && !entry.online) sessionFiles.current.set(entry.id, file);
     else sessionFiles.current.delete(entry.id);
     try { await commit(library => ({ ...library, entries: [...library.entries.filter(item => item.id !== entry.id),
@@ -93,7 +102,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     catch { setMessage('Score opened, but the bookmark could not be saved. Export your library index before closing.');
       current.current = { ...current.current, entries: [...current.current.entries.filter(item => item.id !== entry.id), entry] }; setLibrary(current.current); }
     setUnavailable(previous => { const next = { ...previous }; delete next[entry.id]; return next; });
-    if (close) onClose(); return true;
+    return true;
   }
   async function chooseFile(entryId?: string) {
     const version = ++latestOpen.current;
@@ -372,7 +381,8 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       {busy && <p role="status">Loading library…</p>}{busy && cloudScan.current && <button className="text-button" onClick={() => cloudScan.current?.abort()}>Cancel cloud refresh</button>}
       {!filePickers.showDirectoryPicker && <p className="settings-note">This browser provides temporary file selections. A page reload or cloud-provider change may require reconnecting the folder; desktop Chrome/Edge can remember supported directory handles.</p>}
       <details className="library-help"><summary>Connect an online library</summary><form className="online-library-form" onSubmit={event => { event.preventDefault(); void connectOnline(catalogAddress); }}><label>Catalog URL<input type="url" aria-label="Online library catalog URL" placeholder="https://example.org/scores/catalog.json" value={catalogAddress} onChange={event => setCatalogAddress(event.target.value)} required/></label><button className="quiet-button" type="submit" disabled={busy}>Connect online library</button></form><p className="settings-note">Use a public Sotto catalog.json served over HTTPS. Other hosts must allow cross-origin requests (CORS). A OneDrive sharing-page link is not a catalog URL.</p></details>
-      <DropboxPanel busy={busy} requestOpen={dropboxPrompt} localFolders={library.folders.filter(folder => !folder.oneDrive && !folder.dropbox && !folder.catalogUrl)} onBusy={setBusy} onConnect={async (name, ref, files, reuseFolderId, signal) => {
+      {settingsSync.enabled && <p className="settings-note" role="status">Dropbox settings: {settingsSync.error || settingsSync.status} <button className="text-button" disabled={settingsSync.working} onClick={settingsSync.syncNow}>Sync now</button></p>}
+      <DropboxPanel sync={settingsSync} busy={busy} requestOpen={dropboxPrompt} localFolders={library.folders.filter(folder => !folder.oneDrive && !folder.dropbox && !folder.catalogUrl)} onBusy={setBusy} onConnect={async (name, ref, files, reuseFolderId, signal) => {
         await commit(library => signal?.aborted ? library : connectDropbox(library, name, ref, files, reuseFolderId));
         setMessage(`${name}: ${files.length} Dropbox score bookmarks. Music downloads only when opened.`);
       }}/>

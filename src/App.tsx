@@ -255,7 +255,7 @@ export default function App() {
   }, [loop, loopStart, loopEnd, performance, player]);
 
   useEffect(() => {
-    if (!playing) return;
+    if (!playing) { setCountingIn(false); return; }
     let frame = 0;
     const update = () => { setCountingIn(player.displayCountingIn); setBeat(player.displayBeat); frame = requestAnimationFrame(update); };
     frame = requestAnimationFrame(update);
@@ -461,6 +461,18 @@ export default function App() {
     </div>
 
     <LibraryPanel ref={libraryControl} visible={libraryVisible} onClose={() => setLibraryVisible(false)} onOpen={openScore} onResumeNeeded={setResumeNeeded}
+      activeKey={scoreKey} practiceBusy={playing || starting}
+      onPracticeSynced={keys => {
+        if (!score || playing || starting || !keys.includes(scoreKey)) return;
+        // Do not save the old in-memory settings over newly merged cloud values.
+        latestPractice.current = null;
+        const saved = loadPractice(scoreKey, score);
+        if (saved.repeats !== repeats) pendingRestore.current = { score, settings: saved };
+        player.seek(saved.beat); setBeat(saved.beat);
+        setBpm(saved.bpm); setRepeats(saved.repeats); setLoop(saved.loop); setLoopStart(saved.loopStart); setLoopEnd(saved.loopEnd);
+        setMuted(new Set(saved.muted)); setSolo(saved.solo); setVolumes(saved.volumes); setPitchOffset(saved.pitchOffset);
+        setPracticeVoice(saved.practiceVoice); setPartInstruments(saved.instruments ?? {});
+      }}
       onBeforeBackup={() => { if (latestPractice.current) savePractice(latestPractice.current.key, latestPractice.current.settings); }}
       onSettingsImported={() => {
         player.pause(); setPlaying(false); void player.setMetronome(false); setMicrophoneActive(false);

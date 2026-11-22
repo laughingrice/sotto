@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Cloud, FolderOpen } from 'lucide-react';
-import { configureDropbox, dropboxAuth, dropboxAppKey, dropboxRedirectUri, dropboxClient } from './dropbox-auth';
+import { configureDropbox, dropboxAuth, dropboxAppKey, dropboxRedirectUri, dropboxClient, dropboxIsAppFolder } from './dropbox-auth';
+import type { DropboxSyncView } from './useDropboxSync';
 import type { CloudAccount, CloudFile, CloudItem } from './onedrive';
 import type { DropboxRef } from './dropbox';
 type Crumb = { name: string; ref: DropboxRef };
-export default function DropboxPanel({ busy, requestOpen, localFolders, onBusy, onConnect }: { busy: boolean; requestOpen: number; localFolders: { id: string; name: string }[]; onBusy(value: boolean): void;
+export default function DropboxPanel({ busy, requestOpen, localFolders, onBusy, onConnect, sync }: { busy: boolean; requestOpen: number; localFolders: { id: string; name: string }[]; onBusy(value: boolean): void; sync: DropboxSyncView;
   onConnect(name: string, ref: DropboxRef, files: CloudFile[], reuseFolderId?: string, signal?: AbortSignal): Promise<void> }) {
   const [expanded, setExpanded] = useState(() => location.hash === '#dropbox');
   const [account, setAccount] = useState<CloudAccount | null>(null);
@@ -37,7 +38,7 @@ export default function DropboxPanel({ busy, requestOpen, localFolders, onBusy, 
     <summary><Cloud size={16}/> Connect Dropbox</summary>
     <p className="settings-note">Sign in to browse your own Dropbox folder on this device. Nested folders are supported. Refresh reads filenames only; music downloads when opened. Only the last song is cached.</p>
     {!account && <details className="cloud-setup" open={!dropboxAppKey()}><summary>Dropbox app setup</summary>
-      <p className="settings-note">Register a Scoped access / Full Dropbox app with only account_info.read, files.metadata.read and files.content.read. Enable public clients (PKCE) and add this exact redirect URI. No credit card or App secret is needed.</p>
+      <p className="settings-note">Register a Scoped access / Full Dropbox app with account_info.read, files.metadata.read and files.content.read. Optional settings sync also needs files.content.write. Enable public clients (PKCE) and add this exact redirect URI. No credit card or App secret is needed.</p>
       <label>App key<input aria-label="Dropbox App key" value={appKey} placeholder="Public Dropbox App key" onChange={event => setAppKey(event.target.value)}/></label>
       <label>Redirect URI<input aria-label="Dropbox callback URL" readOnly value={dropboxRedirectUri()}/></label>
       <p className="settings-note"><a href="https://www.dropbox.com/developers/apps/create" target="_blank" rel="noreferrer">Dropbox App Console</a>. The publisher can supply the public App key for everyone; this browser’s override is not included in backups.</p>
@@ -51,10 +52,20 @@ export default function DropboxPanel({ busy, requestOpen, localFolders, onBusy, 
         <button className="quiet-button" disabled={busy} onClick={() => void run(async signal => {
           await browse([{ name: 'My Dropbox', ref: { accountId: account.id, itemId: '' } }], signal);
         })}><FolderOpen size={15}/>Browse Dropbox folders</button>
-        <button className="text-button" disabled={busy} onClick={() => void run(() => dropboxAuth.signIn())}>Sign in again / switch account</button>
+        <button className="text-button" disabled={busy} onClick={() => void run(() => dropboxAuth.signIn(sync.enabled))}>Sign in again / switch account</button>
         <button className="text-button" disabled={busy} onClick={() => void run(async () => { await dropboxAuth.disconnect(); setAccount(null); setCrumbs([]); setItems([]); })}>Disconnect sign-in</button>
       </>}
     </div>
+    {account && <div className="cloud-sync">
+      <strong>Favorites &amp; practice settings sync</strong>
+      <p className="settings-note">Syncs Dropbox-linked scores by file ID, including tempo, loops, practice voice, instrument choices and favorites. Each device keeps its playhead, screen preferences and microphone calibration. Changes merge by setting; the newer change wins when both devices edit the same setting. Incoming practice settings wait until playback is paused.</p>
+      <div className="library-actions">{sync.enabled ? <>
+        <button className="quiet-button" disabled={busy || sync.working} onClick={sync.syncNow}>Sync settings now</button>
+        <button className="text-button" disabled={busy} onClick={sync.disable}>Disable settings sync</button>
+      </> : <button className="quiet-button" disabled={busy || sync.working} onClick={() => void run(() => sync.enable())}>Enable settings sync</button>}</div>
+      <p className="settings-note" role="status">{sync.error || sync.status}{sync.lastSynced ? ` Last checked ${new Date(sync.lastSynced).toLocaleTimeString()}.` : ''}</p>
+      <p className="settings-note">Enabling sync asks for files.content.write. {dropboxIsAppFolder() ? 'Access is limited by Dropbox to this app’s folder; Sotto writes only practice-settings-v1.json there.' : 'Dropbox grants write access across the account; Sotto’s upload code writes only /Apps/Sotto/practice-settings-v1.json.'} Score files, audio, sign-in tokens and microphone data are never uploaded. The same Dropbox account and connected score files are needed on each device.</p>
+    </div>}
     {selected && <div className="cloud-browser">
       <nav aria-label="Dropbox folder path">{crumbs.map((crumb, index) => <button key={crumb.ref.itemId} className="text-button" disabled={busy} onClick={() => void run(signal => browse(crumbs.slice(0, index + 1), signal))}>{index ? ' / ' : ''}{crumb.name}</button>)}</nav>
       <div className="cloud-folders dropbox-folders" aria-label="Dropbox folders">{items.filter(item => item.kind === 'folder').map(item => <button className="quiet-button" key={item.id} disabled={busy} onClick={() => void run(signal => browse([...crumbs, { name: item.name, ref: { ...selected.ref, itemId: item.id } }], signal))}><FolderOpen size={15}/>{item.name}</button>)}</div>
@@ -70,6 +81,6 @@ export default function DropboxPanel({ busy, requestOpen, localFolders, onBusy, 
     </div>}
     {scanning && <button className="text-button" onClick={() => controller.current?.abort()}>Cancel Dropbox scan</button>}
     {message && <p className="library-message" role="status">{message}</p>}
-    <p className="settings-note">The app requests read-only account, metadata and content permissions. Full Dropbox authorizes reading across your account; Sotto lists where you navigate and scans only the folder you connect. No files are changed. Public sharing links and team spaces are not supported. Sign-in is renewed automatically while permitted; folder bookmarks survive a sign-in renewal.</p>
+    <p className="settings-note">Score browsing requests read-only account, metadata and content permissions. {dropboxIsAppFolder() ? 'Dropbox restricts access to the app’s folder.' : 'Full Dropbox authorizes reading across your account.'} Sotto lists where you navigate and scans the folder you connect. Optional settings sync writes only its dedicated JSON file. Public sharing links and team spaces are not supported. Sign-in is renewed automatically while permitted; folder bookmarks survive a sign-in renewal.</p>
   </details>;
 }

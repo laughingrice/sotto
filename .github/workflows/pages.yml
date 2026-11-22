@@ -31,6 +31,7 @@ jobs:
         env:
           VITE_ONEDRIVE_CLIENT_ID: ${{ vars.ONEDRIVE_CLIENT_ID }}
           VITE_DROPBOX_APP_KEY: ${{ vars.DROPBOX_APP_KEY }}
+          VITE_DROPBOX_ACCESS_TYPE: ${{ vars.DROPBOX_ACCESS_TYPE }}
       - name: Check whether Pages is enabled
         id: pages-check
         env:

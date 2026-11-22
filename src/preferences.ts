@@ -5,6 +5,10 @@ export type MetronomeMode = 'off' | 'playback' | 'continuous';
 export type Preferences = { zoom: number; follow: boolean; clickVolume: number; clickMode: ClickMode; metronomeMode: MetronomeMode; rhythmVisible: boolean };
 export type PracticeSettings = { bpm: number; beat: number; repeats: boolean; loop: boolean; loopStart: number; loopEnd: number;
   muted: string[]; solo: string | null; volumes: Record<string, number>; pitchOffset: number; practiceVoice: string; instruments?: Record<string, InstrumentId> };
+type PracticeEvent = { kind: 'load' | 'save'; key: string; settings: Partial<PracticeSettings> };
+const practiceListeners = new Set<(event: PracticeEvent) => void>();
+export function subscribePractice(listener: (event: PracticeEvent) => void) { practiceListeners.add(listener); return () => { practiceListeners.delete(listener); }; }
+function practiceEvent(event: PracticeEvent) { for (const listener of practiceListeners) listener(event); }
 const read = (key: string): Record<string, unknown> => {
   try { const value: unknown = JSON.parse(localStorage.getItem(key) ?? '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; } catch { return {}; }
 };
@@ -32,13 +36,15 @@ export function loadPractice(key: string, score: Score): PracticeSettings {
     return typeof saved === 'number' && Number.isFinite(saved) ? [[item.id, number(saved, 1, 0, 1)]] : [];
   }));
   const beat = number(value.beat, 0, 0, Math.max(0, performance.duration - .001));
-  return { bpm: number(value.bpm, score.bpm, 15, 300), beat: loop ? Math.max(performance.measures[loopStart].start, Math.min(beat, performance.measures[loopEnd].end - .001)) : beat,
+  const settings: PracticeSettings = { bpm: number(value.bpm, score.bpm, 15, 300), beat: loop ? Math.max(performance.measures[loopStart].start, Math.min(beat, performance.measures[loopEnd].end - .001)) : beat,
     repeats, loop, loopStart, loopEnd, muted: Array.isArray(value.muted) ? value.muted.filter(voice) : [], solo: voice(value.solo) ? value.solo : null, volumes,
     ...(value.instruments && typeof value.instruments === 'object' ? { instruments: Object.fromEntries(Object.entries(value.instruments).filter(([id, instrument]) => voice(id) && isInstrument(instrument))) as Record<string, InstrumentId> } : {}),
     pitchOffset: value.pitchOffset === -12 || value.pitchOffset === 12 ? value.pitchOffset : 0,
     practiceVoice: value.practiceVoice === 'all' || voice(value.practiceVoice) ? value.practiceVoice : score.voices.find(item => item.id === 'melody')?.id ?? score.voices[0]?.id ?? 'all' };
+  practiceEvent({ kind: 'load', key, settings });
+  return settings;
 }
-export function savePractice(key: string, value: PracticeSettings) { remember(`sotto.practice.${key}`, value); }
+export function savePractice(key: string, value: PracticeSettings) { remember(`sotto.practice.${key}`, value); practiceEvent({ kind: 'save', key, settings: value }); }
 
 // Portable preferences intentionally omit input device IDs and route-specific latency.
 const portableOptions: Record<string, (value: string) => boolean> = {
@@ -119,6 +125,9 @@ export function importPreferences(value: PortablePreferences) {
   // The parser validates the entire backup before any settings are changed.
   localStorage.setItem('sotto.preferences', JSON.stringify(value.general));
   for (const [key, option] of Object.entries(value.options)) localStorage.setItem(key, option);
-  for (const [key, settings] of Object.entries(value.songs)) localStorage.setItem(`sotto.practice.${key}`, JSON.stringify(settings));
+  for (const [key, settings] of Object.entries(value.songs)) {
+    localStorage.setItem(`sotto.practice.${key}`, JSON.stringify(settings));
+    practiceEvent({ kind: 'save', key, settings });
+  }
   if (value.lastSong) localStorage.setItem('sotto.session', JSON.stringify({ score: value.lastSong }));
 }

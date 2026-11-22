@@ -64,6 +64,27 @@ export async function saveLibrary(library: Library) {
     });
   } finally { db.close(); }
 }
+export async function loadPracticeJournal(accountId: string): Promise<unknown | undefined> {
+  await journalWrites.catch(() => {});
+  const db = await database();
+  try { return await new Promise((resolve, reject) => {
+    const request = db.transaction('library').objectStore('library').get(`practice-sync:${accountId}`);
+    request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+  }); } finally { db.close(); }
+}
+let journalWrites = Promise.resolve();
+export function savePracticeJournal(accountId: string, state: unknown): Promise<void> {
+  const snapshot = structuredClone(state);
+  const write = journalWrites.catch(() => {}).then(async () => {
+    const db = await database();
+    try { await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction('library', 'readwrite');
+      transaction.objectStore('library').put(snapshot, `practice-sync:${accountId}`);
+      transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error ?? new Error('Settings sync journal could not be saved.'));
+    }); } finally { db.close(); }
+  });
+  journalWrites = write; return write;
+}
 export async function loadLastScore(): Promise<{ key: string; score: Score } | null> {
   const db = await database();
   try {

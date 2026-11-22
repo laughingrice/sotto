@@ -62,3 +62,27 @@ it('reports denied, stale and expired authorizations without navigating or losin
   await expect(dropboxAuth.token(account.id)).rejects.toThrow('renewed'); expect(await dropboxAuth.account()).toEqual(account);
   expect(location.assign).toHaveBeenCalledTimes(1);
 });
+it('requests and accepts write permission only after explicit sync consent, and disables writes independently of score reading', async () => {
+  const request = vi.fn(); vi.stubGlobal('fetch', request);
+  const { configureDropbox, dropboxAuth } = await import('./dropbox-auth'); configureDropbox(KEY);
+  await expect(dropboxAuth.writeToken(account.id)).rejects.toThrow('Enable');
+  await dropboxAuth.signIn(true);
+  const url = new URL((location.assign as any).mock.calls[0][0]);
+  expect(url.searchParams.get('scope')).toBe('account_info.read files.metadata.read files.content.read files.content.write');
+  request.mockResolvedValueOnce(json({ access_token: 'with-sync', refresh_token: 'refresh', account_id: account.id, expires_in: 14400, scope: url.searchParams.get('scope') })).mockResolvedValueOnce(json({ account_id: account.id, email: account.label }));
+  const callback = new URL('https://laughingrice.github.io/sotto/dropbox-redirect.html?code=sync'); callback.searchParams.set('state', url.searchParams.get('state')!);
+  await dropboxAuth.complete(callback);
+  expect(dropboxAuth.syncEnabled(account.id)).toBe(true); expect(await dropboxAuth.writeToken(account.id)).toBe('with-sync');
+  dropboxAuth.setSyncEnabled(account.id, false); expect(dropboxAuth.syncEnabled(account.id)).toBe(false);
+  await expect(dropboxAuth.writeToken(account.id)).rejects.toThrow('Enable'); expect(await dropboxAuth.token(account.id)).toBe('with-sync');
+});
+it('keeps read-only authorization if Dropbox does not grant the requested sync permission', async () => {
+  const request = vi.fn(); vi.stubGlobal('fetch', request);
+  const { configureDropbox, dropboxAuth } = await import('./dropbox-auth'); configureDropbox(KEY); seed();
+  await dropboxAuth.signIn(true);
+  const url = new URL((location.assign as any).mock.calls[0][0]);
+  request.mockResolvedValueOnce(json({ access_token: 'read-only', refresh_token: 'r', account_id: account.id, expires_in: 14400, scope: 'account_info.read files.metadata.read files.content.read' }));
+  const callback = new URL('https://laughingrice.github.io/sotto/dropbox-redirect.html?code=sync'); callback.searchParams.set('state', url.searchParams.get('state')!);
+  await expect(dropboxAuth.complete(callback)).rejects.toThrow('did not grant');
+  expect(await dropboxAuth.token(account.id)).toBe('private-access'); expect(dropboxAuth.canSync(account.id)).toBe(false);
+});

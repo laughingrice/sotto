@@ -1,6 +1,6 @@
 # Sotto v0.5
 
-A local web practice player, starting with a public-domain Carcassi guitar study and ten ready-to-play openly licensed samples. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. Local scores work without an account; optional Dropbox or OneDrive Personal sign-in reads scores directly from your cloud folder. No scores or microphone audio are uploaded by Sotto. The bundled instrument recordings, synthesized timbres, and metronome work offline.
+A local web practice player, starting with a public-domain Carcassi guitar study and ten ready-to-play openly licensed samples. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. Local scores work without an account; optional Dropbox or OneDrive Personal sign-in reads scores directly from your cloud folder. Sotto never uploads scores or microphone audio; optional Dropbox sync uploads only favorites and per-song practice settings. The bundled instrument recordings, synthesized timbres, and metronome work offline.
 
 **New piece? Start with [Prepare a new score](#prepare-a-new-score).**
 
@@ -233,7 +233,7 @@ This connection browses an existing private Dropbox score folder inside Sotto, w
 ### One-time publisher setup
 
 1. Sign in to the [Dropbox App Console](https://www.dropbox.com/developers/apps/create). Create an app with **Scoped access → Full Dropbox**. Choose a unique app name (for example, Sotto Music Practice).
-2. Under **Permissions**, enable only **account_info.read**, **files.metadata.read** and **files.content.read**, then submit/save. Do not enable write scopes.
+2. Under **Permissions**, enable only **account_info.read**, **files.metadata.read** and **files.content.read**, then submit/save. For optional settings sync, also enable **files.content.write**. Score browsing alone requests only the three read scopes.
 3. Under **Settings → OAuth 2**, add the exact redirect URI **https://laughingrice.github.io/sotto/dropbox-redirect.html**. Enable **Allow public clients (Implicit Grant & PKCE)** if that setting is shown. Sotto uses authorization code + PKCE S256, never implicit grant or an App secret.
 4. Copy the public **App key**. For the shared deployment, set GitHub repository **Settings → Secrets and variables → Actions → Variables → DROPBOX_APP_KEY**, then deploy again. For local development, put `VITE_DROPBOX_APP_KEY=your_app_key` in `.env.local` and register the exact local callback URL shown in the app. Do not put an App secret or generated access token into either location.
 5. Alternatively enter the App key in **Library → Connect Dropbox → Dropbox app setup** on an individual device. This override stays on that browser and is excluded from backups.
@@ -247,9 +247,25 @@ An app in development initially allows its owner's account. Use Dropbox's additi
 3. If replacing an existing local-folder library, choose its name under **Reuse existing bookmarks** before connecting. Matching relative paths retain favorites and per-song settings. Other cloud providers cannot be migrated by this option.
 4. Browse or search the library, and open a score. Scans fetch metadata only; title/composer are learned when opened. Only the last opened score is cached; other downloads are not retained in the library or service-worker cache.
 5. Use **Refresh** beside the connected folder to discover changes and remove bookmarks for deleted files. Complete scans preserve IDs, favorites and settings across renames or moves inside the connected folder. Failed/cancelled scans keep the previous index.
-6. Export a library backup to transfer folder references, favorites and practice settings. Import on another device and sign in to the same Dropbox account. Tokens, account email and score contents are excluded. Settings do not automatically sync across devices.
+6. Export a library backup to transfer folder references, favorites and practice settings. Import on another device and sign in to the same Dropbox account. Tokens, account email and score contents are excluded. Enable the optional settings sync below for automatic favorites and per-song practice sync.
 
-**Full Dropbox** is required to choose an arbitrary existing folder; read scopes authorize reading across the account. Sotto lists folders you browse and scans the folder you connect, and never modifies Dropbox files. Access tokens and a renewal token stay in this browser's app storage. Renewal is automatic while Dropbox permits it; clearing site data or revoking authorization requires sign-in again. **Disconnect sign-in** removes Sotto's local credentials and retains bookmarks; revoke the app in Dropbox's connected-app settings to revoke its grant. Public sharing URLs and Dropbox team spaces are not supported by this first connection. Ordinary personal-account folders, including mounted shared folders the user can access, use their normal account paths.
+**Full Dropbox** is required to choose an arbitrary existing folder; read scopes authorize reading across the account. Sotto lists folders you browse and scans the folder you connect, and never modifies score files. Optional settings sync writes its dedicated JSON file only. Access tokens and a renewal token stay in this browser's app storage. Renewal is automatic while Dropbox permits it; clearing site data or revoking authorization requires sign-in again. **Disconnect sign-in** removes Sotto's local credentials and retains bookmarks; revoke the app in Dropbox's connected-app settings to revoke its grant. Public sharing URLs and Dropbox team spaces are not supported by this first connection. Ordinary personal-account folders, including mounted shared folders the user can access, use their normal account paths.
+
+### Optional favorites and per-song practice sync
+
+1. In the existing [Dropbox App Console](https://www.dropbox.com/developers/apps), enable **files.content.write** under Permissions and save. No new app, key or redirect URI is required.
+2. On **each device**, sign in to the same Dropbox account and connect the score folder. Choose **Library → Connect Dropbox → Enable settings sync**, then approve the extra permission. The existing score-only connection continues to use read scopes until you opt in.
+3. Wait for **Favorites and practice settings are up to date**. Changes sync after a short delay, every 30 seconds while Sotto is open, and when it regains focus or reconnects. **Sync settings now** runs a check immediately. Closing/backgrounding the iPad app can suspend networking; wait for an up-to-date status before switching devices when possible.
+
+Sotto writes only **/Apps/Sotto/practice-settings-v1.json** for a Full Dropbox app. Dropbox's authorization itself permits writing across the account; Sotto restricts its upload code to that fixed path. No score bundle, SVG, microphone recording, token or account email is included. The file contains the Dropbox account ID, stable score file IDs, favorites, per-field change stamps and practice settings. App Folder registrations can use the equivalent root-relative file with `VITE_DROPBOX_ACCESS_TYPE=app_folder`; configuring one requires a new App Folder key and moving scores into its scope. The existing deployment continues with Full Dropbox access.
+
+Synced practice settings include tempo, repeat/loop choices and bounds, muted/solo voices, per-voice volumes and instruments, octave correction and practice voice. Playhead position, screen/zoom preferences, general metronome settings and microphone device/calibration remain local. Incoming practice changes wait until the current score is paused; favorites and settings for other scores can update immediately. Sync does not reopen the score or change its Notes/Tabs/Both selection. Changes to tempo or practice voice use the player’s usual feedback reset behavior.
+
+Each favorite and practice field merges separately. Unfavoriting is an explicit change. Two devices editing different fields keep both changes; the newer change stamp wins for the same field, with a deterministic device tie-break. Conditional revision updates detect simultaneous cloud writes and re-read/merge before retrying. Offline edits are retained in a small local journal and retried on reconnection. Incomplete, corrupt, foreign-account or unavailable cloud files do not replace local settings or get overwritten automatically.
+
+The first sync uses existing cloud values for fields already present and fills missing fields from saved local settings. A newly connected device's defaults cannot erase existing cloud choices. Settings match by Dropbox file ID, even when devices connect different parent folders or use different local bookmark IDs. Moving/renaming a file retains its settings; deleting it and uploading a new copy with a new Dropbox ID creates a new identity. This does not automatically add library folders to another device—connect the folder there once. Manual library backups remain available for transferring all bookmarks and general preferences.
+
+**Disable settings sync** stops automatic synchronization while retaining local settings, cloud data and folder access. It does not revoke the Dropbox grant. Re-enable to merge again, or revoke the app in Dropbox's connected-app settings to remove authorization.
 
 The browser flow follows [Dropbox's OAuth guide](https://docs.dropboxapi.com/dropbox-api/docs/oauth); folder browsing uses the [file access API](https://docs.dropboxapi.com/dropbox-api/docs/file-access).
 
@@ -335,7 +351,7 @@ Only **one imported song** is cached in IndexedDB, in a single replaceable slot.
 
 Sotto remembers general preferences (instrument, zoom, follow score, control visibility, feedback-panel visibility, count-in, metronome mode/pulse/volume, and microphone input/filter/timing/display choices). Each song separately remembers tempo, bar position, repeat order, loop range and enablement, mute/solo/voice volumes, practice voice and playback octave. Settings are checked against the current score when reopening, so shortened scores or changed voice IDs do not leave invalid controls. Playback and microphone input always reopen paused; a saved Continuous metronome mode starts after Play or a metronome click. Rhythm results and microphone audio are not persisted.
 
-These settings and the one-song resume copy are local to this browser and site address. The portable backup includes practice settings and common preferences, but excludes the cached score, file-access permissions, microphone device ID and device-specific input-delay calibration. Keep the source score files in OneDrive or another backed-up folder; reconnecting their imported bookmarks restores the associated practice settings. Clearing site storage removes them, but never changes files in OneDrive or another source folder. Browser account sync does not provide application-level synchronization of this site storage. A future sync feature can exchange this same small settings/index format through a shared file or cloud service; it need not copy the full score library.
+These settings and the one-song resume copy are local to this browser and site address. The portable backup includes practice settings and common preferences, but excludes the cached score, file-access permissions, microphone device ID and device-specific input-delay calibration. Keep the source score files in OneDrive or another backed-up folder; reconnecting their imported bookmarks restores the associated practice settings. Clearing site storage removes them, but never changes files in OneDrive or another source folder. Browser account sync does not provide application-level synchronization of this site storage. Optional Dropbox sync shares favorites and per-song settings through a dedicated small file; it does not copy the score library. General preferences and other library references still transfer through manual backups.
 
 ## Instruments, metronome, and SoundFonts
 
@@ -408,6 +424,8 @@ node scripts/library-test.mjs
 node scripts/library-folders-test.mjs
 # Compressed/legacy imports, Save/Open and compressed offline resume:
 node scripts/compression-test.mjs
+# Two browser profiles: favorites/settings sync, optional write consent, offline retry and conflicts:
+node scripts/dropbox-sync-test.mjs
 # Dropbox PKCE callbacks, token renewal, metadata-only folders, phone picker and portable backups:
 node scripts/dropbox-test.mjs
 # Production /sotto/ callback entries and service-worker exclusion of authorization codes:
@@ -434,7 +452,7 @@ The browser checks use Playwright Chromium (`npx playwright install chromium`); 
 
 Next work, in practical order:
 
-1. **Library refinements:** automatic/shared backup synchronization and optional direct cloud integration; the initial reference-based library and portable library/settings backup are available now.
+1. **Library refinements:** direct Dropbox/OneDrive browsing and optional Dropbox favorites/practice sync are implemented. Full library-reference and general-preference sync remain future work; portable backups are available now.
 2. **SoundFonts and richer kits:** load an SF2/SF3 font locally and select its presets; expand drum articulations/velocity layers. Per-voice recorded instruments are implemented. Retain the bundled recordings and lightweight synths.
 3. **More general import:** derive tempo and instrument transposition automatically, support tempo changes, and simplify preparation. Measure timing, meter changes, structured repeats and explicit LilyPond MIDI playback order are already derived during export; Julia Florida retains its explicit jump map.
 4. **Improve microphone rhythm feedback:** validate the preview on actual guitar and iPad/Safari hardware, improve detection of overlapping/legato attacks, and refine device-specific latency calibration. The level trace, ordered onset matching, adaptive cooldown, take/loop summaries, manual offset and speaker alignment are implemented. Optional confidence-gated single-note pitch checking is implemented; next validate it with real instruments and investigate legato and polyphonic/chord feedback.
