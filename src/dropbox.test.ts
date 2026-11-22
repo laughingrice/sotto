@@ -8,23 +8,47 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const file = (id: string, path: string): CloudFile => ({ id: `id:${id}`, name: path.split('/').at(-1)!, path, kind: 'file' });
 const access = { token: async () => 'test-token' };
 describe('Dropbox library', () => {
-  it('scans arbitrary nested folders with metadata-only pagination and fixed authenticated endpoints', async () => {
+  it('scans nested folders by ID with metadata-only pagination and case-preserved names', async () => {
     const request = vi.fn(async (address: string | URL | Request, options?: RequestInit) => {
-      expect(String(address)).toMatch(/^https:\/\/api.dropboxapi.com\/2\/files\//);
+      expect(String(address)).toMatch(/^https:\/\/api.dropboxapi.com\/2\/files\/list_folder(?:\/continue)?$/);
       expect(options?.method).toBe('POST'); expect(options?.cache).toBe('no-store'); expect(options?.credentials).toBe('omit');
       expect((options?.headers as Record<string, string>).Authorization).toBe('Bearer test-token');
       const args = JSON.parse(options?.body as string);
-      if (String(address).endsWith('get_metadata')) { expect(args.path).toBe(ref.itemId); return json(raw('scores', '/Scores', true)); }
-      if (String(address).endsWith('list_folder')) {
-        expect(args.recursive).toBe(true); expect(args.include_deleted).toBe(false);
-        return json({ entries: [raw('guitar', '/Scores/Guitar', true), raw('one', '/Scores/Guitar/Composer/Book/piece.sotto'), raw('pdf', '/Scores/original.pdf')], cursor: 'opaque-cursor', has_more: true });
+      if (String(address).endsWith('/continue')) {
+        expect(args).toEqual({ cursor: 'opaque-cursor' });
+        return json({ entries: [raw('two', '/Scores/second.sotto.json')], has_more: false });
       }
-      expect(args).toEqual({ cursor: 'opaque-cursor' });
-      return json({ entries: [raw('two', '/Scores/Bass/second.sotto.json'), raw('hidden', '/Scores/.hidden/hidden.sotto')], has_more: false });
+      expect(args.recursive).toBe(false); expect(args.include_deleted).toBe(false);
+      const entries: Record<string, unknown[]> = {
+        'id:scores': [raw('guitar', '/Scores/Guitar', true), raw('pdf', '/Scores/original.pdf')],
+        'id:guitar': [raw('composer', '/Scores/Guitar/Composer', true)],
+        'id:composer': [raw('book', '/Scores/Guitar/Composer/Book', true)],
+        'id:book': [raw('piece', '/Scores/Guitar/Composer/Book/piece.sotto')],
+      };
+      return json({ entries: entries[args.path], has_more: args.path === 'id:scores', cursor: 'opaque-cursor' });
     });
     const files = await new DropboxClient(access, request as typeof fetch).scan(ref);
-    expect(files.map(item => item.path)).toEqual(['Guitar/Composer/Book/piece.sotto', 'Bass/second.sotto.json']);
-    expect(request).toHaveBeenCalledTimes(3);
+    expect(files.map(item => item.path).sort()).toEqual(['Guitar/Composer/Book/piece.sotto', 'second.sotto.json']);
+    expect(request).toHaveBeenCalledTimes(5);
+  });
+  it('ignores inconsistent or absent display paths, folder-self entries and cycles', async () => {
+    const request = vi.fn(async (_address: unknown, options?: RequestInit) => {
+      const args = JSON.parse(options?.body as string);
+      if (args.path === 'id:scores') return json({ entries: [
+        raw('scores', '/SomewhereElse/Scores', true),
+        { ...raw('book', '/OldMount/études', true), name: 'Études', path_lower: '/different/études' },
+        raw('hidden', '/Wrong/.hidden', true),
+      ], has_more: false });
+      expect(args.path).toBe('id:book');
+      return json({ entries: [
+        { id: 'id:piece', name: 'Prélude.sotto', '.tag': 'file', path_display: null },
+        raw('back', '/Moved/Back.sotto'),
+        raw('scores', '/Other/Scores', true),
+      ], has_more: false });
+    });
+    const files = await new DropboxClient(access, request as typeof fetch).scan(ref);
+    expect(files.map(file => file.path).sort()).toEqual(['Études/Back.sotto', 'Études/Prélude.sotto']);
+    expect(request).toHaveBeenCalledTimes(2);
   });
   it('browses root and downloads only the selected stable file ID with uncached content', async () => {
     const request = vi.fn(async (address: string | URL | Request, options?: RequestInit) => {
@@ -61,10 +85,9 @@ describe('Dropbox library', () => {
     expect(() => parseLibrary(exportLibrary(next))).toThrow('Dropbox score');
   });
   it('fails partial, looping and cancelled scans instead of exposing an incomplete replacement listing', async () => {
-    const metadata = () => json(raw('scores', '/Scores', true));
-    const partial = vi.fn().mockResolvedValueOnce(metadata()).mockResolvedValueOnce(json({ entries: [raw('one', '/Scores/one.sotto')], cursor: 'next', has_more: true })).mockResolvedValueOnce(json({}, 503));
+    const partial = vi.fn().mockResolvedValueOnce(json({ entries: [raw('one', '/Scores/one.sotto')], cursor: 'next', has_more: true })).mockResolvedValueOnce(json({}, 503));
     await expect(new DropboxClient(access, partial).scan(ref)).rejects.toThrow('bookmarks were kept');
-    const loop = vi.fn().mockResolvedValueOnce(metadata()).mockImplementation(async () => json({ entries: [], cursor: 'same', has_more: true }));
+    const loop = vi.fn().mockImplementation(async () => json({ entries: [], cursor: 'same', has_more: true }));
     await expect(new DropboxClient(access, loop).scan(ref)).rejects.toThrow('pagination');
     const abort = new AbortController();
     const request = vi.fn((_url: unknown, options?: RequestInit) => new Promise<Response>((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))));
@@ -79,7 +102,7 @@ describe('Dropbox library', () => {
     await expect(new DropboxClient(access, oversized).file(ref, 'id:one')).rejects.toThrow('size limit');
     const wrong = vi.fn(async () => new Response('x', { headers: { 'Dropbox-API-Result': JSON.stringify(raw('other', '/Scores/one.sotto')) } }));
     await expect(new DropboxClient(access, wrong).file(ref, 'id:one')).rejects.toThrow('requested');
-    const moved = vi.fn().mockResolvedValueOnce(json(raw('scores', '/Scores', true))).mockResolvedValueOnce(json({ entries: [raw('one', '/Other/one.sotto')], has_more: false }));
-    await expect(new DropboxClient(access, moved).scan(ref)).rejects.toThrow('moved during');
+    const invalid = vi.fn(async () => json({ entries: [{ ...raw('one', '/Scores/one.sotto'), name: '../one.sotto' }], has_more: false }));
+    await expect(new DropboxClient(access, invalid).scan(ref)).rejects.toThrow('invalid file metadata');
   });
 });

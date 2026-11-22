@@ -43,12 +43,11 @@ export async function dropboxRequest(route: string, token: string, body: unknown
   if (!response.ok) throw new Error(`Dropbox request failed (${response.status}). Existing bookmarks were kept.`);
   return response;
 }
-function item(raw: any): CloudItem & { fullPath: string } {
+function item(raw: any): CloudItem {
   if (!raw || !/^id:[A-Za-z0-9_-]{1,200}$/.test(raw.id) || !['file', 'folder'].includes(raw['.tag']) ||
-      typeof raw.name !== 'string' || !raw.name || /[/\\\x00-\x1f]/.test(raw.name) || ['.', '..'].includes(raw.name) ||
-      typeof raw.path_display !== 'string' || !raw.path_display.startsWith('/') || raw.path_display.split('/').slice(1).some((part: string) => !part || ['.', '..'].includes(part) || /[\\\x00-\x1f]/.test(part))) throw new Error('Dropbox returned invalid file metadata.');
+      typeof raw.name !== 'string' || !raw.name || /[/\\\x00-\x1f]/.test(raw.name) || ['.', '..'].includes(raw.name)) throw new Error('Dropbox returned invalid file metadata.');
   const modified = Date.parse(raw.server_modified);
-  return { id: raw.id, name: raw.name, kind: raw['.tag'], fullPath: raw.path_display,
+  return { id: raw.id, name: raw.name, kind: raw['.tag'],
     ...(Number.isFinite(raw.size) && raw.size >= 0 ? { size: raw.size } : {}), ...(Number.isFinite(modified) ? { modified } : {}) };
 }
 export class DropboxClient {
@@ -71,35 +70,49 @@ export class DropboxClient {
     parseDropboxRef({ accountId: raw.account_id, itemId: '' }, true);
     return { id: raw.account_id, label: typeof raw.email === 'string' ? raw.email : 'Dropbox account' };
   }
-  private async list(ref: DropboxRef, recursive: boolean, signal?: AbortSignal, progress = (_folders: number, _files: number) => {}) {
+  async children(ref: DropboxRef, signal?: AbortSignal): Promise<CloudItem[]> {
     parseDropboxRef(ref, true);
-    const prefix = ref.itemId ? item(await this.json(ref, 'files/get_metadata', { path: ref.itemId }, signal)).fullPath + '/' : '/';
-    let page = await this.json(ref, 'files/list_folder', { path: ref.itemId, recursive, include_deleted: false, include_non_downloadable_files: false, limit: 1000 }, signal);
-    const cursors = new Set<string>(), found = new Map<string, CloudFile>(); let folders = 0, count = 0;
+    let page = await this.json(ref, 'files/list_folder', { path: ref.itemId, recursive: false, include_deleted: false, include_non_downloadable_files: false, limit: 1000 }, signal);
+    const cursors = new Set<string>(), found = new Map<string, CloudItem>(); let count = 0;
     while (true) {
       if (!Array.isArray(page.entries) || typeof page.has_more !== 'boolean') throw new Error('Dropbox returned an incomplete folder listing. Existing bookmarks kept.');
       for (const raw of page.entries) {
         if (++count > 100000) throw new Error('Please connect a smaller Dropbox folder (up to 100,000 items).');
+        // Some listings can include the selected folder itself. It is not a child.
+        if (raw?.id === ref.itemId && raw?.['.tag'] === 'folder') continue;
         const entry = item(raw);
-        if (!entry.fullPath.toLowerCase().startsWith(prefix.toLowerCase())) throw new Error('The Dropbox folder moved during the scan. Refresh again; existing bookmarks kept.');
-        const path = entry.fullPath.slice(prefix.length);
-        if (path.split('/').some(part => part.startsWith('.'))) continue;
-        if (entry.kind === 'folder') folders++;
-        if (!recursive || entry.kind === 'file' && isScoreFile(entry.name)) { const { fullPath: _path, ...metadata } = entry; found.set(entry.id, { ...metadata, path }); }
-        if (found.size > (recursive ? 10000 : 20000)) throw new Error('Please connect a smaller Dropbox folder.');
+        if (!entry.name.startsWith('.')) found.set(entry.id, entry);
+        if (found.size > 20000) throw new Error('Please connect a smaller Dropbox folder.');
       }
-      progress(folders, found.size);
       if (!page.has_more) break;
       if (typeof page.cursor !== 'string' || !page.cursor || cursors.has(page.cursor) || cursors.size >= 1000) throw new Error('Dropbox pagination did not finish. Existing bookmarks kept.');
       cursors.add(page.cursor);
       page = await this.json(ref, 'files/list_folder/continue', { cursor: page.cursor }, signal);
     }
-    return [...found.values()];
+    return [...found.values()].sort((a, b) => Number(b.kind === 'folder') - Number(a.kind === 'folder') || a.name.localeCompare(b.name));
   }
-  async children(ref: DropboxRef, signal?: AbortSignal): Promise<CloudItem[]> {
-    return (await this.list(ref, false, signal)).sort((a, b) => Number(b.kind === 'folder') - Number(a.kind === 'folder') || a.name.localeCompare(b.name));
+  async scan(ref: DropboxRef, signal?: AbortSignal, progress = (_folders: number, _files: number) => {}): Promise<CloudFile[]> {
+    parseDropboxRef(ref, true);
+    // path_display is presentation-only and can disagree between endpoints,
+    // especially for mounted folders. Walk stable IDs and use Metadata.name
+    // for every relative path component instead of slicing absolute paths.
+    const pending = [{ ref, prefix: '' }], visited = new Set<string>(), files = new Map<string, CloudFile>();
+    while (pending.length) {
+      if (signal?.aborted) throw new Error('Dropbox operation cancelled. Existing bookmarks kept.');
+      const folder = pending.pop()!;
+      if (visited.has(folder.ref.itemId)) continue;
+      visited.add(folder.ref.itemId);
+      if (visited.size > 10000) throw new Error('Please connect a smaller Dropbox folder (up to 10,000 subfolders).');
+      for (const entry of await this.children(folder.ref, signal)) {
+        const path = folder.prefix + entry.name;
+        if (entry.kind === 'folder') pending.push({ ref: { ...ref, itemId: entry.id }, prefix: path + '/' });
+        else if (isScoreFile(entry.name)) files.set(entry.id, { ...entry, path });
+        if (files.size > 10000) throw new Error('Please connect a smaller Dropbox folder (up to 10,000 scores).');
+      }
+      progress(visited.size, files.size);
+    }
+    return [...files.values()];
   }
-  scan(ref: DropboxRef, signal?: AbortSignal, progress?: (folders: number, files: number) => void) { return this.list(ref, true, signal, progress); }
   file(ref: DropboxRef, itemId: string, signal?: AbortSignal): Promise<File> {
     parseDropboxRef(ref, true); parseDropboxRef({ ...ref, itemId });
     return this.run(ref.accountId, signal, async (token, abort) => {

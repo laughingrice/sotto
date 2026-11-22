@@ -38,12 +38,14 @@ async function setup(page) {
     }
     const args = request.postDataJSON(); let data;
     if (url.pathname === '/2/users/get_current_account') data = { account_id: 'dbid:account', email: 'person@example.test' };
-    else if (url.pathname === '/2/files/get_metadata') { assert.equal(args.path, 'id:scores'); data = metadata('scores', '/Scores', true); }
     else if (url.pathname === '/2/files/list_folder') {
-      assert.equal(args.include_deleted, false);
+      assert.equal(args.include_deleted, false); assert.equal(args.recursive, false);
       if (args.path === '') data = { entries: [metadata('scores', '/Scores', true)], has_more: false };
-      else if (!args.recursive) data = { entries: [metadata('guitar', '/Scores/Guitar', true)], has_more: false };
-      else data = { entries: [metadata('book', '/Scores/Guitar/Composer/Book', true), metadata('one', '/Scores/Guitar/Composer/Book/' + (renamed ? 'renamed.sotto' : 'piece.sotto')), ...(!deleted ? [metadata('two', '/Scores/Guitar/Composer/Book/second.sotto')] : [])], has_more: failed, cursor: 'page-two' };
+      else if (args.path === 'id:scores') data = { entries: [metadata('scores', '/PreviousLocation/Scores', true), metadata('guitar', '/DifferentMount/Guitar', true)], has_more: false };
+      else if (args.path === 'id:guitar') data = { entries: [metadata('composer', '/NoSharedPrefix/Composer', true)], has_more: false };
+      else if (args.path === 'id:composer') data = { entries: [metadata('book', '/AnotherLocation/Book', true)], has_more: false };
+      else if (args.path === 'id:book') data = { entries: [metadata('one', '/DifferentMount/' + (renamed ? 'renamed.sotto' : 'piece.sotto')), ...(!deleted ? [metadata('two', '/DifferentMount/second.sotto')] : [])], has_more: failed, cursor: 'page-two' };
+      else throw new Error(`Unexpected Dropbox folder ${args.path}`);
     } else if (url.pathname === '/2/files/list_folder/continue') return route.fulfill({ status: 503, headers, body: '{}' });
     else throw new Error(`Unexpected Dropbox endpoint ${url}`);
     await route.fulfill({ headers, body: JSON.stringify(data) });
