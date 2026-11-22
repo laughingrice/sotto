@@ -7,7 +7,7 @@ async function loadProcessor(worklet: AudioWorklet | undefined) {
   if (!worklet) throw new Error('This browser does not support microphone analysis with AudioWorklet. Try a current Safari, Chrome or Edge over HTTPS.');
   let pending = modules.get(worklet);
   if (!pending) {
-    pending = worklet.addModule(`${import.meta.env.BASE_URL}rhythm-worklet.js`).catch(error => { modules.delete(worklet); throw error; });
+    pending = worklet.addModule(`${import.meta.env.BASE_URL}rhythm-worklet.js?v=2`).catch(error => { modules.delete(worklet); throw error; });
     modules.set(worklet, pending);
   }
   await pending;

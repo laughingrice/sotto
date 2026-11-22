@@ -1,6 +1,6 @@
 const BASE = new URL('./', self.location.href);
 const CACHE_PREFIX = `sotto:${BASE.pathname}:`;
-const CACHE = `${CACHE_PREFIX}v0.5.2`;
+const CACHE = `${CACHE_PREFIX}v0.5.3`;
 const localUrl = path => new URL(path, BASE).href;
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
@@ -21,7 +21,7 @@ self.addEventListener('install', event => {
       .map(url => url.href);
     await cache.put(localUrl('asset-manifest.json'), buildResponse);
     await cache.put(BASE.href, shell);
-    await cache.addAll(['icon.svg', 'manifest.webmanifest', 'rhythm-worklet.js', 'THIRD-PARTY-LICENSES.txt', 'scores/samples/carcassi.sotto', 'scores/samples/catalog.json'].map(localUrl).concat([...new Set([...assets, ...workerAssets])]));
+    await cache.addAll(['icon.svg', 'manifest.webmanifest', 'rhythm-worklet.js?v=2', 'THIRD-PARTY-LICENSES.txt', 'scores/samples/carcassi.sotto', 'scores/samples/catalog.json'].map(localUrl).concat([...new Set([...assets, ...workerAssets])]));
     const manifestResponse = await fetch(localUrl('samples/manifest.json'));
     if (!manifestResponse.ok) throw new Error('Instrument recordings could not be cached.');
     const manifest = await manifestResponse.clone().json();
