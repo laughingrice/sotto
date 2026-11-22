@@ -1,3 +1,5 @@
+import { parseOneDriveItem, parseOneDriveFolder, type OneDriveItemRef, type OneDriveFolderRef } from './onedrive';
+import { parseDropboxRef, type DropboxRef } from './dropbox';
 import { isScoreFile, scoreFileStem, readScoreFile, writeScoreFile } from './score-file';
 import type { Score } from './score';
 import type { PortablePreferences } from './preferences';
@@ -22,9 +24,9 @@ export type LibraryEntry = {
   id: string; name: string; title: string; composer: string;
   folderId?: string; path?: string; favorite: boolean; lastOpened?: number;
   handle?: ReadHandle; fileSize?: number; modified?: number;
-  online?: OnlineScore;
+  online?: OnlineScore; oneDrive?: OneDriveItemRef; dropbox?: DropboxRef;
 };
-export type LibraryFolder = { id: string; name: string; handle?: DirectoryHandle; catalogUrl?: string };
+export type LibraryFolder = { id: string; name: string; handle?: DirectoryHandle; catalogUrl?: string; oneDrive?: OneDriveFolderRef; dropbox?: DropboxRef };
 export type Library = { entries: LibraryEntry[]; folders: LibraryFolder[] };
 export const emptyLibrary = (): Library => ({ entries: [], folders: [] });
 export const filePickers = globalThis as unknown as {
@@ -94,8 +96,8 @@ export function saveLastScore(key: string, score: Score): Promise<void> {
 }
 export function exportLibrary(library: Library, settings?: PortablePreferences): string {
   return JSON.stringify({ format: 'sotto-library', version: 1, ...(settings ? { settings } : {}),
-    folders: library.folders.map(({ id, name, catalogUrl }) => ({ id, name, ...(catalogUrl ? { catalogUrl } : {}) })),
-    entries: library.entries.map(({ handle: _handle, ...metadata }) => metadata),
+    folders: library.folders.map(({ id, name, catalogUrl, oneDrive, dropbox }) => ({ id, name, ...(catalogUrl ? { catalogUrl } : {}), ...(oneDrive ? { oneDrive: parseOneDriveFolder(oneDrive) } : {}), ...(dropbox ? { dropbox: parseDropboxRef(dropbox, true) } : {}) })),
+    entries: library.entries.map(({ handle: _handle, oneDrive, dropbox, ...metadata }) => ({ ...metadata, ...(oneDrive ? { oneDrive: parseOneDriveItem(oneDrive) } : {}), ...(dropbox ? { dropbox: parseDropboxRef(dropbox) } : {}) })),
   }, null, 2);
 }
 export function parseLibrary(text: string): Library {
@@ -104,8 +106,9 @@ export function parseLibrary(text: string): Library {
   if (value?.format !== 'sotto-library' || value.version !== 1 || !Array.isArray(value.entries) ||
       !Array.isArray(value.folders) || value.entries.length > 10000 || value.folders.length > 1000) throw new Error('This is not a Sotto library index.');
   const folders: LibraryFolder[] = value.folders.map((folder: LibraryFolder) => {
+    if ([folder.oneDrive, folder.dropbox, folder.catalogUrl].filter(Boolean).length > 1) throw new Error('A folder cannot have multiple cloud providers.');
     if (!validString(folder.id) || !validString(folder.name)) throw new Error('Invalid folder bookmark.');
-    return { id: folder.id, name: folder.name, ...(folder.catalogUrl !== undefined ? { catalogUrl: onlineUrl(folder.catalogUrl) } : {}) };
+    return { id: folder.id, name: folder.name, ...(folder.catalogUrl !== undefined ? { catalogUrl: onlineUrl(folder.catalogUrl) } : {}), ...(folder.oneDrive !== undefined ? { oneDrive: parseOneDriveFolder(folder.oneDrive) } : {}), ...(folder.dropbox !== undefined ? { dropbox: parseDropboxRef(folder.dropbox, true) } : {}) };
   });
   const entries: LibraryEntry[] = value.entries.map((entry: LibraryEntry) => {
     if (!validString(entry.id) || !validString(entry.name) || typeof entry.title !== 'string' || typeof entry.composer !== 'string' ||
@@ -116,8 +119,17 @@ export function parseLibrary(text: string): Library {
       ...(entry.folderId ? { folderId: entry.folderId, path: entry.path } : {}),
       ...(entry.lastOpened !== undefined ? { lastOpened: entry.lastOpened } : {}),
       ...(entry.online !== undefined ? { online: parseOnlineScore(entry.online) } : {}),
+      ...(entry.oneDrive !== undefined ? { oneDrive: parseOneDriveItem(entry.oneDrive) } : {}),
+      ...(entry.dropbox !== undefined ? { dropbox: parseDropboxRef(entry.dropbox) } : {}),
     };
   });
+  for (const entry of entries) {
+    const folder = folders.find(folder => folder.id === entry.folderId);
+    if (entry.oneDrive && (!folder?.oneDrive || entry.oneDrive.driveId !== folder.oneDrive.driveId || entry.online)) throw new Error('Invalid OneDrive score bookmark.');
+    if (folder?.oneDrive && (!entry.oneDrive || folder.catalogUrl)) throw new Error('Invalid OneDrive folder bookmark.');
+    if (entry.dropbox && (!folder?.dropbox || entry.dropbox.accountId !== folder.dropbox.accountId || entry.oneDrive || entry.online)) throw new Error('Invalid Dropbox score bookmark.');
+    if (folder?.dropbox && !entry.dropbox) throw new Error('Invalid Dropbox folder bookmark.');
+  }
   if (new Set(folders.map(folder => folder.id)).size !== folders.length || new Set(entries.map(entry => entry.id)).size !== entries.length) throw new Error('Duplicate library identifiers.');
   return { folders, entries };
 }

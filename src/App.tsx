@@ -62,7 +62,7 @@ export default function App() {
   const [rhythmVisible, setRhythmVisible] = useState(preferences.rhythmVisible);
   const [microphoneActive, setMicrophoneActive] = useState(false);
   const [feedbackView, setFeedbackView] = useState<'score' | 'timeline'>(() => { try { return localStorage.getItem('sotto.feedbackView') === 'timeline' ? 'timeline' : 'score'; } catch { return 'score'; } });
-  const [libraryVisible, setLibraryVisible] = useState(false);
+  const [libraryVisible, setLibraryVisible] = useState(() => ['#onedrive', '#dropbox'].includes(location.hash));
   const [pitchOffset, setPitchOffset] = useState(0);
   const [starting, setStarting] = useState(false);
   const [controlsCollapsed, setControlsCollapsed] = useState(() => {

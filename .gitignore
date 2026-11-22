@@ -5,3 +5,6 @@ test-results/
 .DS_Store
 __pycache__/
 *.pyc
+
+.env.local
+.env.*.local

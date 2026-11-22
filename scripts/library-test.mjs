@@ -125,7 +125,7 @@ try {
   await openLibrary();
   await page.waitForFunction(() => typeof window.resumeDirectoryScan === 'function');
   await page.getByLabel('Import library backup', { exact: true }).setInputFiles({ name: 'sotto-library.json', mimeType: 'application/json', buffer: Buffer.from(index) });
-  await page.getByText('Library and settings restored. Reconnect the score files or folders on a new device.', { exact: true }).waitFor();
+  await page.getByText(/^Library and settings restored\./).waitFor();
   await page.evaluate(() => window.resumeDirectoryScan());
   await page.waitForFunction(() => window.testLibraryCommits >= 2);
   await page.getByRole('checkbox', { name: 'Favorites', exact: true }).check();

@@ -1,3 +1,9 @@
+import DropboxPanel from './DropboxPanel';
+import { dropboxClient } from './dropbox-auth';
+import { connectDropbox } from './dropbox';
+import OneDrivePanel from './OneDrivePanel';
+import { oneDriveClient } from './onedrive-auth';
+import { connectOneDrive } from './onedrive';
 import { isScoreFile, readScoreFile, fileAccessError } from './score-file';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react';
 import { ChevronRight, FolderOpen, Globe, Star, Trash2, X } from 'lucide-react';
@@ -19,6 +25,10 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
   const [unavailable, setUnavailable] = useState<Record<string, string>>({});
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [search, setSearch] = useState('');
+  const cloudScan = useRef<AbortController | null>(null);
+  const latestOpen = useRef(0);
+  const [cloudPrompt, setCloudPrompt] = useState(0);
+  const [dropboxPrompt, setDropboxPrompt] = useState(0);
   const [catalogAddress, setCatalogAddress] = useState('');
   const [expandedDirectories, setExpandedDirectories] = useState<Record<string, boolean>>({});
   const input = useRef<HTMLInputElement>(null);
@@ -40,7 +50,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       await saveLibrary(next);
       current.current = next; setLibrary(next);
       const retained = new Set(next.entries.map(entry => entry.id));
-      for (const id of sessionFiles.current.keys()) if (!retained.has(id)) sessionFiles.current.delete(id);
+      for (const id of sessionFiles.current.keys()) if (!retained.has(id) || next.entries.find(entry => entry.id === id)?.oneDrive || next.entries.find(entry => entry.id === id)?.dropbox || next.entries.find(entry => entry.id === id)?.online) sessionFiles.current.delete(id);
     });
     writes.current = write;
     return write;
@@ -49,10 +59,10 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     const text = error instanceof Error ? error.message : 'The file could not be opened.';
     setMessage(text); onError(text);
   }
-  async function accept(file: File, handle?: ReadHandle, entryId?: string, isCurrent = () => true) {
+  async function accept(file: File, handle?: ReadHandle, entryId?: string, isCurrent = () => true, allowRename = false, close = true) {
     await ready.current;
     const expected = current.current.entries.find(entry => entry.id === entryId);
-    if (expected && expected.name !== file.name) throw new Error(`Please select ${expected.name} to reconnect this bookmark. Use Add score for another piece.`);
+    if (expected && expected.name !== file.name && !allowRename) throw new Error(`Please select ${expected.name} to reconnect this bookmark. Use Add score for another piece.`);
     let score: Score;
     try { score = await readScoreFile(file); }
     catch (error) {
@@ -76,15 +86,17 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     };
     if (!isCurrent()) return false;
     onOpen(score, `library:${entry.id}`);
-    sessionFiles.current.set(entry.id, file);
+    if (!entry.oneDrive && !entry.dropbox && !entry.online) sessionFiles.current.set(entry.id, file);
+    else sessionFiles.current.delete(entry.id);
     try { await commit(library => ({ ...library, entries: [...library.entries.filter(item => item.id !== entry.id),
       { ...entry, favorite: library.entries.find(item => item.id === entry.id)?.favorite ?? entry.favorite }] })); }
     catch { setMessage('Score opened, but the bookmark could not be saved. Export your library index before closing.');
       current.current = { ...current.current, entries: [...current.current.entries.filter(item => item.id !== entry.id), entry] }; setLibrary(current.current); }
     setUnavailable(previous => { const next = { ...previous }; delete next[entry.id]; return next; });
-    onClose(); return true;
+    if (close) onClose(); return true;
   }
   async function chooseFile(entryId?: string) {
+    const version = ++latestOpen.current;
     reconnectEntry.current = entryId;
     if (!filePickers.showOpenFilePicker) { input.current?.click(); return; }
     setBusy(true); setMessage('');
@@ -92,7 +104,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     try {
       const [handle] = await filePickers.showOpenFilePicker({ multiple: false, types: [{ description: 'Sotto score', accept: { 'application/octet-stream': ['.sotto'], 'application/json': ['.json'] } }] });
       choosing = false;
-      if (handle) await accept(await handle.getFile(), handle, entryId);
+      if (handle) await accept(await handle.getFile(), handle, entryId, () => latestOpen.current === version);
     } catch (error) { if (!(choosing && error instanceof DOMException && error.name === 'AbortError')) report(error); }
     finally { setBusy(false); reconnectEntry.current = undefined; }
   }
@@ -104,12 +116,20 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     if (entry) {
       if (!saved) rememberScore(`library:${entry.id}`);
       try {
+        if (entry.dropbox && navigator.onLine) {
+          const folder = current.current.folders.find(folder => folder.id === entry.folderId);
+          if (folder?.dropbox) return await accept(await dropboxClient.file(folder.dropbox, entry.dropbox.itemId), undefined, entry.id, isCurrent, true, false);
+        }
+        if (entry.oneDrive && navigator.onLine) {
+          const folder = current.current.folders.find(folder => folder.id === entry.folderId);
+          if (folder?.oneDrive) return await accept(await oneDriveClient.file(folder.oneDrive, entry.oneDrive.itemId), undefined, entry.id, isCurrent, true, false);
+        }
         if (entry.online && navigator.onLine) {
           const text = await fetchOnlineBytes(entry.online.url, 15_000_000, undefined, 5000);
-          return await accept(new File([text], entry.name, { type: 'application/json' }), undefined, entry.id, isCurrent);
+          return await accept(new File([text], entry.name, { type: 'application/json' }), undefined, entry.id, isCurrent, false, false);
         }
         const file = await readEntry(entry, current.current, false);
-        if (file) return await accept(file, entry.handle, entry.id, isCurrent);
+        if (file) return await accept(file, entry.handle, entry.id, isCurrent, false, false);
       } catch { /* Fall back to the one cached song when the source is unavailable. */ }
     }
     try {
@@ -124,31 +144,51 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
       const saved = lastScore();
       const entry = current.current.entries.find(item => `library:${item.id}` === saved);
       if (!entry) return;
-      if (entry.online || entry.handle || current.current.folders.find(folder => folder.id === entry.folderId)?.handle) void openEntry(entry);
+      if (entry.dropbox || entry.oneDrive || entry.online || entry.handle || current.current.folders.find(folder => folder.id === entry.folderId)?.handle) void openEntry(entry);
       else void chooseFile(entry.id);
     },
   }));
   async function openEntry(entry: LibraryEntry) {
+    const version = ++latestOpen.current;
+    const isCurrent = () => latestOpen.current === version;
+    if (entry.oneDrive || entry.dropbox) {
+      setBusy(true); setMessage('');
+      try {
+        const folder = current.current.folders.find(folder => folder.id === entry.folderId);
+        const file = entry.dropbox && folder?.dropbox ? await dropboxClient.file(folder.dropbox, entry.dropbox.itemId) :
+          entry.oneDrive && folder?.oneDrive ? await oneDriveClient.file(folder.oneDrive, entry.oneDrive.itemId) : null;
+        if (!file) throw new Error('Reconnect this cloud folder.');
+        await accept(file, undefined, entry.id, isCurrent, true);
+      } catch (error) {
+        if (!isCurrent()) return;
+        const cached = await loadLastScore().catch(() => null);
+        if (!navigator.onLine && cached?.key === `library:${entry.id}`) {
+          try { validateScore(cached.score); onOpen(cached.score, cached.key); onClose(); } catch (invalid) { report(invalid); }
+        } else { report(error); if (/sign.in|account|client id|app key|authorization/i.test(error instanceof Error ? error.message : '')) (entry.dropbox ? setDropboxPrompt : setCloudPrompt)(value => value + 1); }
+      } finally { if (isCurrent()) setBusy(false); }
+      return;
+    }
     if (entry.online) {
       setBusy(true); setMessage('');
       try {
         const text = await fetchOnlineBytes(entry.online.url, 15_000_000);
-        await accept(new File([text], entry.name, { type: 'application/json' }), undefined, entry.id);
+        await accept(new File([text], entry.name, { type: 'application/json' }), undefined, entry.id, isCurrent);
       } catch (error) {
+        if (!isCurrent()) return;
         const cached = await loadLastScore().catch(() => null);
         if (cached?.key === `library:${entry.id}`) {
           try { validateScore(cached.score); onOpen(cached.score, cached.key); onClose(); }
           catch (invalid) { report(invalid); }
         } else report(new Error(`This score could not be downloaded. Check your connection and the library host’s CORS permissions. Only the last opened song is available offline. ${error instanceof Error ? error.message : ''}`));
-      } finally { setBusy(false); }
+      } finally { if (isCurrent()) setBusy(false); }
       return;
     }
     if (!entry.handle && !current.current.folders.find(folder => folder.id === entry.folderId)?.handle) {
       const file = sessionFiles.current.get(entry.id);
       if (file) {
         setBusy(true); setMessage('');
-        try { await accept(file, undefined, entry.id); } catch (error) { report(error); }
-        finally { setBusy(false); }
+        try { await accept(file, undefined, entry.id, isCurrent); } catch (error) { report(error); }
+        finally { if (isCurrent()) setBusy(false); }
         return;
       }
       if (entry.folderId) {
@@ -161,13 +201,13 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     try {
       const file = await readEntry(entry, current.current);
       if (!file) throw new Error('Reconnect this file or its folder.');
-      await accept(file, entry.handle, entry.id);
+      await accept(file, entry.handle, entry.id, isCurrent);
     } catch (error) {
       const access = fileAccessError(error, entry.name);
       if (access) { sessionFiles.current.delete(entry.id); setUnavailable(previous => ({ ...previous, [entry.id]: access.message })); }
       report(access ?? error);
     }
-    finally { setBusy(false); }
+    finally { if (isCurrent()) setBusy(false); }
   }
   function clearFolderErrors(id: string) {
     const ids = new Set(current.current.entries.filter(entry => entry.folderId === id).map(entry => entry.id));
@@ -190,6 +230,50 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
     finally { setBusy(false); reconnectFolder.current = undefined; }
   }
   async function refreshFolder(folder: LibraryFolder, request = true) {
+    if (folder.dropbox) {
+      if (!request) return;
+      setBusy(true); setMessage('');
+      const controller = new AbortController(); cloudScan.current = controller;
+      try {
+        const ref = folder.dropbox;
+        const files = await dropboxClient.scan(ref, controller.signal, (folders, count) => setMessage(`Listing ${folders} folders · ${count} scores…`));
+        let removed = 0;
+        await commit(library => {
+          const connected = library.folders.find(item => item.id === folder.id);
+          if (controller.signal.aborted || !connected?.dropbox || JSON.stringify(connected.dropbox) !== JSON.stringify(ref)) return library;
+          const present = new Set(files.map(file => file.id));
+          removed = library.entries.filter(entry => entry.folderId === folder.id && !present.has(entry.dropbox?.itemId ?? '')).length;
+          return connectDropbox(library, folder.name, ref, files);
+        });
+        setMessage(controller.signal.aborted ? 'Dropbox refresh cancelled. Existing bookmarks kept.' : `Refreshed ${folder.name}.${removed ? ` Removed ${removed} missing score bookmarks.` : ''}`);
+      } catch (error) {
+        if (controller.signal.aborted) setMessage('Dropbox refresh cancelled. Existing bookmarks kept.');
+        else { report(error); if (/sign.in|account|app key|authorization/i.test(error instanceof Error ? error.message : '')) setDropboxPrompt(value => value + 1); }
+      } finally { if (cloudScan.current === controller) cloudScan.current = null; setBusy(false); }
+      return;
+    }
+    if (folder.oneDrive) {
+      if (!request) return; // Background panel opens must not download metadata or prompt sign-in.
+      setBusy(true); setMessage('');
+      try {
+        const controller = new AbortController(); cloudScan.current = controller;
+        const files = await oneDriveClient.scan(folder.oneDrive, controller.signal, (folders, count) => setMessage(`Listing ${folders} folders · ${count} scores…`)), ref = folder.oneDrive;
+        let removed = 0;
+        await commit(library => {
+          const connected = library.folders.find(item => item.id === folder.id);
+          if (controller.signal.aborted || !connected?.oneDrive || JSON.stringify(connected.oneDrive) !== JSON.stringify(ref)) return library;
+          const present = new Set(files.map(file => file.id));
+          removed = library.entries.filter(entry => entry.folderId === folder.id && !present.has(entry.oneDrive?.itemId ?? '')).length;
+          return connectOneDrive(library, folder.name, ref, files);
+        });
+        setMessage(`Refreshed ${folder.name}.${removed ? ` Removed ${removed} missing score bookmarks.` : ''}`);
+      } catch (error) {
+        if (cloudScan.current?.signal.aborted) setMessage('OneDrive refresh cancelled. Existing bookmarks kept.');
+        else { report(error); if (/sign.in|account|client id|app key|authorization/i.test(error instanceof Error ? error.message : '')) setCloudPrompt(value => value + 1); }
+      }
+      finally { cloudScan.current = null; setBusy(false); }
+      return;
+    }
     if (folder.catalogUrl) { if (request) await connectOnline(folder.catalogUrl); return; }
     if (!folder.handle) { if (request) void chooseFolder(folder.id); return; }
     setBusy(true); if (request) setMessage('');
@@ -225,7 +309,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
         if (folder.handle) await refreshFolder(folder, false);
       }
     });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; cloudScan.current?.abort(); };
   }, [visible]);
   async function connectOnline(address: string) {
     setBusy(true); setMessage('');
@@ -264,9 +348,11 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
   };
   async function change(update: (library: Library) => Library) { try { await commit(update); } catch (error) { report(error); } }
   return <>
+    {/* iOS file providers may disable unknown extensions when accept is set.
+        Let the user select a file, then validate its contents in readScoreFile. */}
     <input ref={input} data-score-input aria-label="Open score file" type="file" className="visually-hidden" onChange={event => {
       const file = event.target.files?.[0]; event.target.value = '';
-      if (file) { setBusy(true); void accept(file, undefined, reconnectEntry.current).catch(report).finally(() => { setBusy(false); reconnectEntry.current = undefined; }); }
+      if (file) { const version = ++latestOpen.current; setBusy(true); void accept(file, undefined, reconnectEntry.current, () => latestOpen.current === version).catch(report).finally(() => { setBusy(false); reconnectEntry.current = undefined; }); }
     }}/>
     {visible && <div className="modal-backdrop" onClick={onClose}><section className="help-modal library-modal" role="dialog" aria-modal="true" aria-labelledby="library-title" onClick={event => event.stopPropagation()}>
       <button className="icon-button modal-close" aria-label="Close library" onClick={onClose} autoFocus><X size={20}/></button>
@@ -283,13 +369,21 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
         }}>Export backup</button><button className="quiet-button" disabled={busy} onClick={() => indexInput.current?.click()}>Import backup</button></div>
       <p className="settings-note">Backups include library references and practice settings, not sheet music.</p>
       {message && <p className="library-message" role="status">{message}</p>}
-      {busy && <p role="status">Loading library…</p>}
+      {busy && <p role="status">Loading library…</p>}{busy && cloudScan.current && <button className="text-button" onClick={() => cloudScan.current?.abort()}>Cancel cloud refresh</button>}
       {!filePickers.showDirectoryPicker && <p className="settings-note">This browser provides temporary file selections. A page reload or cloud-provider change may require reconnecting the folder; desktop Chrome/Edge can remember supported directory handles.</p>}
       <details className="library-help"><summary>Connect an online library</summary><form className="online-library-form" onSubmit={event => { event.preventDefault(); void connectOnline(catalogAddress); }}><label>Catalog URL<input type="url" aria-label="Online library catalog URL" placeholder="https://example.org/scores/catalog.json" value={catalogAddress} onChange={event => setCatalogAddress(event.target.value)} required/></label><button className="quiet-button" type="submit" disabled={busy}>Connect online library</button></form><p className="settings-note">Use a public Sotto catalog.json served over HTTPS. Other hosts must allow cross-origin requests (CORS). A OneDrive sharing-page link is not a catalog URL.</p></details>
+      <DropboxPanel busy={busy} requestOpen={dropboxPrompt} localFolders={library.folders.filter(folder => !folder.oneDrive && !folder.dropbox && !folder.catalogUrl)} onBusy={setBusy} onConnect={async (name, ref, files, reuseFolderId, signal) => {
+        await commit(library => signal?.aborted ? library : connectDropbox(library, name, ref, files, reuseFolderId));
+        setMessage(`${name}: ${files.length} Dropbox score bookmarks. Music downloads only when opened.`);
+      }}/>
+      <OneDrivePanel busy={busy} requestOpen={cloudPrompt} localFolders={library.folders.filter(folder => !folder.oneDrive && !folder.dropbox && !folder.catalogUrl)} onBusy={setBusy} onConnect={async (name, ref, files, reuseFolderId, signal) => {
+        await commit(library => signal?.aborted ? library : connectOneDrive(library, name, ref, files, reuseFolderId));
+        setMessage(`${name}: ${files.length} OneDrive score bookmarks. Music downloads only when opened.`);
+      }}/>
       <div className="library-filters"><input aria-label="Search library" placeholder="Find a score…" value={search} onChange={event => setSearch(event.target.value)}/><label className="checkbox-row"><input type="checkbox" checked={favoritesOnly} onChange={event => setFavoritesOnly(event.target.checked)}/>Favorites</label></div>
       <div className="library-list">{tree.loose.map(renderEntry)}{tree.directories.map(renderDirectory)}{!entries.length && <p className="settings-note">{library.entries.length ? 'No matching scores.' : 'Add a score or connect a folder containing .sotto or .sotto.json files.'}</p>}</div>
       {!!library.folders.length && <h3>Connected folders</h3>}
-      {library.folders.map(folder => <div className="library-folder" key={folder.id}><span>{folder.catalogUrl ? <Globe size={16}/> : <FolderOpen size={16}/>} {folder.name}</span>{(folder.handle || folder.catalogUrl) && <button className="text-button" disabled={busy} onClick={() => void refreshFolder(folder)}>Refresh</button>}{!folder.catalogUrl && <button className="text-button" disabled={busy} onClick={() => void chooseFolder(folder.id)}>Reconnect</button>}<button className="icon-button" disabled={busy} aria-label={`Remove ${folder.name} folder bookmark`} onClick={() => void change(library => ({ entries: library.entries.filter(entry => entry.folderId !== folder.id), folders: library.folders.filter(item => item.id !== folder.id) }))}><Trash2 size={16}/></button></div>)}
+      {library.folders.map(folder => <div className="library-folder" key={folder.id}><span>{folder.catalogUrl || folder.oneDrive || folder.dropbox ? <Globe size={16}/> : <FolderOpen size={16}/>} {folder.name}</span>{(folder.handle || folder.catalogUrl || folder.oneDrive || folder.dropbox) && <button className="text-button" disabled={busy} onClick={() => void refreshFolder(folder)}>Refresh</button>}{!folder.catalogUrl && !folder.oneDrive && !folder.dropbox && <button className="text-button" disabled={busy} onClick={() => void chooseFolder(folder.id)}>Reconnect</button>}<button className="icon-button" disabled={busy} aria-label={`Remove ${folder.name} folder bookmark`} onClick={() => void change(library => ({ entries: library.entries.filter(entry => entry.folderId !== folder.id), folders: library.folders.filter(item => item.id !== folder.id) }))}><Trash2 size={16}/></button></div>)}
       <details className="library-help"><summary>Library storage &amp; backups</summary>
       <p className="settings-note">Keep your scores in a folder of your choice, including a synced OneDrive folder. Browse nested folders at any depth. Scans list filenames without opening score files; titles and composers are remembered when you open a piece. The library stores bookmarks and favorites. Only the last opened song is cached for resuming; opening another replaces that copy.</p>
       {!filePickers.showDirectoryPicker && <p className="settings-note">Your last song can reopen from its cached copy. Other scores may require you to reselect files or reconnect a folder after reopening Sotto. On iPad, choose a score through Files → OneDrive. Chrome/Edge on desktop can remember file and folder access. A picker may call the selection “Upload”; Sotto reads it locally and does not send it anywhere.</p>}
@@ -327,7 +421,7 @@ function LibraryPanel({ visible, onClose, onOpen, onResumeNeeded, onBeforeBackup
           const merge = <T extends { id: string }>(old: T[], added: T[]) => [...old.filter(item => !added.some(next => next.id === item.id)), ...added.map(item => ({ ...old.find(previous => previous.id === item.id), ...item }))];
           await commit(library => ({ entries: merge(library.entries, imported.entries), folders: merge(library.folders, imported.folders) }));
           if (settings) { importPreferences(settings); onSettingsImported(); }
-          setMessage(settings ? 'Library and settings restored. Reconnect the score files or folders on a new device.' : 'Library index imported. Reconnect its folders on this device to open the scores.');
+          setMessage(settings ? 'Library and settings restored. Sign in again for Dropbox or OneDrive; reconnect local score files or folders on a new device.' : 'Library index imported. Sign in for Dropbox or OneDrive folders; reconnect local folders on this device.');
         })().catch(report).finally(() => setBusy(false));
       }}/>
     </section></div>}

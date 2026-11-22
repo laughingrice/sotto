@@ -28,6 +28,9 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build:pages
+        env:
+          VITE_ONEDRIVE_CLIENT_ID: ${{ vars.ONEDRIVE_CLIENT_ID }}
+          VITE_DROPBOX_APP_KEY: ${{ vars.DROPBOX_APP_KEY }}
       - name: Check whether Pages is enabled
         id: pages-check
         env:

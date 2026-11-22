@@ -1,6 +1,6 @@
 # Sotto v0.5
 
-A local web practice player, starting with a public-domain Carcassi guitar study and ten ready-to-play openly licensed samples. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. No accounts or cloud uploads. The bundled instrument recordings, synthesized timbres, and metronome work offline.
+A local web practice player, starting with a public-domain Carcassi guitar study and ten ready-to-play openly licensed samples. React + TypeScript + Vite, Tone.js/Web Audio, and LilyPond SVG engraving. Local scores work without an account; optional Dropbox or OneDrive Personal sign-in reads scores directly from your cloud folder. No scores or microphone audio are uploaded by Sotto. The bundled instrument recordings, synthesized timbres, and metronome work offline.
 
 **New piece? Start with [Prepare a new score](#prepare-a-new-score).**
 
@@ -226,6 +226,54 @@ Only the small default Carcassi score is precached with the app for offline star
 
 **Open score** still reads local `.sotto` files without uploading them. Keep personal/copyrighted editions outside `public/`: Vite publishes everything in that directory. **Save score** downloads a separate copy.
 
+### Connect Dropbox on iPad, iPhone or desktop
+
+This connection browses an existing private Dropbox score folder inside Sotto, without selecting each file again. No Azure subscription, credit card, server or client secret is required. Only a normal Dropbox account and one app registration for Sotto are needed. API access is free ([Dropbox FAQ](https://www.dropbox.com/developers/support)).
+
+### One-time publisher setup
+
+1. Sign in to the [Dropbox App Console](https://www.dropbox.com/developers/apps/create). Create an app with **Scoped access → Full Dropbox**. Choose a unique app name (for example, Sotto Music Practice).
+2. Under **Permissions**, enable only **account_info.read**, **files.metadata.read** and **files.content.read**, then submit/save. Do not enable write scopes.
+3. Under **Settings → OAuth 2**, add the exact redirect URI **https://laughingrice.github.io/sotto/dropbox-redirect.html**. Enable **Allow public clients (Implicit Grant & PKCE)** if that setting is shown. Sotto uses authorization code + PKCE S256, never implicit grant or an App secret.
+4. Copy the public **App key**. For the shared deployment, set GitHub repository **Settings → Secrets and variables → Actions → Variables → DROPBOX_APP_KEY**, then deploy again. For local development, put `VITE_DROPBOX_APP_KEY=your_app_key` in `.env.local` and register the exact local callback URL shown in the app. Do not put an App secret or generated access token into either location.
+5. Alternatively enter the App key in **Library → Connect Dropbox → Dropbox app setup** on an individual device. This override stays on that browser and is excluded from backups.
+
+An app in development initially allows its owner's account. Use Dropbox's additional-user/production controls before opening the integration to a larger audience. Other users need only a Dropbox account and Sotto's Connect button, not their own developer registration. A real Dropbox login and physical iPad test are still needed after supplying the App key; automated tests simulate Dropbox responses.
+
+### Connect and practice
+
+1. Choose **Library → Connect Dropbox → Sign in to Dropbox**, and approve the read permissions.
+2. Choose **Browse Dropbox folders**, navigate to your existing score folder, and choose **Connect this Dropbox folder**. All nested subfolders are included, with no fixed depth limit.
+3. If replacing an existing local-folder library, choose its name under **Reuse existing bookmarks** before connecting. Matching relative paths retain favorites and per-song settings. Other cloud providers cannot be migrated by this option.
+4. Browse or search the library, and open a score. Scans fetch metadata only; title/composer are learned when opened. Only the last opened score is cached; other downloads are not retained in the library or service-worker cache.
+5. Use **Refresh** beside the connected folder to discover changes and remove bookmarks for deleted files. Complete scans preserve IDs, favorites and settings across renames or moves inside the connected folder. Failed/cancelled scans keep the previous index.
+6. Export a library backup to transfer folder references, favorites and practice settings. Import on another device and sign in to the same Dropbox account. Tokens, account email and score contents are excluded. Settings do not automatically sync across devices.
+
+**Full Dropbox** is required to choose an arbitrary existing folder; read scopes authorize reading across the account. Sotto lists folders you browse and scans the folder you connect, and never modifies Dropbox files. Access tokens and a renewal token stay in this browser's app storage. Renewal is automatic while Dropbox permits it; clearing site data or revoking authorization requires sign-in again. **Disconnect sign-in** removes Sotto's local credentials and retains bookmarks; revoke the app in Dropbox's connected-app settings to revoke its grant. Public sharing URLs and Dropbox team spaces are not supported by this first connection. Ordinary personal-account folders, including mounted shared folders the user can access, use their normal account paths.
+
+The browser flow follows [Dropbox's OAuth guide](https://docs.dropboxapi.com/dropbox-api/docs/oauth); folder browsing uses the [file access API](https://docs.dropboxapi.com/dropbox-api/docs/file-access).
+
+## Connect OneDrive Personal on iPad or another browser
+
+Open **Library → Connect OneDrive Personal → Sign in to OneDrive**. Choose **Browse OneDrive folders**, navigate to your score folder, then **Connect this OneDrive folder**. Subfolders at any depth are included. If this folder is already bookmarked through the local picker, choose it under **Reuse existing bookmarks** before connecting to preserve favorites and per-song settings by relative path. Browsing/refreshing requests file metadata only; score contents are downloaded only when opened. Titles/composers are learned from the opened score. Only the last opened score has an offline resume copy; the entire library is never downloaded into browser storage.
+
+Use **Refresh** beside the connected folder to reconcile added/removed files. Stable OneDrive item IDs preserve favorites, learned titles and practice settings through renames and moves within the connected tree. A failed, cancelled, incomplete or throttled scan keeps the existing listing. You can cancel a refresh. No OneDrive files are created, modified or deleted. This first connection supports folders owned by the signed-in OneDrive Personal account; shared-folder shortcuts, business accounts, Dropbox and pasting public sharing links are outside its scope.
+
+Folder/file references and favorites transfer through the existing **Export backup / Import backup** workflow. After importing on another device, sign in to the same Microsoft account; local filesystem permissions are not needed for OneDrive entries. Sign-in may need renewal, but folder bookmarks remain. Settings/favorites remain per-browser until a backup is imported; this is not automatic cloud settings synchronization. **Disconnect sign-in** clears Sotto's authentication cache while keeping bookmarks. Microsoft authentication artifacts and short-lived download URLs are excluded from backups; OneDrive file bytes are excluded from the library index and service-worker cache.
+
+One-time publisher setup (Microsoft requires an application registration):
+
+The developer needs access to an existing Microsoft Entra directory; a personal OneDrive account alone is insufficient for registration. Dropbox avoids this prerequisite. Sotto does not need Azure hosting or an Azure trial.
+
+1. In Microsoft Entra **App registrations → New registration**, create Sotto with supported account types including **personal Microsoft accounts**.
+2. Add a **Single-page application** redirect URI: `https://laughingrice.github.io/sotto/redirect.html`. For local development, optionally also register `http://localhost:4174/redirect.html` (matching the actual Vite port).
+3. Add **Microsoft Graph → Delegated permissions → Files.Read**. No client secret, write permission or server is needed. Microsoft consent covers read access to the user's files; Sotto only browses the requested locations and scans the connected folder.
+4. Copy the public **Application (client) ID**. Set the GitHub repository **Actions variable** `ONEDRIVE_CLIENT_ID`; the Pages workflow supplies it as `VITE_ONEDRIVE_CLIENT_ID`. Rebuild/deploy. For local builds, set `VITE_ONEDRIVE_CLIENT_ID` in the environment. A browser-specific client-ID override is available under **OneDrive app setup**, so setup can be tested before configuring the publisher variable. The override is not exported in library backups.
+
+Authentication uses Microsoft's official MSAL browser library, authorization code/PKCE, the consumer-account authority and its managed local-storage token cache. The dedicated `redirect.html` bridge must be deployed with the app and must not receive a Cross-Origin-Opener-Policy header. The service worker bypasses the callback page so authentication responses are never cached. Microsoft may require reauthentication after browser/session changes. Live Microsoft consent and Safari/Home Screen behavior require an actual registered client ID and device test; browser integration tests mock Microsoft authentication and Graph responses.
+
+References: [app registration](https://learn.microsoft.com/en-us/graph/auth-register-app-v2), [SPA authentication](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow), [redirect bridge](https://learn.microsoft.com/en-us/entra/msal/javascript/browser/redirect-bridge), [folder metadata permissions](https://learn.microsoft.com/en-us/graph/api/driveitem-list-children?view=graph-rest-1.0), [browser file downloads](https://learn.microsoft.com/en-us/onedrive/developer/rest-api/concepts/working-with-cors?view=odsp-graph-online).
+
 ### Host an online library
 
 For a small public collection, keep sources and generated bundles in Git and serve the catalog/bundles through the existing GitHub Pages deployment. The starter collection is small enough to host alongside the app; no extra service or account is needed. A larger independently updated library can live in its own Pages repository or an HTTPS object-storage bucket. For another origin, configure CORS to allow `GET` from Sotto’s origin (or `*` for a public library). Serve JSON directly, without authentication or a sharing-page wrapper. OneDrive remains useful for the personal local/synced-folder workflow; its public sharing pages are not a static catalog host.
@@ -254,7 +302,7 @@ Example `catalog.json` (relative paths resolve against the catalog URL):
 }
 ```
 
-Use stable alphanumeric IDs (`-` and `_` allowed), check redistribution rights for each edition, and preserve its attribution/license requirements. Sotto validates the catalog structure and links; it cannot verify a host’s legal claims. There are no credentials or cloud sign-in flows in this first online-library implementation.
+Use stable alphanumeric IDs (`-` and `_` allowed), check redistribution rights for each edition, and preserve its attribution/license requirements. Sotto validates the catalog structure and links; it cannot verify a host’s legal claims. Public catalogs do not use credentials. The separate OneDrive connection uses Microsoft sign-in.
 
 The exporter requires a single engraved score, an explicit `\layout { }` block, and named voices for meaningful part controls. It reads actual measure timing from LilyPond, including changing meters, silent measures, pickups, and a final cadenza. The exporter unfolds structured repeats (including nested repeats and alternate endings). If there is a MIDI score, it uses that score’s music for playback order; otherwise it unfolds the engraved score. Printed and MIDI versions must share named voices and underlying measure definitions so source locations can link them reliably. Ambiguous mappings fail explicitly. Tempo maps still need a more general importer. Instrument `\transposition` metadata is applied to exported sounding pitches. Drum noteheads use LilyPond’s General MIDI drum mapping (or a custom `drumPitchTable`), retain a separate voice, and play through the bundled recorded acoustic drum kit. Per-voice instrument selectors can override automatic name/metadata detection; octave changes apply to pitched notes without changing percussion keys. Julia Florida retains its existing explicit navigation map. Export only LilyPond files you trust, since the compiler executes Scheme.
 
@@ -279,9 +327,9 @@ The named voices live inside those shared section/measure variables. `returnToSe
 4. Library automatically scans remembered folder handles when it opens if read permission is already granted. A successful folder refresh also removes bookmarks whose files are no longer present, including when the folder becomes empty; failed or incomplete scans leave the index intact. This removes references only, keeps metadata/favorites for surviving paths and leaves practice settings, the open score and original files untouched. Connect, Reconnect and Refresh enumerate directory names and relative file paths only; they do not open or parse score files. Unopened scores use their filenames. Title/composer metadata is learned when a score is opened and preserved on later scans. This avoids requesting every cloud-hosted score just to browse the library. Native folder handles permit directory-only enumeration; fallback file pickers are controlled by the browser/cloud provider. **Refresh** rescans that same handle; it requests permission only when necessary and does not reopen a folder picker. **Reconnect** explicitly chooses a folder again. Opening a linked score reads its current contents from disk, including changes made outside Sotto. Browsers without directory handles still require reselection; the browser may label its local picker “Upload”, but Sotto does not upload the selected files.
 5. Choose **Export backup** and save `sotto-library.json` in OneDrive. This small JSON file preserves folder labels, relative paths, favorites, recents, general preferences and each bookmarked song’s practice settings. On another computer, choose **Library → Import backup**, then reconnect the score files or folders. Existing bookmarks merge by ID; imported settings replace saved values for matching songs, while other songs stay intact. Preferences apply immediately, with playback/microphone stopped. Older metadata-only library indexes remain importable. Export/import is manual, not live synchronization.
 
-Desktop Chrome/Edge can store read-only file/directory handles in IndexedDB; permissions may need granting again. A OneDrive folder must be available through the local file picker (and the selected files downloaded by OneDrive when needed). No OneDrive account integration is required. Safari/iPad and other browsers without these pickers can resume the last cached song; other pieces require reselection or reconnecting their folder. On iPad, select OneDrive through the Files picker; folder selection depends on the browser/provider. Bookmark metadata is local to this browser and site address; export the index for backup or transfer. Clearing browser storage removes the index/handles but never deletes the original files. Bookmarks and permissions are not a backup of the score files themselves.
+Desktop Chrome/Edge can store read-only file/directory handles in IndexedDB; permissions may need granting again. A OneDrive folder must be available through the local file picker (and the selected files downloaded by OneDrive when needed). This local-picker workflow does not require OneDrive sign-in; the direct cloud connection above avoids picker reselection. Safari/iPad and other browsers without these pickers can resume the last cached song; other pieces require reselection or reconnecting their folder. On iPad, select OneDrive through the Files picker; folder selection depends on the browser/provider. Bookmark metadata is local to this browser and site address; export the index for backup or transfer. Clearing browser storage removes the index/handles but never deletes the original files. Bookmarks and permissions are not a backup of the score files themselves.
 
-If a selected file becomes unreadable, Library displays an error beside its bookmark with a **Reconnect file/folder** action. Stalled score reads time out after 20 seconds. Picker cancellation stays quiet; a file-provider read failure does not. In browsers using temporary file selections, a page reload loses those selections. The last cached song can still resume, but opening a demo replaces that one-song cache; returning to another local piece then requires reconnecting its source. A direct Microsoft-account/OneDrive folder connection is not implemented yet; ordinary sharing links cannot be entered as online catalog URLs.
+If a selected file becomes unreadable, Library displays an error beside its bookmark with a **Reconnect file/folder** action. Stalled score reads time out after 20 seconds. Picker cancellation stays quiet; a file-provider read failure does not. In browsers using temporary file selections, a page reload loses those selections. The last cached song can still resume, but opening a demo replaces that one-song cache; returning to another local piece then requires reconnecting its source. Use **Connect Dropbox** or **Connect OneDrive Personal** for direct cloud access; ordinary sharing links are not online catalog URLs.
 
 Only **one imported song** is cached in IndexedDB, in a single replaceable slot. Opening another song replaces that copy; the library index remains metadata and references, with no growing collection of cached scores. On startup, Sotto reads the last linked file afresh when read permission is already granted, otherwise it uses the cached copy without a permission prompt. This works offline and on browsers that cannot retain file access. To load edits when access is unavailable, reopen/reconnect the original file. The app, example and instrument assets also remain available through the service-worker cache. Removing a library bookmark leaves the original file untouched.
 
@@ -360,6 +408,12 @@ node scripts/library-test.mjs
 node scripts/library-folders-test.mjs
 # Compressed/legacy imports, Save/Open and compressed offline resume:
 node scripts/compression-test.mjs
+# Dropbox PKCE callbacks, token renewal, metadata-only folders, phone picker and portable backups:
+node scripts/dropbox-test.mjs
+# Production /sotto/ callback entries and service-worker exclusion of authorization codes:
+node scripts/cloud-callback-test.mjs
+# OneDrive metadata-only folders, on-demand reads, refresh failures and cross-device backups:
+node scripts/onedrive-test.mjs
 # On-demand public catalog, licensing and old online bookmark compatibility:
 node scripts/catalog-test.mjs
 # Last-song caching, saved settings, fresh linked reads and offline resume:

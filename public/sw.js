@@ -1,6 +1,6 @@
 const BASE = new URL('./', self.location.href);
 const CACHE_PREFIX = `sotto:${BASE.pathname}:`;
-const CACHE = `${CACHE_PREFIX}v0.5.4`;
+const CACHE = `${CACHE_PREFIX}v0.5.5`;
 const localUrl = path => new URL(path, BASE).href;
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
@@ -36,6 +36,8 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== BASE.origin || !url.pathname.startsWith(BASE.pathname)) return;
+  // OAuth callback responses must never enter the offline cache.
+  if (['redirect.html', 'dropbox-redirect.html'].some(path => url.pathname === new URL(path, BASE).pathname)) return;
   // Download library scores only on demand. The app's IndexedDB resume slot
   // stores one song; Cache Storage must not silently retain the entire library.
   if ((/\.sotto(?:\.json)?$/i.test(url.pathname) && url.href !== localUrl('scores/samples/carcassi.sotto')) || url.pathname.endsWith('-source.zip')) return;
